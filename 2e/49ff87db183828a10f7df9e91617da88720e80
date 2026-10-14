@@ -1,0 +1,21 @@
+IMPLEMENTATION_PLAN.md
+  s_4c97aa8e7b616f::t_445adc30bfbd2b 36-51,59
+evals/graders/4141.json
+  s_4c97aa8e7b616f::t_5e71851975b3cd 3,15-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2e49ff87db183828a10f7df9e91617da88720e80",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
