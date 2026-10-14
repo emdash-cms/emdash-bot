@@ -33,16 +33,22 @@ Recorded 14 October 2026. Code is on the `implement-plan` branch ([PR #1](https:
 
 ### Measurements
 
-| Measurement                                                         | Value                                         |
-| ------------------------------------------------------------------- | --------------------------------------------- |
-| Worker bundle (main module)                                         | 2.10 MB, 441 KB gzip; lazy chunks 763 KB more |
-| `agents` + Pi alone (slice 1 spike)                                 | 997 KB, 212 KB gzip                           |
-| Worker startup time (deploy report)                                 | 17 ms                                         |
-| Sandbox cold start (standard-3)                                     | 15.2 s                                        |
-| Read-only fetch and checkout, small repository                      | 1.5 s                                         |
-| Depth-1 fetch of EmDash at a pinned commit, including sandbox start | about 16 s                                    |
-| Checkpoint capture of an unchanged tree                             | 0.12 s                                        |
-| First model turn, Kimi K2.7 Code via AI Gateway                     | 19 s cold, about 2 s warm                     |
+| Measurement                                                                         | Value                                                                                                    |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Worker bundle (main module)                                                         | 2.10 MB, 441 KB gzip; lazy chunks 763 KB more                                                            |
+| `agents` + Pi alone (slice 1 spike)                                                 | 997 KB, 212 KB gzip                                                                                      |
+| Worker startup time (deploy report)                                                 | 17 ms                                                                                                    |
+| Sandbox cold start (standard-3)                                                     | 15.2 s                                                                                                   |
+| Read-only fetch and checkout, small repository                                      | 1.5 s                                                                                                    |
+| Depth-1 fetch of EmDash at a pinned commit, including sandbox start                 | about 16 s                                                                                               |
+| Checkpoint capture of an unchanged tree                                             | 0.12 s                                                                                                   |
+| First model turn, Kimi K2.7 Code via AI Gateway                                     | 19 s cold, about 2 s warm                                                                                |
+| EmDash `pnpm install --frozen-lockfile` in the sandbox (first preparation)          | 101 s                                                                                                    |
+| Checkpoint cost per file-changing tool call, EmDash (12 calls in the #4141 dry run) | 0.31 to 0.43 s: diff 97 to 139 ms, R2 upload 193 to 290 ms, Durable Object commit under 1 ms             |
+| #4141 dry run, one author round (Kimi K2.7 Code)                                    | 41 minutes; 4.7M tokens including cache reads; built, typechecked, linted and ran the focused admin test |
+| #4141 grader validation (local)                                                     | starting commit: 3 of 49 reference tests fail on the reported behaviour; reference: 49 pass              |
+
+The #4141 dry run found a budget defect: the token budget counted cache reads and then refused `submit_candidate`, so a finished fix could not be submitted. Cache reads are now recorded separately, and submitting saved source or handing off is never refused for an exhausted budget. The run also showed that EmDash's admin tests need Chromium (Vitest browser mode), so the sandbox image now carries Playwright's Chromium at the version EmDash pins.
 
 Workers AI returned `429 Capacity temporarily exceeded` for Kimi K2.7 Code in two of the first three dry runs, after Pi's retries. Model retries are now configurable (default 8 retries from a 5-second base). Vendor models through AI Gateway unified billing return `402 Insufficient unified billing credits` on this account; enabling them is an operator decision.
 
@@ -50,7 +56,7 @@ Workers AI returned `429 Capacity temporarily exceeded` for Kimi K2.7 Code in tw
 
 1. Create and install the staging GitHub App with `scripts/create-github-app.ts`, then `pnpm run deploy:staging` ([docs/staging.md](docs/staging.md)).
 2. Run the manual test script on `emdash-cms/emdash-bot-pi-fixture`.
-3. Validate each historical grader (`pnpm evals validate --case <id>`) and mark it validated after reviewing the failure reason.
+3. Validate the remaining historical graders (`pnpm evals validate --case <id>`; #4141 is validated) and mark each validated after reviewing the failure reason.
 4. Run `pnpm evals recovery --target pi-staging`, then the #4141 and #4074 controls, then the six cases; fill in the human fields of each result summary after blind diff review.
 5. Choose budgets from those runs and freeze them; decide whether to fund vendor models for the writer comparison.
 6. Add the findings block to the EmDash reviewer as a reviewed change in the EmDash repository.
