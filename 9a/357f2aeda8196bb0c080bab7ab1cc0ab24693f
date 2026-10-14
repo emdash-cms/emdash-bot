@@ -1,0 +1,31 @@
+Dockerfile
+  s_4c97aa8e7b616f::t_dde5ded9bdd2c0 4-9,20-21
+cloudflare.config.ts
+  s_4c97aa8e7b616f::t_a7ee84c99d3b9c 14-16,18-24,26
+evals/controller/grade.ts
+  s_4c97aa8e7b616f::t_dcc9726986c8f9 7,19-24,33-47
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_719bfaaa00dd13 347,379,385
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_519059c66a1a32 34-39,206,229,293-296
+test/global-setup.ts
+  s_4c97aa8e7b616f::t_f85be0ec0d63d8 7-10
+test/recovery/lifecycle.test.ts
+  s_4c97aa8e7b616f::t_96b68a58c6e924 210-239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "9a357f2aeda8196bb0c080bab7ab1cc0ab24693f",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
