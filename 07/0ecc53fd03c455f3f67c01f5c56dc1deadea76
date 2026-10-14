@@ -1,0 +1,41 @@
+src/execution/egress-policy.ts
+  s_4c97aa8e7b616f::t_fc268b1a0f9783 1-29
+src/execution/egress.ts
+  s_4c97aa8e7b616f::t_572fe848cd5a07 8
+src/github/webhook.ts
+  s_4c97aa8e7b616f::t_a20d33934f4e64 8-9,29
+src/index.ts
+  s_4c97aa8e7b616f::t_4e826d421f7e97 5,64
+src/util.ts
+  s_4c97aa8e7b616f::t_c403936b73de2e 51-58
+test/harness.ts
+  s_4c97aa8e7b616f::t_367fb9447d08f9 171-173
+test/recovery/publication.test.ts
+  s_4c97aa8e7b616f::t_b6e48154675821 1-118
+test/unit/checks-review.test.ts
+  s_4c97aa8e7b616f::t_3b7c2969b1aa19 1-123
+test/unit/patch.test.ts
+  s_4c97aa8e7b616f::t_fc2a5421b6def8 1-83
+test/unit/status.test.ts
+  s_4c97aa8e7b616f::t_0c278fcb39ba62 1-90
+test/unit/webhook.test.ts
+  s_4c97aa8e7b616f::t_5b737bebdc6e03 1-88
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_cff87145a38998 1-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "070ecc53fd03c455f3f67c01f5c56dc1deadea76",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
