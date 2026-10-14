@@ -4,7 +4,7 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitAuthUrl } from "./github.ts";
 import type { GraderManifest } from "./types.ts";
@@ -16,6 +16,12 @@ export interface GradeResult {
 	readonly passed: boolean;
 }
 
+function pick(names: readonly string[]): Record<string, string> {
+	return Object.fromEntries(
+		names.flatMap((name) => (process.env[name] ? [[name, process.env[name]!]] : [])),
+	);
+}
+
 function run(
 	cwd: string,
 	command: string,
@@ -24,7 +30,21 @@ function run(
 	const started = Date.now();
 	const result = spawnSync("bash", ["-c", command], {
 		cwd,
-		env: { PATH: process.env.PATH ?? "", HOME: home, CI: "1" },
+		env: {
+			PATH: process.env.PATH ?? "",
+			HOME: home,
+			CI: "1",
+			// Shared browser cache outside the throwaway HOME, so browsers download once.
+			PLAYWRIGHT_BROWSERS_PATH:
+				process.env.PLAYWRIGHT_BROWSERS_PATH ??
+				join(
+					homedir(),
+					process.platform === "darwin" ? "Library/Caches" : ".cache",
+					"ms-playwright",
+				),
+			// Trust settings only (for TLS-inspecting networks such as WARP); never credentials.
+			...pick(["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR"]),
+		},
 		encoding: "utf8",
 		maxBuffer: 256 * 1024 * 1024,
 		timeout: 45 * 60_000,

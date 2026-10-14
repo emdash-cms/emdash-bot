@@ -11,12 +11,19 @@ import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 // explicitly operated deployment and is not configured here.
 const name = "emdash-bot-pi";
 
-const sandbox = defineContainer({
+// Tests (`vp build --mode test`) never start the container, so they use a
+// registry reference instead of building the image.
+const sandbox = defineContainer(({ mode }) => ({
 	name: `${name}-sandbox`,
-	schedulingPolicy: "durable-object",
-	images: { workspace: { dockerfile: "./Dockerfile" } },
+	schedulingPolicy: "durable-object" as const,
+	images: {
+		workspace:
+			mode === "test"
+				? { reference: "docker.io/cloudflare/sandbox:1.0.1" }
+				: { dockerfile: "./Dockerfile" },
+	},
 	observability: { enabled: true, logs: { enabled: true } },
-});
+}));
 
 export default defineConfig({
 	worker: {

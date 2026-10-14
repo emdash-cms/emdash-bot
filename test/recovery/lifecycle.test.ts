@@ -207,3 +207,33 @@ describe("author concurrency", () => {
 		expect(secondStart).toBeGreaterThanOrEqual(firstEnd);
 	});
 });
+
+describe("budgets", () => {
+	it("refuses work after the token budget is exhausted but still allows a handoff", async () => {
+		bot = await startBot({ budgets: { tokens: -1, cancelMs: 2000, rounds: 4 } });
+		const caseId = issueCaseId(51);
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{ tool: "write", args: FIX_GREETING },
+						{
+							tool: "handoff",
+							args: {
+								reason: "budget exhausted after saving work",
+								nextAction: "seal or continue",
+							},
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 51, number: 51, script }));
+		const record = await bot.waitFor("handoff", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.handoff ? r : null;
+		});
+		expect(record.handoff.reason).toBe("budget exhausted after saving work");
+		expect(record.operations.some((o: any) => o.kind === "tool:write")).toBe(false);
+	});
+});

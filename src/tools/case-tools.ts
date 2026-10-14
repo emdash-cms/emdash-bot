@@ -31,8 +31,12 @@ export interface MutationOutcome<T> {
 
 /** What the tools need from the case that hosts them. */
 export interface CaseRuntime {
-	/** A reason to refuse tool use (obsolete generation, cancelled case, exhausted budget), or undefined. */
-	guard(): string | undefined;
+	/**
+	 * A reason to refuse tool use, or undefined. Terminal tools (submitting
+	 * saved source, handing off) are refused for an obsolete generation or a
+	 * cancelled case, but not for an exhausted budget.
+	 */
+	guard(terminal?: boolean): string | undefined;
 	/** Restore the sandbox to the latest acknowledged checkpoint when needed. */
 	ready(): Promise<void>;
 	/** Run a source mutation and checkpoint the result before returning. */
@@ -199,7 +203,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		}),
 		replay: "unsafe",
 		execute: async (args, api) => {
-			const blocked = runtime.guard();
+			const blocked = runtime.guard(true);
 			if (blocked) throw new Error(blocked);
 			const candidate = await runtime.submitCandidate(
 				`tool:${api.taskId}`,
@@ -222,7 +226,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		parameters: Type.Object({ reason: Type.String(), nextAction: Type.String() }),
 		replay: "unsafe",
 		execute: async (args, api) => {
-			const blocked = runtime.guard();
+			const blocked = runtime.guard(true);
 			if (blocked) throw new Error(blocked);
 			await runtime.handoff(`tool:${api.taskId}`, args.reason, args.nextAction);
 			return {
@@ -286,8 +290,10 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		],
 		hooks: [
 			hook(ToolTask, {
-				beforeTool: () => {
-					const blocked = runtime.guard();
+				beforeTool: (call) => {
+					const blocked = runtime.guard(
+						call.name === "submit_candidate" || call.name === "handoff",
+					);
 					return blocked ? { block: blocked } : undefined;
 				},
 			}),

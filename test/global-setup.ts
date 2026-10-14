@@ -4,5 +4,8 @@ import { execFileSync } from "node:child_process";
 // Miniflare. VITEST is unset so vite.config.ts loads the Cloudflare plugin.
 export default function setup(): void {
 	const { VITEST: _, ...env } = process.env;
-	execFileSync("node_modules/.bin/vp", ["build", "--logLevel", "error"], { env, stdio: "inherit" });
+	execFileSync("node_modules/.bin/vp", ["build", "--mode", "test", "--logLevel", "error"], {
+		env,
+		stdio: "inherit",
+	});
 }

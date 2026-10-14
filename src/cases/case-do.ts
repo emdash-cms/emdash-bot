@@ -344,7 +344,7 @@ export class CaseDO extends DurableObject<Env> {
 
 	#runtime(): CaseRuntime {
 		return {
-			guard: () => this.#guard(),
+			guard: (terminal) => this.#guard(terminal),
 			ready: () => this.#source.run(() => this.#ensureSandbox()),
 			mutate: <T>(opId: string, tool: string, fn: () => Promise<T>) => this.#mutate(opId, tool, fn),
 			search: (pattern, path, glob) => this.#search(pattern, path, glob),
@@ -376,12 +376,13 @@ export class CaseDO extends DurableObject<Env> {
 		};
 	}
 
-	#guard(): string | undefined {
+	#guard(terminal = false): string | undefined {
 		const state = this.store.state();
 		if (state !== "active") return `the case is ${state ?? "not admitted"}; tool use is refused`;
 		const round = this.store.getMeta<RoundState>("round");
 		if (!round || round.generation !== this.store.generation())
 			return "this run belongs to an obsolete ownership generation";
+		if (terminal) return undefined;
 		const budgets = this.config.budgets;
 		if (Date.now() - round.startedAt > budgets.authorMs)
 			return "the author time budget for this round is exhausted";
