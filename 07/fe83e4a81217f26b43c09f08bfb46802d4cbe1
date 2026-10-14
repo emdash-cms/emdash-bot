@@ -1,0 +1,43 @@
+evals/tsconfig.json
+  s_4c97aa8e7b616f::t_c1384923e2fd19 1-9
+package.json
+  s_4c97aa8e7b616f::t_3a58d8e8fb25d7 18-21
+profiles/staging.json
+  s_4c97aa8e7b616f::t_6f0f49423c64a9 4-14,18-20,22-23
+scripts/create-github-app.ts
+  s_4c97aa8e7b616f::t_1a0be75dc8a073 1-117
+scripts/ops.ts
+  s_4c97aa8e7b616f::t_7da2787da49e73 1-116
+scripts/tsconfig.json
+  s_4c97aa8e7b616f::t_634a830b9a54cd 1-9
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_1701b04ba7ad5f 11,178-179,947,978-1017,1195-1206,1209,1467-1468
+src/config.ts
+  s_4c97aa8e7b616f::t_f1a96cdae23c92 50-56,103-104,132-146
+src/github/review.ts
+  s_4c97aa8e7b616f::t_ce03961f306fe0 66
+src/index.ts
+  s_4c97aa8e7b616f::t_41c4e927b78e14 3-5,40-48,136-166
+test/fakes/github.ts
+  s_4c97aa8e7b616f::t_d8d6a78af91ae1 38-45,143-159,330-332
+test/unit/checks-review.test.ts
+  s_4c97aa8e7b616f::t_f927c0309ef088 124-135
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_025e3c9fad2431 366-434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "07fe83e4a81217f26b43c09f08bfb46802d4cbe1",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
