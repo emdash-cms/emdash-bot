@@ -1,0 +1,35 @@
+Dockerfile
+  s_4c97aa8e7b616f::t_53e2ed89a0c96f 13-18
+evals/graders/4013.json
+  s_4c97aa8e7b616f::t_29f52abe4fa3cf 6-10
+evals/graders/4141.json
+  s_4c97aa8e7b616f::t_b1612b384d2d82 6-10
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_72a98ef84b19aa 140-153,358-364,732-747,1197,1253,1291-1302,1306,1566
+src/cases/repository-do.ts
+  s_4c97aa8e7b616f::t_823006b654bd8d 25-27,154-180
+src/config.ts
+  s_4c97aa8e7b616f::t_7906725cab1caf 77-78,124
+src/execution/sandbox-do.ts
+  s_4c97aa8e7b616f::t_95391085b46d3f 20
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_7ab8d22032188a 48-49,302
+test/recovery/lifecycle.test.ts
+  s_4c97aa8e7b616f::t_9b6f4abcc428cc 170-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "b9061687afd5482025bfe7f18365a7140b4b3c66",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
