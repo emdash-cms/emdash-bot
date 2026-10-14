@@ -4,7 +4,7 @@ This file provides guidance to agentic coding tools when working with code in th
 
 This is the EmDash bot repository, created from `ascorbic/worker-template`. Read [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) before adding runtime code. The current Worker is a scaffold; bot execution, resources, GitHub integration and evals are still proposed.
 
-- Keep Pi Durable as the agent runtime. Add the Cloudflare lifecycle adapter around it; do not introduce a second model/task scheduler.
+- Keep Pi Durable as the agent runtime, hosted through `PiHarness` from `agents/harness/pi`; do not write a bespoke lifecycle adapter or introduce a second model/task scheduler.
 - Preserve acknowledged edits in immutable source artifacts independently of containers, and publish only a saved candidate through trusted code.
 - Keep the existing EmDash review service. Findings and exact-head verification determine readiness; publication alone does not.
 - Human approval remains required for merges. Keep deployment and production intake as explicit operator actions.
