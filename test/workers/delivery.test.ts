@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import {
 	type Bot,
@@ -51,6 +53,12 @@ describe("issue delivery", () => {
 		await bot.waitFor("status comment", async () =>
 			bot!.github.comments.find((c) => c.body.includes("emdash-bot:status")),
 		);
+		// Environment preparation ran once for this base, as a cache step.
+		const log = readFileSync(
+			join(bot.exec.root(`author-${caseId}`), "workspace", "prepare.log"),
+			"utf8",
+		);
+		expect(log.trim().split("\n")).toHaveLength(1);
 	});
 });
 

@@ -109,7 +109,10 @@ export class CaseDO extends DurableObject<Env> {
 					{
 						models: this.#modelSetup.models,
 						registry: this.registry,
-						settings: { retry: { maxRetries: 3 }, toolExecution: "sequential" },
+						settings: {
+							retry: { enabled: true, ...this.config.modelRetry },
+							toolExecution: "sequential",
+						},
 						env: () =>
 							new SandboxExecutionEnv(this.#authorSandbox(), REPO_DIR, this.config.budgets.jobMs),
 						onReport: (error) =>

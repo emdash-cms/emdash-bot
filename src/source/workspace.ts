@@ -38,50 +38,80 @@ export interface PrepareResult {
 	readonly prepareMs: number;
 }
 
-/** Ensure the checkout exists and contains the base commit. */
+const PREPARED = `${WORKSPACE}/.emdash-bot-prepared`;
+
+/**
+ * Ensure the checkout exists and contains the base commit, and that the
+ * environment has been prepared for this base and preparation command. The
+ * preparation marker is the environment cache key; dependency output is a
+ * cache, never source.
+ */
 export async function prepareCheckout(
 	backend: ExecBackend,
 	options: PrepareOptions,
 ): Promise<PrepareResult> {
 	const started = Date.now();
+	let fresh = false;
 	const has = await backend.exec({
 		argv: git("cat-file", "-e", `${options.baseCommit}^{commit}`),
 		timeoutMs: 30_000,
 	});
-	if (has.exitCode === 0) return { fresh: false, fetchMs: 0, prepareMs: 0 };
-	await execOk(
-		backend,
-		{
-			argv: ["sh", "-c", `mkdir -p ${WORKSPACE} && rm -rf ${REPO_DIR} && git init -q ${REPO_DIR}`],
-		},
-		"checkout init",
-	);
-	await execOk(
-		backend,
-		{
-			argv: git("fetch", "-q", "--no-tags", "--depth=1", options.remoteUrl, options.baseCommit),
-			timeoutMs: options.timeoutMs,
-		},
-		"base commit fetch",
-	);
-	await execOk(
-		backend,
-		{ argv: git("checkout", "-q", "--detach", options.baseCommit) },
-		"base checkout",
-	);
-	const fetched = Date.now();
-	if (options.prepareCommand) {
+	if (has.exitCode !== 0) {
+		fresh = true;
+		const exists = await backend.exec({ argv: git("rev-parse", "--git-dir"), timeoutMs: 30_000 });
+		if (exists.exitCode !== 0) {
+			await execOk(
+				backend,
+				{
+					argv: [
+						"sh",
+						"-c",
+						`mkdir -p ${WORKSPACE} && rm -rf ${REPO_DIR} && git init -q ${REPO_DIR}`,
+					],
+				},
+				"checkout init",
+			);
+		}
 		await execOk(
 			backend,
 			{
-				argv: ["sh", "-c", options.prepareCommand],
-				cwd: REPO_DIR,
-				timeoutMs: options.timeoutMs - (fetched - started),
+				argv: git("fetch", "-q", "--no-tags", "--depth=1", options.remoteUrl, options.baseCommit),
+				timeoutMs: options.timeoutMs,
 			},
-			"environment preparation",
+			"base commit fetch",
+		);
+		await execOk(
+			backend,
+			{ argv: git("checkout", "-q", "--force", "--detach", options.baseCommit) },
+			"base checkout",
 		);
 	}
-	return { fresh: true, fetchMs: fetched - started, prepareMs: Date.now() - fetched };
+	const fetched = Date.now();
+	if (!options.prepareCommand) return { fresh, fetchMs: fetched - started, prepareMs: 0 };
+	const key = `${options.baseCommit}:${options.prepareCommand}`;
+	const marker = await backend.exec({ argv: ["cat", PREPARED] });
+	if (marker.exitCode === 0 && text(marker.stdout).trim() === key)
+		return { fresh, fetchMs: fetched - started, prepareMs: 0 };
+	await execOk(
+		backend,
+		{ argv: git("checkout", "-q", "--force", "--detach", options.baseCommit) },
+		"base checkout for preparation",
+	);
+	await execOk(
+		backend,
+		{
+			argv: ["sh", "-c", options.prepareCommand],
+			cwd: REPO_DIR,
+			timeoutMs: Math.max(60_000, options.timeoutMs - (fetched - started)),
+		},
+		"environment preparation",
+	);
+	await execOk(
+		backend,
+		{ argv: ["sh", "-c", `cat > ${PREPARED}`], stdin: new TextEncoder().encode(key) },
+		"record preparation",
+	);
+	return { fresh, fetchMs: fetched - started, prepareMs: Date.now() - fetched };
 }
 
 /** Fetch an additional commit (for example an advanced branch head) into the checkout. */

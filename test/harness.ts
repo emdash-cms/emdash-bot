@@ -54,7 +54,14 @@ export function testConfig(gitRemoteBase: string, overrides: Record<string, unkn
 	return {
 		profile: "test",
 		botLogin: BOT,
-		repositories: [{ id: REPO_ID, fullName: REPO, focusedChecks: { test: "node test.js" } }],
+		repositories: [
+			{
+				id: REPO_ID,
+				fullName: REPO,
+				focusedChecks: { test: "node test.js" },
+				prepare: "echo prepared >> /workspace/prepare.log",
+			},
+		],
 		maintainers: ["maintainer"],
 		reviewers: [REVIEWER],
 		authorModel: "scripted:author",
