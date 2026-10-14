@@ -2,7 +2,7 @@
 
 import { readConfig } from "./config.ts";
 import { verifySignature, normalize } from "./github/webhook.ts";
-import { json, rpc } from "./util.ts";
+import { constantTimeEqual, json, rpc } from "./util.ts";
 import { cases, repositories } from "./bindings.ts";
 
 export { CaseDO } from "./cases/case-do.ts";
@@ -61,7 +61,7 @@ function authorized(request: Request, env: Env): boolean {
 	if (!token || !header.startsWith("Bearer ")) return false;
 	const a = new TextEncoder().encode(header.slice(7));
 	const b = new TextEncoder().encode(token);
-	return a.length === b.length && crypto.subtle.timingSafeEqual(a, b);
+	return constantTimeEqual(a, b);
 }
 
 async function operator(request: Request, env: Env, url: URL): Promise<Response> {

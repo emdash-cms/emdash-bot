@@ -168,7 +168,9 @@ export async function startBot(overrides: Record<string, unknown> = {}): Promise
 					last = error;
 				}
 				if (Date.now() > deadline)
-					throw new Error(`timed out waiting for ${what}${last instanceof Error ? `: ${last.message}` : ""}`);
+					throw new Error(
+						`timed out waiting for ${what}${last instanceof Error ? `: ${last.message}` : ""}`,
+					);
 				await new Promise((r) => setTimeout(r, 100));
 			}
 		},

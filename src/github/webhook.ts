@@ -5,6 +5,8 @@
 import type { BotConfig } from "../config.ts";
 import type { CaseIdentity } from "../cases/types.ts";
 
+import { constantTimeEqual } from "../util.ts";
+
 const encoder = new TextEncoder();
 
 export async function verifySignature(
@@ -24,7 +26,7 @@ export async function verifySignature(
 		["sign"],
 	);
 	const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(body)));
-	return crypto.subtle.timingSafeEqual(provided, mac);
+	return constantTimeEqual(provided, mac);
 }
 
 export async function sign(secret: string, body: string): Promise<string> {

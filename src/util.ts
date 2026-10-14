@@ -48,3 +48,11 @@ export function str(value: unknown): string {
 export function rpc<T = unknown>(value: unknown): Promise<T> {
 	return Promise.resolve(value as T);
 }
+
+/** Constant-time byte comparison (portable; Workers also offer crypto.subtle.timingSafeEqual). */
+export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) return false;
+	let diff = 0;
+	for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
+	return diff === 0;
+}
