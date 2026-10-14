@@ -167,3 +167,43 @@ describe("Pi hosted in a case", () => {
 			expect(types).toContain(t);
 	});
 });
+
+describe("author concurrency", () => {
+	it("runs one author round at a time per repository", async () => {
+		bot = await startBot();
+		const slow = {
+			rounds: [
+				{
+					steps: [
+						{ tool: "bash", args: { command: "sleep 2" } },
+						{ tool: "write", args: FIX_GREETING },
+						{ tool: "submit_candidate", args: { title: "fix: a", summary: "a" } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 41, number: 41, script: slow }));
+		await bot.waitFor(
+			"first round",
+			async () => (await bot!.inspect(issueCaseId(41))).round?.round === 1,
+		);
+		await bot.webhook("issues", assignIssue({ issueId: 42, number: 42, script: fixScript() }));
+		const waiting = await bot.waitFor("second case waits", async () => {
+			const r = await bot!.inspect(issueCaseId(42));
+			return r.log?.some((e: any) => e.type === "round.waiting-for-slot") ? r : null;
+		});
+		expect(waiting.round).toBeFalsy();
+		for (const id of [41, 42]) {
+			await bot.waitFor(`case ${id} published`, async () =>
+				(await bot!.inspect(issueCaseId(id))).publications?.some(
+					(p: any) => p.state === "pr-ensured",
+				),
+			);
+		}
+		const first = await bot.inspect(issueCaseId(41));
+		const second = await bot.inspect(issueCaseId(42));
+		const firstEnd = first.log.find((e: any) => e.type === "round.end").at;
+		const secondStart = second.log.find((e: any) => e.type === "round.start").at;
+		expect(secondStart).toBeGreaterThanOrEqual(firstEnd);
+	});
+});

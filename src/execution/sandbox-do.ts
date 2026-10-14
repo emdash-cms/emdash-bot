@@ -17,6 +17,7 @@ const BASE_ENV: Record<string, string> = {
 	HOME: "/root",
 	PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	CI: "1",
+	PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright",
 	GIT_TERMINAL_PROMPT: "0",
 	GIT_CONFIG_NOSYSTEM: "1",
 	NODE_EXTRA_CA_CERTS: CA_SOURCE,

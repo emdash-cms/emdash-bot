@@ -23,6 +23,9 @@ export class RepositoryDO extends DurableObject<Env> {
 			`CREATE TABLE IF NOT EXISTS deliveries (delivery_id TEXT PRIMARY KEY, event TEXT NOT NULL, delivery TEXT NOT NULL, case_id TEXT, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT, received_at INTEGER NOT NULL, forwarded_at INTEGER)`,
 		);
 		ctx.storage.sql.exec(
+			`CREATE TABLE IF NOT EXISTS author_slots (case_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)`,
+		);
+		ctx.storage.sql.exec(
 			`CREATE TABLE IF NOT EXISTS aliases (alias TEXT PRIMARY KEY, case_id TEXT NOT NULL, created_at INTEGER NOT NULL)`,
 		);
 	}
@@ -146,6 +149,33 @@ export class RepositoryDO extends DurableObject<Env> {
 			.exec(`SELECT COUNT(*) AS n FROM deliveries WHERE status = 'pending'`)
 			.toArray()[0]!.n as number;
 		if (left > 0) await this.ctx.storage.setAlarm(Date.now() + RETRY_MS);
+	}
+
+	/** Lease one of `limit` author slots to a case. Expired leases are reclaimed. */
+	async acquireAuthorSlot(
+		caseId: string,
+		limit: number,
+		ttlMs: number,
+	): Promise<{ granted: boolean; holders: string[] }> {
+		const now = Date.now();
+		this.ctx.storage.sql.exec(`DELETE FROM author_slots WHERE expires_at < ?`, now);
+		const holders = this.ctx.storage.sql
+			.exec(`SELECT case_id FROM author_slots`)
+			.toArray()
+			.map((r) => r.case_id as string);
+		if (holders.includes(caseId) || holders.length < limit) {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO author_slots (case_id, expires_at) VALUES (?, ?) ON CONFLICT(case_id) DO UPDATE SET expires_at = excluded.expires_at`,
+				caseId,
+				now + ttlMs,
+			);
+			return { granted: true, holders: [...new Set([...holders, caseId])] };
+		}
+		return { granted: false, holders };
+	}
+
+	async releaseAuthorSlot(caseId: string): Promise<void> {
+		this.ctx.storage.sql.exec(`DELETE FROM author_slots WHERE case_id = ?`, caseId);
 	}
 
 	async deliveries(limit = 100): Promise<Array<Record<string, unknown>>> {

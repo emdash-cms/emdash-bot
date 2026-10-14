@@ -45,7 +45,8 @@ export interface CaseRuntime {
 	respondToFinding(id: string, disposition: "addressed" | "disputed", note: string): Finding;
 	caseStatus(): string;
 	focusedChecks(): Readonly<Record<string, string>>;
-	recordUsage(tokens: number): void;
+	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately. */
+	recordUsage(tokens: number, cacheRead: number): void;
 	instructions(): string;
 }
 
@@ -298,7 +299,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 				afterResponse: (message) => {
 					const usage = message.usage;
 					if (usage)
-						runtime.recordUsage(usage.input + usage.output + usage.cacheRead + usage.cacheWrite);
+						runtime.recordUsage(usage.input + usage.output + usage.cacheWrite, usage.cacheRead);
 				},
 			}),
 		],

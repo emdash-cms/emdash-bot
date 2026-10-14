@@ -3,7 +3,11 @@
 	"status": "unvalidated",
 	"referenceCommit": "e25662d2d74f940904700b68529f5d7e61420be2",
 	"tests": ["packages/admin/tests/editor/table-cell-safety.test.tsx"],
-	"setup": ["pnpm install --frozen-lockfile", "pnpm build"],
+	"setup": [
+		"pnpm install --frozen-lockfile",
+		"pnpm build",
+		"pnpm --filter @emdash-cms/admin exec playwright install chromium"
+	],
 	"commands": [
 		"pnpm --filter @emdash-cms/admin exec vitest run tests/editor/table-cell-safety.test.tsx"
 	],

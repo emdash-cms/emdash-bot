@@ -137,6 +137,20 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	async onJob(context: LifecycleJobContext): Promise<LifecycleJobOutcome | void> {
+		try {
+			return await this.#dispatchJob(context);
+		} catch (error) {
+			// Lifecycle retries the job; record why so failures are inspectable.
+			this.store.log("job.failed", {
+				fn: context.job.fn,
+				attempt: context.attempt,
+				error: errorMessage(error),
+			});
+			throw error;
+		}
+	}
+
+	async #dispatchJob(context: LifecycleJobContext): Promise<LifecycleJobOutcome | void> {
 		const payload = (context.job.payload ?? {}) as Record<string, unknown>;
 		switch (context.job.fn) {
 			case "reconcile":
@@ -341,8 +355,13 @@ export class CaseDO extends DurableObject<Env> {
 			respondToFinding: (id, disposition, note) => this.#respondToFinding(id, disposition, note),
 			caseStatus: () => this.#caseRecord(),
 			focusedChecks: () => this.#repoConfig()?.focusedChecks ?? {},
-			recordUsage: (tokens) =>
-				this.store.setMeta("tokens", (this.store.getMeta<number>("tokens") ?? 0) + tokens),
+			recordUsage: (tokens, cacheRead) => {
+				this.store.setMeta("tokens", (this.store.getMeta<number>("tokens") ?? 0) + tokens);
+				this.store.setMeta(
+					"cacheReadTokens",
+					(this.store.getMeta<number>("cacheReadTokens") ?? 0) + cacheRead,
+				);
+			},
 			instructions: () => {
 				const loaded = this.store.getMeta<{ commit: string; text: string }>("instructions");
 				return [
@@ -708,6 +727,22 @@ export class CaseDO extends DurableObject<Env> {
 		const result = await backend.exec({ argv: git("rev-parse", `${commit}^{tree}`) });
 		if (result.exitCode !== 0) throw new Error(`cannot resolve the tree of ${commit}`);
 		return text(result.stdout).trim();
+	}
+
+	async #authorSlot(
+		action: "acquire" | "release",
+	): Promise<{ granted: boolean; holders: string[] }> {
+		const identity = this.#identity();
+		const router = repositories(this.env).getByName(String(identity.repoId));
+		if (action === "release") {
+			await router.releaseAuthorSlot(identity.caseId);
+			return { granted: true, holders: [] };
+		}
+		return router.acquireAuthorSlot(
+			identity.caseId,
+			this.config.maxActiveAuthors,
+			this.config.budgets.authorMs + this.config.budgets.setupMs,
+		);
 	}
 
 	async #registerAlias(alias: string): Promise<void> {
@@ -1159,6 +1194,7 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	async #stopAuthor(): Promise<void> {
+		if (this.store.identity()) await this.#authorSlot("release").catch(() => undefined);
 		const aborted = this.harness.abort().catch(() => false);
 		await Promise.race([aborted, new Promise((r) => setTimeout(r, this.config.budgets.cancelMs))]);
 		if (this.store.identity())
@@ -1214,6 +1250,7 @@ export class CaseDO extends DurableObject<Env> {
 		if (round?.open) {
 			const current = this.store.getMeta<RoundState>("round")!;
 			this.store.setMeta("round", { ...current, open: false });
+			await this.#authorSlot("release");
 			const result = await this.harness.wait(current.operationId).catch(() => undefined);
 			this.store.log("round.end", {
 				round: current.round,
@@ -1251,9 +1288,22 @@ export class CaseDO extends DurableObject<Env> {
 			this.store.latestCandidate() &&
 			!this.store.publication(`publish:${this.store.latestCandidate()!.id}`);
 		if (pending.length > 0 && !handoff && !publishing && !unpublished) {
+			const slot = await this.#authorSlot("acquire");
+			if (!slot.granted) {
+				if (this.store.getMeta<boolean>("waitingForSlot") !== true) {
+					this.store.setMeta("waitingForSlot", true);
+					this.store.log("round.waiting-for-slot", {
+						holders: slot.holders,
+						limit: this.config.maxActiveAuthors,
+					});
+				}
+				return { rescheduleAt: Date.now() + Math.max(this.config.reconcileMs, 30_000) };
+			}
+			this.store.setMeta("waitingForSlot", false);
 			try {
 				await this.#startRound();
 			} catch (error) {
+				await this.#authorSlot("release").catch(() => undefined);
 				const failures = (this.store.getMeta<number>("startFailures") ?? 0) + 1;
 				this.store.setMeta("startFailures", failures);
 				this.store.log("round.start-failed", { error: errorMessage(error), failures });
@@ -1513,6 +1563,7 @@ export class CaseDO extends DurableObject<Env> {
 			handoff: this.store.getMeta("handoff"),
 			status: await this.status(),
 			tokens: this.store.getMeta("tokens") ?? 0,
+			cacheReadTokens: this.store.getMeta("cacheReadTokens") ?? 0,
 			requirements: this.store.requirements(),
 			events: this.store.events(),
 			checkpoints: this.store.checkpoints(),

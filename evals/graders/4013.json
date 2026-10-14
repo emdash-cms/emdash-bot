@@ -3,7 +3,11 @@
 	"status": "unvalidated",
 	"referenceCommit": "669cf31456ce79383f821927dd6d0305ed4e5dd5",
 	"tests": ["packages/admin/tests/components/LoginPage.test.tsx"],
-	"setup": ["pnpm install --frozen-lockfile", "pnpm build"],
+	"setup": [
+		"pnpm install --frozen-lockfile",
+		"pnpm build",
+		"pnpm --filter @emdash-cms/admin exec playwright install chromium"
+	],
 	"commands": [
 		"pnpm --filter @emdash-cms/admin exec vitest run tests/components/LoginPage.test.tsx"
 	],

@@ -10,6 +10,12 @@ RUN apt-get update \
     && corepack prepare pnpm@10.33.4 --activate \
     && git config --system advice.detachedHead false
 
+# Browser tests (EmDash admin uses Vitest browser mode with Playwright). The
+# egress gate blocks browser downloads at runtime, so Chromium is baked in at
+# the Playwright version EmDash pins. Update it with EmDash's Playwright.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx -y playwright@1.61.1 install --with-deps chromium && rm -rf /root/.npm
+
 COPY --from=docker.io/cloudflare/sandbox:1.0.1 /usr/local/bin/sandbox-shim /usr/local/bin/sandbox-shim
 
 RUN mkdir /workspace

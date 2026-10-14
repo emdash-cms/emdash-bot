@@ -74,6 +74,8 @@ export interface BotConfig {
 		readonly baseDelayMs: number;
 		readonly maxAgentDelayMs: number;
 	};
+	/** Author rounds that may run at once per repository (the plan starts live operation at one). */
+	readonly maxActiveAuthors: number;
 	/** Interval of the case reconciliation heartbeat. */
 	readonly reconcileMs: number;
 	/** Author and committer of published commits. */
@@ -119,6 +121,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		gitRemoteBase: raw.gitRemoteBase ?? "https://github.com",
 		maxArtifactBytes: raw.maxArtifactBytes ?? 8 * 1024 * 1024,
 		reconcileMs: raw.reconcileMs ?? 15_000,
+		maxActiveAuthors: raw.maxActiveAuthors ?? 1,
 		modelRetry: { maxRetries: 8, baseDelayMs: 5_000, maxAgentDelayMs: 120_000, ...raw.modelRetry },
 		commitAuthor: raw.commitAuthor ?? {
 			name: raw.botLogin,
