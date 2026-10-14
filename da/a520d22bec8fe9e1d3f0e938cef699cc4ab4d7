@@ -1,0 +1,27 @@
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_1a2af99ce6eaa1 112-115
+src/config.ts
+  s_4c97aa8e7b616f::t_22f71f6e2a5bfc 71-76,122
+src/source/workspace.ts
+  s_4c97aa8e7b616f::t_02f4b956156064 41-48,54,59-94,97-98,103-105,107,111-112,114
+test/harness.ts
+  s_4c97aa8e7b616f::t_1ec7337db25209 57-64
+test/workers/delivery.test.ts
+  s_4c97aa8e7b616f::t_4bada1db29237b 1-2,56-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "daa520d22bec8fe9e1d3f0e938cef699cc4ab4d7",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
