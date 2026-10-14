@@ -36,6 +36,7 @@ export default defineConfig({
 			REPOSITORIES: bindings.durableObject({ worker: name, exportName: "RepositoryDO" }),
 			ARTIFACTS: bindings.r2({ name: `${name}-artifacts` }),
 			AI: bindings.ai(),
+			CF_VERSION_METADATA: bindings.versionMetadata(),
 			BOT_CONFIG: bindings.json(staging),
 			GITHUB_WEBHOOK_SECRET: bindings.secret(),
 			OPERATOR_TOKEN: bindings.secret(),

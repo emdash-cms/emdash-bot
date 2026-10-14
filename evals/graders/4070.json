@@ -1,0 +1,12 @@
+{
+	"id": "4070",
+	"status": "unvalidated",
+	"referenceCommit": "c54075f9b074c8d22c90b177887645861771305b",
+	"tests": ["packages/core/tests/workerd/create-field-column-limit-d1.test.ts"],
+	"setup": ["pnpm install --frozen-lockfile", "pnpm build"],
+	"commands": [
+		"pnpm --filter emdash exec vitest run --config vitest.workerd.config.ts tests/workerd/create-field-column-limit-d1.test.ts"
+	],
+	"expectedOriginalFailure": "The reference tests fail on the starting commit for the reported behaviour. Confirm with `pnpm evals validate --case 4070` before scoring.",
+	"note": "Reference tests come from the historical PR head and are never shown to the author. Accept correct alternative implementations; do not grade similarity to the reference diff."
+}

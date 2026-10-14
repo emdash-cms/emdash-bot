@@ -8,7 +8,13 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from "agents/lifecycle";
 import authorSkill from "../../skills/emdash-author/SKILL.md?raw";
-import { type BotConfig, faultsEnabled, readConfig, repositoryFor } from "../config.ts";
+import {
+	type BotConfig,
+	faultsEnabled,
+	parseModelRef,
+	readConfig,
+	repositoryFor,
+} from "../config.ts";
 import { type ExecBackend, REPO_DIR, openBackend } from "../execution/backend.ts";
 import { SandboxExecutionEnv } from "../execution/env.ts";
 import { writeToken } from "../github/auth.ts";
@@ -964,6 +970,9 @@ export class CaseDO extends DurableObject<Env> {
 				roundNumber,
 			);
 		});
+		const fixtureModel = this.store.getMeta<string>("fixtureModel");
+		if (fixtureModel && faultsEnabled(this.config))
+			await this.harness.session().setModel(parseModelRef(fixtureModel));
 		const prompt = this.#roundPrompt(round, pending);
 		const receipt = await this.harness.submit(prompt, { operationId });
 		this.store.log("round.start", {
@@ -1528,6 +1537,14 @@ export class CaseDO extends DurableObject<Env> {
 					}
 				: null,
 		};
+	}
+
+	/** Staging only: fixture overrides recorded by the authenticated eval controller. */
+	async setFixture(fixture: { model?: string }): Promise<{ accepted: boolean }> {
+		if (!faultsEnabled(this.config)) return { accepted: false };
+		if (fixture.model) this.store.setMeta("fixtureModel", fixture.model);
+		this.store.log("fixture.set", fixture);
+		return { accepted: true };
 	}
 
 	async armFault(boundary: string, attempt?: string): Promise<{ armed: boolean }> {

@@ -1,0 +1,10 @@
+{
+	"name": "pi-staging",
+	"url": "https://emdash-bot-pi.emdash-cms.workers.dev",
+	"owner": "emdash-cms",
+	"repoPrefix": "emdash-bot-pi-eval-",
+	"intakeLabel": "emdash-bot",
+	"reviewActor": "ascorbic",
+	"emdashCheckout": "../emdash",
+	"pollMs": 15000
+}

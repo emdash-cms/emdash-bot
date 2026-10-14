@@ -1,0 +1,12 @@
+{
+	"id": "4013",
+	"status": "unvalidated",
+	"referenceCommit": "669cf31456ce79383f821927dd6d0305ed4e5dd5",
+	"tests": ["packages/admin/tests/components/LoginPage.test.tsx"],
+	"setup": ["pnpm install --frozen-lockfile", "pnpm build"],
+	"commands": [
+		"pnpm --filter @emdash-cms/admin exec vitest run tests/components/LoginPage.test.tsx"
+	],
+	"expectedOriginalFailure": "The reference tests fail on the starting commit for the reported behaviour. Confirm with `pnpm evals validate --case 4013` before scoring.",
+	"note": "Reference tests come from the historical PR head and are never shown to the author. Accept correct alternative implementations; do not grade similarity to the reference diff."
+}

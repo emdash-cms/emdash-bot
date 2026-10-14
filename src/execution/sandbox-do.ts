@@ -56,6 +56,7 @@ export class SandboxDO extends DurableObject<Env> {
 			container.start({
 				image: container.images.workspace!,
 				enableInternet: false,
+				instance: "standard-3",
 				labels: { case: scope.caseId.slice(0, 63) },
 			});
 		}

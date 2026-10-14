@@ -4,7 +4,9 @@ import { type BotConfig, readConfig, repositoryFor } from "./config.ts";
 import { writeToken } from "./github/auth.ts";
 import { GitHubClient } from "./github/client.ts";
 import { verifySignature, normalize } from "./github/webhook.ts";
-import { constantTimeEqual, json, rpc, text } from "./util.ts";
+import { constantTimeEqual, json, rpc, sha256Hex, text } from "./util.ts";
+import { AUTHOR_METHOD } from "./tools/case-tools.ts";
+import authorSkill from "../skills/emdash-author/SKILL.md?raw";
 import { openBackend } from "./execution/backend.ts";
 import { captureSource, prepareCheckout } from "./source/workspace.ts";
 import { cases, repositories } from "./bindings.ts";
@@ -212,6 +214,9 @@ async function operator(
 			await stub.operatorResume(actor, body);
 			return json({ resumed: true });
 		}
+		if (request.method === "POST" && action === "fixture") {
+			return json(await stub.setFixture((await request.json()) as { model?: string }));
+		}
 		if (request.method === "POST" && action === "faults") {
 			const body = (await request.json()) as { boundary: string; attempt?: string };
 			return json(await stub.armFault(body.boundary, body.attempt));
@@ -226,8 +231,24 @@ export default {
 		if (request.method === "POST" && url.pathname === "/webhooks/github")
 			return webhook(request, env);
 		if (url.pathname.startsWith("/ops/")) return operator(request, env, ctx, url);
-		if (url.pathname === "/")
-			return json({ service: "emdash-bot-pi", profile: readConfig(env).profile });
+		if (url.pathname === "/") {
+			const config = readConfig(env);
+			const version = (env as { CF_VERSION_METADATA?: { id?: string; tag?: string } })
+				.CF_VERSION_METADATA;
+			return json({
+				service: "emdash-bot-pi",
+				profile: config.profile,
+				...(authorized(request, env)
+					? {
+							version: version?.id ?? null,
+							authorModel: config.authorModel,
+							promptHash: await sha256Hex(AUTHOR_METHOD),
+							skillHash: await sha256Hex(authorSkill),
+							budgets: config.budgets,
+						}
+					: {}),
+			});
+		}
 		return json({ error: "not found" }, 404);
 	},
 } satisfies ExportedHandler<Env>;

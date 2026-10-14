@@ -1,0 +1,8 @@
+{
+	"id": "delivery-greeting",
+	"status": "validated",
+	"tests": [],
+	"setup": [],
+	"commands": ["node test.js"],
+	"note": "The fixture's own test is the grader."
+}

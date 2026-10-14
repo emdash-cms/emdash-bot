@@ -11,7 +11,7 @@
 		}
 	],
 	"maintainers": ["ascorbic"],
-	"reviewers": ["emdashbot[bot]"],
+	"reviewers": ["emdashbot[bot]", "ascorbic"],
 	"authorModel": "cloudflare:@cf/moonshotai/kimi-k2.7-code",
 	"thinkingLevel": "medium",
 	"checks": {
@@ -20,5 +20,14 @@
 		"required": ["test"]
 	},
 	"gatewayId": "default",
-	"intakeLabel": "emdash-bot"
+	"intakeLabel": "emdash-bot",
+	"repositoryPattern": "^emdash-cms/emdash-bot-pi-eval-[a-z0-9-]+$",
+	"defaultRepository": {
+		"focusedChecks": {
+			"node-test": "node test.js",
+			"pnpm-filter": "pnpm --filter",
+			"vitest-root": "pnpm exec vitest run"
+		},
+		"prepare": "if [ -f pnpm-lock.yaml ]; then corepack enable >/dev/null 2>&1 || true; pnpm install --frozen-lockfile; fi"
+	}
 }

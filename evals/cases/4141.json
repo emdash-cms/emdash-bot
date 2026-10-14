@@ -1,0 +1,28 @@
+{
+	"id": "4141",
+	"kind": "fix",
+	"behaviour": "Straightforward table-paste fix and ordinary publication.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "2244d2c8b098e6bbff41df08c68d7bf1bd78ad5f",
+		"note": "Parent of the bot's first commit on the historical PR. Fixture repositories receive a single-commit snapshot of this tree, without later history."
+	},
+	"issue": {
+		"title": "Admin editor rejects an entire paste when a Google Docs table has an aligned cell or a merged cell (TableCellSafety)",
+		"body": "### Description\n\nSince the table paste safety check landed (#2934, `packages/admin/src/components/editor/TableCellSafety.ts`), pasting rich text that contains a table from Google Docs into a Portable Text field in the admin editor is rejected **as a whole** whenever the table has either:\n\n1. a cell whose paragraph carries `text-align` (any centred or right-aligned cell), or\n2. a merged cell (`colspan`) together with a `<colgroup>` (Google Docs always emits one).\n\nNothing is inserted, not even the paragraphs around the table, and the editor shows: \"This table has unsupported cell formatting, merged cells, or column widths. Paste it as plain text or simplify the table and try again.\"\n\nExpected: the paste lands and the editor keeps what it can represent, dropping the alignment or the merge (which is what 0.34 did), or at least inserts the non-table content and reports only the table. Rejecting the entire paste pushes editors to \"paste as plain text\", which loses every heading, link and mark in the draft.\n\nVerified on `emdash` / `@emdash-cms/admin` 1.1.0 against 0.34.0 with the same clipboard payloads (dispatched `paste` ClipboardEvent and real clipboard + Ctrl+V in headless Chromium gave identical results). The same code is present in 1.2.0 and on `main`.\n\nWhy, from reading the bundle and the source:\n\n- `cellContentStatus` returns `invalid-table` as soon as a cell paragraph has `attrs.textAlign` set. The TextAlign extension sets it from `style=\"text-align:\u2026\"` on paste, so any aligned cell fails.\n- `validColumnWidths(colwidth, colspan)` requires `colwidth.length === colspan`. TipTap's `parseColgroupWidth` (in `@tiptap/extension-table`) yields a single `[width]` for a cell even when it spans two columns, so a Docs merge with a `<colgroup>` always fails. Word emits no `<colgroup>`, so a Word merge alone passes while a Word centred cell still fails.\n\nPastes without a table, and tables without alignment or merges (column widths included), behave identically on 0.34 and 1.1.\n\n### Steps to reproduce\n\n1. On a site running emdash 1.1.0 (or 1.2.0), open an entry with a Portable Text field in the admin editor and place the cursor in an empty top-level paragraph.\n2. Paste HTML with `text/html` set to the Google Docs style payload below (a heading, a paragraph with bold, and a 2x2 table with a centred header row):\n\n```html\n<meta charset=\"utf-8\"><b style=\"font-weight:normal;\" id=\"docs-internal-guid-1\">\n<h1 dir=\"ltr\"><span style=\"font-weight:400;\">Heading</span></h1>\n<p dir=\"ltr\"><span style=\"font-weight:400;\">Intro with </span><span style=\"font-weight:700;\">bold</span><span style=\"font-weight:400;\"> text.</span></p>\n<table style=\"border:none;border-collapse:collapse;\"><colgroup><col width=\"208\" /><col width=\"208\" /></colgroup><tbody>\n<tr><td style=\"border:solid #000 1pt;padding:5pt;\"><p dir=\"ltr\" style=\"text-align:center;\"><span style=\"font-weight:700;\">Header A</span></p></td>\n<td style=\"border:solid #000 1pt;padding:5pt;\"><p dir=\"ltr\" style=\"text-align:center;\"><span style=\"font-weight:700;\">Header B</span></p></td></tr>\n<tr><td style=\"border:solid #000 1pt;padding:5pt;\"><p dir=\"ltr\"><span style=\"font-weight:400;\">Row1 A</span></p></td>\n<td style=\"border:solid #000 1pt;padding:5pt;\"><p dir=\"ltr\"><span style=\"font-weight:400;\">Row1 B</span></p></td></tr>\n</tbody></table></b>\n```\n\n3. Observe: nothing is inserted, the heading and paragraph included, and the message above appears.\n4. Remove the two `text-align:center;` styles and paste again: everything lands, table included.\n5. Variant for merged cells: keep the `<colgroup>` and make the first header cell `<td colspan=\"2\">` with no alignment anywhere: rejected again. Remove the `<colgroup>` (Word-style payload): accepted.\n6. On 0.34.0 the payloads from steps 2 and 5 are both accepted; the alignment or the merge is dropped silently.\n\n### Environment\n\n- emdash version: 1.1.0 (`@emdash-cms/admin` 1.1.0; same code in 1.2.0 and `main`); regression from 0.34.0\n- Node.js version: 24 (Astro node adapter, standalone server)\n- Runtime: Node\n- OS: Linux (reproduction in headless Chromium via Playwright)\n\n### Screenshots\n\nNot applicable. The visible result is the rejection message quoted above with an unchanged document; I can attach the editor screenshots from the reproduction on request.\n\n### Logs / error output\n\n```shell\nEditor message after paste:\nThis table has unsupported cell formatting, merged cells, or column widths. Paste it as plain text or simplify the table and try again.\n```\n",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/4135"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 4,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": ["CI on the published commit (EmDash workflows)", "independent review"],
+	"graded": [
+		"issue acceptance criteria",
+		"private behavioural tests",
+		"adjacent invariants",
+		"changeset/docs/localization when applicable"
+	]
+}
