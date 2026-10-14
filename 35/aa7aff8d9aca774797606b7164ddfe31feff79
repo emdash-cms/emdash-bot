@@ -1,0 +1,33 @@
+README.md
+  s_4c97aa8e7b616f::t_6726d30f11a4f2 1,3,5,7,9-16,20-22,25,27,29-40,44
+docs/reviewer-findings.md
+  s_4c97aa8e7b616f::t_c88927f3b5defa 1-24
+docs/staging.md
+  s_4c97aa8e7b616f::t_46adc0f02880bc 1-48
+scripts/ops.ts
+  s_4c97aa8e7b616f::t_62b3c459e12fe5 11-12,28,116-153,155-157
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_77314adcbe33a1 31,60-67,194-195,199-205,670,686-709,984-986,990-993,1003-1006,1277-1288,1612-1654
+src/github/client.ts
+  s_4c97aa8e7b616f::t_18be55c210615b 30,34
+src/index.ts
+  s_4c97aa8e7b616f::t_326b0e94604b4c 192-232,258-265
+test/workers/delivery.test.ts
+  s_4c97aa8e7b616f::t_1c49a175b4eec6 56-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "35aa7aff8d9aca774797606b7164ddfe31feff79",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
