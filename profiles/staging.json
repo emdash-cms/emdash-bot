@@ -1,15 +1,24 @@
 {
 	"profile": "staging",
 	"botLogin": "emdash-bot-pi[bot]",
-	"repositories": [],
-	"maintainers": [],
-	"reviewers": [],
+	"repositories": [
+		{
+			"id": 1419114614,
+			"fullName": "emdash-cms/emdash-bot-pi-fixture",
+			"focusedChecks": {
+				"test": "node test.js"
+			}
+		}
+	],
+	"maintainers": ["ascorbic"],
+	"reviewers": ["emdashbot[bot]"],
 	"authorModel": "cloudflare:@cf/moonshotai/kimi-k2.7-code",
 	"thinkingLevel": "medium",
 	"checks": {
-		"code": [],
-		"administrative": [],
-		"required": []
+		"code": ["test"],
+		"administrative": ["PR Maintenance"],
+		"required": ["test"]
 	},
-	"gatewayId": "default"
+	"gatewayId": "default",
+	"intakeLabel": "emdash-bot"
 }

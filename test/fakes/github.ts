@@ -35,6 +35,14 @@ export class FakeGitHub {
 	pulls: FakePull[] = [];
 	comments: Array<{ id: number; issue: number; body: string; user: string }> = [];
 	checkRuns: FakeCheckRun[] = [];
+	reviews: Array<{
+		pr: number;
+		id: number;
+		user: { login: string };
+		body: string;
+		commit_id: string;
+		state: string;
+	}> = [];
 	requests: Array<{ method: string; path: string }> = [];
 	commitsCreated: string[] = [];
 	#faults: Array<{ method: string; pattern: RegExp; mode: Mode }> = [];
@@ -130,6 +138,23 @@ export class FakeGitHub {
 		} catch {
 			return null;
 		}
+	}
+
+	/** Open a pull request from an existing branch, as a contributor would. */
+	openPull(head: string, title: string, body: string): FakePull {
+		const pull: FakePull = {
+			number: this.pulls.length + 100,
+			id: this.#nextId++,
+			title,
+			body,
+			head,
+			base: "main",
+			state: "open",
+			draft: false,
+			merged_at: null,
+		};
+		this.pulls.push(pull);
+		return pull;
 	}
 
 	/** Apply the next matching request, then return a 502 as if the response was lost. */
@@ -301,6 +326,9 @@ export class FakeGitHub {
 				mergeable: true,
 				merged: false,
 			});
+		}
+		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/reviews$/))) {
+			return this.#json(this.reviews.filter((r) => r.pr === Number(match![1])));
 		}
 		if (method === "GET" && (match = rest.match(/^\/commits\/([0-9a-f]+)\/check-runs$/))) {
 			return this.#json({

@@ -8,7 +8,7 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { PiHarness } from "agents/harness/pi";
 import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from "agents/lifecycle";
 import authorSkill from "../../skills/emdash-author/SKILL.md?raw";
-import { type BotConfig, faultsEnabled, readConfig } from "../config.ts";
+import { type BotConfig, faultsEnabled, readConfig, repositoryFor } from "../config.ts";
 import { type ExecBackend, REPO_DIR, openBackend } from "../execution/backend.ts";
 import { SandboxExecutionEnv } from "../execution/env.ts";
 import { writeToken } from "../github/auth.ts";
@@ -175,7 +175,8 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	#repoConfig() {
-		return this.config.repositories.find((r) => r.id === this.#identity().repoId);
+		const identity = this.#identity();
+		return repositoryFor(this.config, identity.repoId, identity.repo);
 	}
 
 	async #ensureSandbox(): Promise<void> {
@@ -943,6 +944,7 @@ export class CaseDO extends DurableObject<Env> {
 				await this.#fileAt(".github/PULL_REQUEST_TEMPLATE.md", defaultHead),
 			);
 		}
+		await this.#syncReviews();
 		const latest = this.store.latestCheckpoint();
 		if (!latest || latest.baseCommit !== base)
 			await this.#baseCheckpoint(base, await github.commitTree(base));
@@ -971,6 +973,46 @@ export class CaseDO extends DurableObject<Env> {
 			base,
 			events: pending.map((e) => e.deliveryId),
 		});
+	}
+
+	/** Re-read the configured reviewer's reviews on the live pull request; record any not yet seen. */
+	async #syncReviews(): Promise<void> {
+		const pr = this.store.getMeta<number>("pr") ?? this.#identity().prNumber;
+		if (!pr || this.config.reviewers.length === 0) return;
+		const github = this.#github();
+		const reviews = await github.request<
+			Array<{
+				id: number;
+				user: { login: string } | null;
+				body: string | null;
+				commit_id: string;
+				state: string;
+			}>
+		>("GET", github.repoPath(`/pulls/${pr}/reviews?per_page=100`));
+		for (const review of reviews) {
+			const login = review.user?.login ?? "";
+			if (!this.config.reviewers.some((r) => r.toLowerCase() === login.toLowerCase())) continue;
+			if (this.store.reviews().some((r) => r.reviewId === String(review.id))) continue;
+			const inserted = this.store.insertEvent({
+				deliveryId: `review-sync-${review.id}`,
+				kind: "review",
+				actor: login,
+				provenance: "reviewer:configured",
+				payload: {
+					reviewId: review.id,
+					body: review.body ?? "",
+					commitId: review.commit_id,
+					state: review.state,
+					number: pr,
+					synced: true,
+				},
+				receivedAt: Date.now(),
+			});
+			if (!inserted) continue;
+			const event = this.store.events().at(-1)!;
+			this.#applyReview(event);
+			this.store.markConsumed([event.seq], 0);
+		}
 	}
 
 	#roundPrompt(round: RoundState, events: readonly CaseEvent[]): string {
@@ -1150,9 +1192,21 @@ export class CaseDO extends DurableObject<Env> {
 			try {
 				await this.#startRound();
 			} catch (error) {
-				this.store.log("round.start-failed", { error: errorMessage(error) });
+				const failures = (this.store.getMeta<number>("startFailures") ?? 0) + 1;
+				this.store.setMeta("startFailures", failures);
+				this.store.log("round.start-failed", { error: errorMessage(error), failures });
+				if (failures >= 10) {
+					this.store.setMeta("startFailures", 0);
+					await this.#handoff(
+						`round-start:${Date.now()}`,
+						`the author round could not start: ${errorMessage(error)}`,
+						"fix the configuration, then resume the case",
+					);
+					return;
+				}
 				return { rescheduleAt: Date.now() + Math.max(this.config.reconcileMs, 30_000) };
 			}
+			this.store.setMeta("startFailures", 0);
 			return { rescheduleAt: Date.now() + this.config.reconcileMs };
 		}
 		await this.#schedule("report", Date.now());
@@ -1410,6 +1464,8 @@ export class CaseDO extends DurableObject<Env> {
 	async operatorResume(actor: string, options: { newRound?: string } = {}): Promise<void> {
 		await this.lifecycle.start();
 		this.store.log("operator.resume", { actor, newRound: !!options.newRound });
+		// Resuming is the operator's explicit answer to any handoff.
+		this.store.setMeta("handoff", null);
 		const candidate = this.store.latestCandidate();
 		const publication = candidate ? this.store.publication(`publish:${candidate.id}`) : undefined;
 		if (

@@ -47,6 +47,13 @@ export interface BotConfig {
 	readonly assignee: string;
 	readonly intakeLabel: string;
 	readonly repositories: readonly RepositoryConfig[];
+	/**
+	 * Staging only: also admit repositories whose `owner/name` matches this
+	 * pattern (disposable evaluation fixtures), with `defaultRepository` settings.
+	 * The GitHub App installation remains the second boundary.
+	 */
+	readonly repositoryPattern?: string;
+	readonly defaultRepository?: Omit<RepositoryConfig, "id" | "fullName">;
 	/** Logins treated as maintainers in addition to OWNER/MEMBER/COLLABORATOR. */
 	readonly maintainers: readonly string[];
 	/** Logins of the configured independent reviewer. */
@@ -93,6 +100,8 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		assignee: raw.assignee ?? raw.botLogin,
 		intakeLabel: raw.intakeLabel ?? "emdash-bot",
 		repositories: raw.repositories ?? [],
+		repositoryPattern: profile === "production" ? undefined : raw.repositoryPattern,
+		defaultRepository: raw.defaultRepository,
 		maintainers: raw.maintainers ?? [],
 		reviewers: raw.reviewers ?? [],
 		authorModel: raw.authorModel,
@@ -119,4 +128,19 @@ export function parseModelRef(ref: string): { provider: string; id: string } {
 /** Fault injection exists only outside production. */
 export function faultsEnabled(config: BotConfig): boolean {
 	return config.profile !== "production";
+}
+
+/** The repository settings for an admitted repository, or undefined when it is not allowed. */
+export function repositoryFor(
+	config: BotConfig,
+	id: number | undefined,
+	fullName: string | undefined,
+): RepositoryConfig | undefined {
+	if (id === undefined || !fullName) return undefined;
+	const listed = config.repositories.find((r) => r.id === id);
+	if (listed) return listed.fullName.toLowerCase() === fullName.toLowerCase() ? listed : undefined;
+	if (config.repositoryPattern && new RegExp(config.repositoryPattern).test(fullName)) {
+		return { ...config.defaultRepository, id, fullName };
+	}
+	return undefined;
 }

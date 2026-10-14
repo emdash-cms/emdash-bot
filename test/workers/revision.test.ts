@@ -363,3 +363,72 @@ describe("review repair and asynchronous CI", () => {
 		if (receipt.state !== "pr-ensured") expect(bot.github.pulls).toHaveLength(0);
 	});
 });
+
+describe("adopted pull request revision", () => {
+	it("adopts a PR, reads the reviewer's existing review and repairs it on the same branch", async () => {
+		bot = await startBot();
+		const branch = "fix/greeting";
+		bot.github.git(REPO, ["update-ref", `refs/heads/${branch}`, bot.baseCommit]);
+		const candidate = bot.github.commitFiles(
+			REPO,
+			branch,
+			{ "greet.js": FIX_GREETING.content },
+			"fix: punctuation (incomplete)",
+		);
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{ tool: "write", args: REVISED },
+						{
+							tool: "respond_to_finding",
+							args: { id: "F1", disposition: "addressed", note: "Default added." },
+						},
+						{
+							tool: "submit_candidate",
+							args: { title: "fix: greeting", summary: "Adds the default name." },
+						},
+					],
+				},
+			],
+		};
+		const pull = bot.github.openPull(
+			branch,
+			"fix: greeting",
+			`Original change.\n\n\`\`\`scripted-author\n${JSON.stringify(script)}\n\`\`\`\n`,
+		);
+		bot.github.reviews.push({
+			pr: pull.number,
+			id: 4242,
+			user: { login: REVIEWER },
+			commit_id: candidate,
+			state: "COMMENTED",
+			body: `\`\`\`emdash-review-findings\n${JSON.stringify({ findings: [{ id: "F1", severity: "needs_fixing", title: "Missing default", body: "Handle a missing name." }] })}\n\`\`\``,
+		});
+		await bot.webhook("pull_request", {
+			action: "labeled",
+			sender: { login: "maintainer" },
+			label: { name: "emdash-bot" },
+			pull_request: {
+				id: pull.id,
+				number: pull.number,
+				title: pull.title,
+				body: pull.body,
+				user: { login: "contributor" },
+				head: { ref: branch, sha: candidate, repo: { id: 1001 } },
+			},
+		});
+		const caseId = `1001-pr-${pull.id}`;
+		const record = await bot.waitFor("repair published", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
+		});
+		const head = bot.github.head(REPO, branch)!;
+		expect(bot.github.git(REPO, ["rev-parse", `${head}^`])).toBe(candidate);
+		expect(bot.github.show(REPO, head, "greet.js")).toBe(REVISED.content.trimEnd());
+		expect(bot.github.pulls).toHaveLength(1);
+		expect(record.reviews[0]).toMatchObject({ reviewId: "4242", structured: true });
+		expect(record.findings[0]).toMatchObject({ id: "F1", status: "addressed-by-author" });
+		expect(record.candidates[0].expectedBranchHead).toBe(candidate);
+	});
+});

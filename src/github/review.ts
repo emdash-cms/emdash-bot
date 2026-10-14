@@ -63,7 +63,7 @@ export function parseReview(
 									line: typeof f.line === "number" ? f.line : null,
 									title: f.title ?? String(f.id),
 									body: f.body ?? "",
-									actionable: f.actionable !== false,
+									actionable: f.actionable ?? f.severity !== "suggestion",
 								},
 							]
 						: [],

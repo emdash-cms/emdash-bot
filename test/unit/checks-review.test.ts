@@ -121,3 +121,15 @@ describe("scripted author", () => {
 		expect(nextRound.content).toEqual([{ type: "text", text: "second" }]);
 	});
 });
+
+describe("reviewer severity mapping", () => {
+	it("treats the reviewer's suggestions as non-actionable", () => {
+		const body =
+			'```emdash-review-findings\n{"findings":[{"id":"A","severity":"needs_fixing","title":"a"},{"id":"B","severity":"suggestion","title":"b"}]}\n```';
+		const parsed = parseReview(body, 1, "c", "COMMENTED");
+		expect(parsed.findings.map((f) => [f.id, f.actionable])).toEqual([
+			["A", true],
+			["B", false],
+		]);
+	});
+});

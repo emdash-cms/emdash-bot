@@ -1,6 +1,8 @@
 // Service entrypoint: GitHub webhook intake and the authenticated operator API.
 
-import { readConfig } from "./config.ts";
+import { type BotConfig, readConfig, repositoryFor } from "./config.ts";
+import { writeToken } from "./github/auth.ts";
+import { GitHubClient } from "./github/client.ts";
 import { verifySignature, normalize } from "./github/webhook.ts";
 import { constantTimeEqual, json, rpc, text } from "./util.ts";
 import { openBackend } from "./execution/backend.ts";
@@ -35,11 +37,15 @@ async function webhook(request: Request, env: Env): Promise<Response> {
 		return json({ error: "invalid JSON" }, 400);
 	}
 	const repository = payload.repository as { id?: number; full_name?: string } | undefined;
-	const allowed = config.repositories.find((r) => r.id === repository?.id);
-	if (!allowed || allowed.fullName.toLowerCase() !== repository?.full_name?.toLowerCase()) {
-		return json({ skipped: "repository is not on the allowlist" }, 202);
-	}
-	const normalized = normalize(config, eventName, payload as Parameters<typeof normalize>[2]);
+	const allowed = repositoryFor(config, repository?.id, repository?.full_name);
+	if (!allowed) return json({ skipped: "repository is not on the allowlist" }, 202);
+	const association = await senderAssociation(env, config, allowed.fullName, payload);
+	const normalized = normalize(
+		config,
+		eventName,
+		payload as Parameters<typeof normalize>[2],
+		association,
+	);
 	if ("skip" in normalized) {
 		console.log(
 			JSON.stringify({
@@ -124,6 +130,37 @@ async function sandboxSmoke(
 		};
 	} finally {
 		await backend.destroy().catch(() => undefined);
+	}
+}
+
+/**
+ * Events such as assignment and labeling carry no author association. Resolve
+ * the sender's repository permission so maintainer authority never depends on
+ * comment text. Without a GitHub credential, only configured maintainers count.
+ */
+async function senderAssociation(
+	env: Env,
+	config: BotConfig,
+	repo: string,
+	payload: Record<string, unknown>,
+): Promise<string | undefined> {
+	const action = payload.action;
+	if (!["assigned", "unassigned", "labeled", "unlabeled"].includes(String(action)))
+		return undefined;
+	const login = (payload.sender as { login?: string } | undefined)?.login;
+	if (!login || login.endsWith("[bot]")) return undefined;
+	try {
+		const github = new GitHubClient(config.githubApiUrl, () => writeToken(env, config), repo);
+		const result = await github.raw<{ permission?: string }>(
+			"GET",
+			github.repoPath(`/collaborators/${encodeURIComponent(login)}/permission`),
+		);
+		const permission = result.status === 200 ? result.data.permission : undefined;
+		return permission === "admin" || permission === "maintain" || permission === "write"
+			? "COLLABORATOR"
+			: undefined;
+	} catch {
+		return undefined;
 	}
 }
 

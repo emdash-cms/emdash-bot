@@ -15,7 +15,10 @@
 		"types": "cf workers types",
 		"test": "vp test",
 		"check": "vp check",
-		"fix": "vp check --fix"
+		"fix": "vp check --fix",
+		"deploy:staging": "vp build && cf deploy --prebuilt --secrets-file .env.staging",
+		"ops": "node --experimental-strip-types scripts/ops.ts",
+		"evals": "node --experimental-strip-types evals/bin/evals.ts"
 	},
 	"dependencies": {
 		"@cloudflare/sandbox": "1.0.1",
