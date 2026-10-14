@@ -1,0 +1,19 @@
+IMPLEMENTATION_PLAN.md
+  s_4c97aa8e7b616f::t_a238d0f965b1f9 19,36-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "582569509c73a1fda2993adf4cf44575bd7ba262",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
