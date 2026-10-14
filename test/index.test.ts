@@ -9,14 +9,21 @@ beforeAll(() => {
 afterAll(() => mf.dispose());
 
 describe("worker", () => {
-	it("responds with a greeting", async () => {
+	it("reports the service and profile", async () => {
 		const response = await mf.dispatchFetch("https://example.com/");
-		expect(await response.text()).toBe("EmDash bot scaffold");
+		expect(await response.json()).toEqual({ service: "emdash-bot-pi", profile: "test" });
 	});
 
-	it("serves the JSON API route", async () => {
-		const response = await mf.dispatchFetch("https://example.com/api/hello");
-		expect(response.headers.get("content-type")).toContain("application/json");
-		expect(await response.json()).toEqual({ hello: "world" });
+	it("rejects unsigned webhooks", async () => {
+		const response = await mf.dispatchFetch("https://example.com/webhooks/github", {
+			method: "POST",
+			body: "{}",
+		});
+		expect(response.status).toBe(503);
+	});
+
+	it("requires the operator token", async () => {
+		const response = await mf.dispatchFetch("https://example.com/ops/cases/x");
+		expect(response.status).toBe(401);
 	});
 });

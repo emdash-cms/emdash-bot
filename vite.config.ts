@@ -7,6 +7,8 @@ export default defineConfig({
 	plugins: process.env.VITEST ? [] : [cloudflare()],
 	test: {
 		globalSetup: "./test/global-setup.ts",
+		testTimeout: 90_000,
+		hookTimeout: 30_000,
 	},
 	lint: {
 		ignorePatterns: [".cloudflare/**", ".wrangler/**", "dist/**"],

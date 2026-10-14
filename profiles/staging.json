@@ -1,0 +1,10 @@
+{
+	"profile": "staging",
+	"botLogin": "emdash-bot-pi[bot]",
+	"repositories": [],
+	"maintainers": [],
+	"reviewers": [],
+	"authorModel": "cloudflare:@cf/moonshotai/kimi-k2.7-code",
+	"thinkingLevel": "medium",
+	"checks": { "code": [], "administrative": [], "required": [] }
+}
