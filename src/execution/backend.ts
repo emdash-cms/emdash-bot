@@ -107,7 +107,6 @@ export class SandboxExecBackend implements ExecBackend {
 }
 
 export interface BackendEnv {
-	readonly SANDBOX?: unknown;
 	readonly EXEC_FAKE?: unknown;
 }
 
@@ -119,9 +118,15 @@ export interface SandboxScope {
 	readonly repo: string;
 }
 
-export function openBackend(env: BackendEnv, name: string, scope: SandboxScope): ExecBackend {
-	if (env.EXEC_FAKE) return new FetchExecBackend(env.EXEC_FAKE as Fetcher, name);
-	const namespace = sandboxes(env);
+export function openBackend(
+	env: object,
+	exports: unknown,
+	name: string,
+	scope: SandboxScope,
+): ExecBackend {
+	const fake = (env as BackendEnv).EXEC_FAKE;
+	if (fake) return new FetchExecBackend(fake as Fetcher, name);
+	const namespace = sandboxes(exports);
 	if (!namespace) throw new Error("no execution backend is configured");
 	return new SandboxExecBackend(namespace.getByName(name), name, scope);
 }

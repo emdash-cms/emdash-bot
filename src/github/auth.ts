@@ -101,16 +101,18 @@ async function installationToken(
 	return data.token;
 }
 
-export async function writeToken(secrets: GitHubSecrets, config: BotConfig): Promise<string> {
+export async function writeToken(env: object, config: BotConfig): Promise<string> {
+	const secrets = env as GitHubSecrets;
 	if (secrets.GITHUB_TOKEN) return secrets.GITHUB_TOKEN;
 	return installationToken(secrets, config, undefined, undefined);
 }
 
 export async function readOnlyToken(
-	secrets: GitHubSecrets,
+	env: object,
 	config: BotConfig,
 	repo: string,
 ): Promise<string | undefined> {
+	const secrets = env as GitHubSecrets;
 	if (secrets.GITHUB_TOKEN) return secrets.GITHUB_TOKEN;
 	if (!secrets.GITHUB_APP_ID) return undefined;
 	return installationToken(secrets, config, { contents: "read", metadata: "read" }, repo);

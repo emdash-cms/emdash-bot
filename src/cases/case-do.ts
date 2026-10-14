@@ -164,7 +164,7 @@ export class CaseDO extends DurableObject<Env> {
 
 	#authorSandbox(): ExecBackend {
 		const identity = this.#identity();
-		return openBackend(this.env, `author-${identity.caseId}`, {
+		return openBackend(this.env, this.ctx.exports, `author-${identity.caseId}`, {
 			caseId: identity.caseId,
 			repo: identity.repo,
 		});
@@ -1169,7 +1169,10 @@ export class CaseDO extends DurableObject<Env> {
 			artifacts: this.env.ARTIFACTS,
 			generation: this.store.generation(),
 			openSandbox: (name) =>
-				openBackend(this.env, name, { caseId: identity.caseId, repo: identity.repo }),
+				openBackend(this.env, this.ctx.exports, name, {
+					caseId: identity.caseId,
+					repo: identity.repo,
+				}),
 			fault: (boundary) => this.#fault(boundary),
 			registerAlias: (alias) => this.#registerAlias(alias),
 			pullRequestTemplate: async () => this.store.getMeta<string | null>("prTemplate") ?? null,
@@ -1440,6 +1443,35 @@ export class CaseDO extends DurableObject<Env> {
 			});
 		}
 		await this.#schedule("reconcile", Date.now());
+	}
+
+	/** One read-only model turn with no sandbox, for deployment smoke checks. */
+	async modelSmoke(prompt: string): Promise<Record<string, unknown>> {
+		await this.lifecycle.start();
+		const started = Date.now();
+		const result = await this.harness.prompt(prompt, { operationId: `smoke-${started}` });
+		const assistant = result.messages
+			.flatMap(
+				(entry) => ((entry as { model?: unknown[] }).model ?? []) as Array<Record<string, unknown>>,
+			)
+			.filter((m) => m.role === "assistant")
+			.at(-1);
+		return {
+			status: result.status,
+			reason: result.reason,
+			text: result.text,
+			elapsedMs: Date.now() - started,
+			requestedModel: this.config.authorModel,
+			reported: assistant
+				? {
+						provider: assistant.provider,
+						model: assistant.model,
+						responseModel: assistant.responseModel,
+						usage: assistant.usage,
+						diagnostics: assistant.diagnostics,
+					}
+				: null,
+		};
 	}
 
 	async armFault(boundary: string, attempt?: string): Promise<{ armed: boolean }> {

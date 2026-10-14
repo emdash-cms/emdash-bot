@@ -76,6 +76,7 @@ interface Payload {
 	sender?: User;
 	repository?: Repo;
 	assignee?: User;
+	label?: { name?: string };
 	issue?: {
 		id?: number;
 		number?: number;
@@ -150,6 +151,27 @@ function same(a: string | undefined, b: string): boolean {
 	return !!a && a.toLowerCase() === b.toLowerCase();
 }
 
+/** Whether an event assigns or unassigns the bot, through assignment or the intake label. */
+function intakeAction(
+	config: BotConfig,
+	payload: Payload,
+): "assign" | "unassign" | "not-for-bot" | null {
+	const action = payload.action;
+	if (action === "assigned" || action === "unassigned") {
+		if (
+			!same(payload.assignee?.login, config.assignee) &&
+			!same(payload.assignee?.login, config.botLogin)
+		)
+			return "not-for-bot";
+		return action === "assigned" ? "assign" : "unassign";
+	}
+	if (action === "labeled" || action === "unlabeled") {
+		if (!same(payload.label?.name, config.intakeLabel)) return null;
+		return action === "labeled" ? "assign" : "unassign";
+	}
+	return null;
+}
+
 export function botHandle(config: BotConfig): string {
 	return config.botLogin.replace(/\[bot\]$/, "");
 }
@@ -182,13 +204,10 @@ export function normalize(
 		sender,
 		payload.comment?.author_association ?? senderAssociation,
 	);
+	const intake = intakeAction(config, payload);
 
-	if (
-		eventName === "issues" &&
-		(payload.action === "assigned" || payload.action === "unassigned")
-	) {
-		if (!same(payload.assignee?.login, config.botLogin))
-			return { skip: "assignment is not for the bot" };
+	if (eventName === "issues" && intake) {
+		if (intake === "not-for-bot") return { skip: "assignment or label is not for the bot" };
 		if (!maintainer) return { skip: `assignment by ${sender} without maintainer authority` };
 		const issue = payload.issue;
 		if (!issue?.id || !issue.number) return { skip: "issue payload incomplete" };
@@ -209,7 +228,7 @@ export function normalize(
 			body: issue.body ?? "",
 			url: issue.html_url ?? "",
 		};
-		return payload.action === "assigned"
+		return intake === "assign"
 			? {
 					kind: "assigned",
 					actor: sender,
@@ -226,12 +245,8 @@ export function normalize(
 				};
 	}
 
-	if (
-		eventName === "pull_request" &&
-		(payload.action === "assigned" || payload.action === "unassigned")
-	) {
-		if (!same(payload.assignee?.login, config.botLogin))
-			return { skip: "assignment is not for the bot" };
+	if (eventName === "pull_request" && intake) {
+		if (intake === "not-for-bot") return { skip: "assignment or label is not for the bot" };
 		if (!maintainer) return { skip: `assignment by ${sender} without maintainer authority` };
 		const pr = payload.pull_request;
 		if (!pr?.id || !pr.number || !pr.head?.ref) return { skip: "pull request payload incomplete" };
@@ -242,7 +257,7 @@ export function normalize(
 			url: pr.html_url ?? "",
 			headSha: pr.head.sha ?? "",
 		};
-		if (payload.action === "unassigned") {
+		if (intake === "unassign") {
 			return {
 				kind: "unassigned",
 				actor: sender,

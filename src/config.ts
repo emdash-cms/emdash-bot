@@ -40,6 +40,12 @@ export interface BotConfig {
 	readonly profile: Profile;
 	/** The bot account as it appears in webhooks, e.g. `emdash-bot-pi[bot]`. */
 	readonly botLogin: string;
+	/**
+	 * Intake: a maintainer assigns this login (a machine user; GitHub Apps
+	 * cannot be assignees) or applies `intakeLabel` to a specific issue or PR.
+	 */
+	readonly assignee: string;
+	readonly intakeLabel: string;
 	readonly repositories: readonly RepositoryConfig[];
 	/** Logins treated as maintainers in addition to OWNER/MEMBER/COLLABORATOR. */
 	readonly maintainers: readonly string[];
@@ -84,6 +90,8 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 	return {
 		profile,
 		botLogin: raw.botLogin,
+		assignee: raw.assignee ?? raw.botLogin,
+		intakeLabel: raw.intakeLabel ?? "emdash-bot",
 		repositories: raw.repositories ?? [],
 		maintainers: raw.maintainers ?? [],
 		reviewers: raw.reviewers ?? [],

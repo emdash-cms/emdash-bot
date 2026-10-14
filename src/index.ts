@@ -2,7 +2,9 @@
 
 import { readConfig } from "./config.ts";
 import { verifySignature, normalize } from "./github/webhook.ts";
-import { constantTimeEqual, json, rpc } from "./util.ts";
+import { constantTimeEqual, json, rpc, text } from "./util.ts";
+import { openBackend } from "./execution/backend.ts";
+import { captureSource, prepareCheckout } from "./source/workspace.ts";
 import { cases, repositories } from "./bindings.ts";
 
 export { CaseDO } from "./cases/case-do.ts";
@@ -55,6 +57,76 @@ async function webhook(request: Request, env: Env): Promise<Response> {
 	return json(result, 202);
 }
 
+/** Start a sandbox, fetch a repository through the egress gate, and check that other hosts are refused. */
+async function sandboxSmoke(
+	env: Env,
+	exports: unknown,
+	repo: string,
+): Promise<Record<string, unknown>> {
+	const config = readConfig(env);
+	const backend = openBackend(env, exports, `smoke-${Date.now()}`, { caseId: "smoke", repo });
+	const timings: Record<string, number> = {};
+	const step = async <T>(name: string, fn: () => Promise<T>) => {
+		const started = Date.now();
+		try {
+			return await fn();
+		} finally {
+			timings[name] = Date.now() - started;
+		}
+	};
+	try {
+		const tools = await step("start", () =>
+			backend.exec({
+				argv: ["sh", "-c", "node --version; git --version; rg --version | head -1; pnpm --version"],
+			}),
+		);
+		const remote = `${config.gitRemoteBase}/${repo}.git`;
+		const head = await step("ls-remote", () =>
+			backend.exec({ argv: ["git", "ls-remote", remote, "HEAD"], timeoutMs: 120_000 }),
+		);
+		const sha = text(head.stdout).split(/\s/)[0] ?? "";
+		const prepared = sha
+			? await step("checkout", () =>
+					prepareCheckout(backend, { remoteUrl: remote, baseCommit: sha, timeoutMs: 300_000 }),
+				)
+			: null;
+		const capture = sha ? await step("capture", () => captureSource(backend, sha)) : null;
+		const denied = await step("denied", () =>
+			backend.exec({
+				argv: [
+					"node",
+					"-e",
+					"fetch('https://example.com').then(r=>{console.log(r.status);process.exit(r.status===200?0:3)},e=>{console.log(String(e));process.exit(4)})",
+				],
+				timeoutMs: 30_000,
+			}),
+		);
+		const registry = await step("registry", () =>
+			backend.exec({
+				argv: [
+					"node",
+					"-e",
+					"fetch('https://registry.npmjs.org/left-pad').then(r=>{console.log(r.status);process.exit(r.ok?0:3)},e=>{console.log(String(e));process.exit(4)})",
+				],
+				timeoutMs: 30_000,
+			}),
+		);
+		return {
+			tools: text(tools.stdout).trim(),
+			head: sha || text(head.stderr).slice(0, 500),
+			prepared,
+			emptyCapture: capture ? capture.patch.byteLength === 0 : null,
+			exampleComBlocked: denied.exitCode !== 0,
+			exampleCom: text(denied.stdout).trim(),
+			registryReachable: registry.exitCode === 0,
+			registry: text(registry.stdout).trim() || text(registry.stderr).slice(0, 300),
+			timings,
+		};
+	} finally {
+		await backend.destroy().catch(() => undefined);
+	}
+}
+
 function authorized(request: Request, env: Env): boolean {
 	const header = request.headers.get("authorization") ?? "";
 	const token = env.OPERATOR_TOKEN;
@@ -64,7 +136,12 @@ function authorized(request: Request, env: Env): boolean {
 	return constantTimeEqual(a, b);
 }
 
-async function operator(request: Request, env: Env, url: URL): Promise<Response> {
+async function operator(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+	url: URL,
+): Promise<Response> {
 	if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
 	const actor = request.headers.get("x-operator") ?? "operator";
 	const parts = url.pathname.split("/").filter(Boolean).slice(1);
@@ -72,6 +149,15 @@ async function operator(request: Request, env: Env, url: URL): Promise<Response>
 		const stub = repositories(env).getByName(parts[1]);
 		if (parts[2] === "deliveries") return json(await rpc(stub.deliveries()));
 		if (parts[2] === "aliases") return json(await rpc(stub.aliases()));
+	}
+	if (parts[0] === "smoke" && request.method === "POST") {
+		const body = (await request.json().catch(() => ({}))) as { prompt?: string; repo?: string };
+		if (parts[1] === "model") {
+			const stub = cases(env).getByName(`smoke-model-${Date.now()}`);
+			return json(await rpc(stub.modelSmoke(body.prompt ?? "Reply with the single word: ready")));
+		}
+		if (parts[1] === "sandbox")
+			return json(await sandboxSmoke(env, ctx.exports, body.repo ?? "emdash-cms/emdash"));
 	}
 	if (parts[0] === "cases" && parts[1]) {
 		const stub = cases(env).getByName(decodeURIComponent(parts[1]));
@@ -98,11 +184,11 @@ async function operator(request: Request, env: Env, url: URL): Promise<Response>
 }
 
 export default {
-	async fetch(request, env): Promise<Response> {
+	async fetch(request, env, ctx): Promise<Response> {
 		const url = new URL(request.url);
 		if (request.method === "POST" && url.pathname === "/webhooks/github")
 			return webhook(request, env);
-		if (url.pathname.startsWith("/ops/")) return operator(request, env, url);
+		if (url.pathname.startsWith("/ops/")) return operator(request, env, ctx, url);
 		if (url.pathname === "/")
 			return json({ service: "emdash-bot-pi", profile: readConfig(env).profile });
 		return json({ error: "not found" }, 404);

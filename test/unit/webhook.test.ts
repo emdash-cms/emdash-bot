@@ -86,3 +86,20 @@ describe("webhook admission", () => {
 		expect(result).toHaveProperty("skip");
 	});
 });
+
+describe("intake label", () => {
+	it("treats the intake label like an assignment and its removal like unassignment", () => {
+		const labeled = (action: string, name: string, login = "maintainer") =>
+			normalize(config, "issues", {
+				action,
+				repository,
+				sender: { login },
+				label: { name },
+				issue: { id: 5, number: 9, title: "t", body: "b" },
+			});
+		expect(labeled("labeled", "emdash-bot")).toMatchObject({ kind: "assigned" });
+		expect(labeled("unlabeled", "emdash-bot")).toMatchObject({ kind: "unassigned" });
+		expect(labeled("labeled", "bug")).toHaveProperty("skip");
+		expect(labeled("labeled", "emdash-bot", "drive-by")).toHaveProperty("skip");
+	});
+});

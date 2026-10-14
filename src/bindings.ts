@@ -9,7 +9,6 @@ import type { SandboxDO } from "./execution/sandbox-do.ts";
 interface Namespaces {
 	readonly CASES: unknown;
 	readonly REPOSITORIES: unknown;
-	readonly SANDBOX?: unknown;
 }
 
 export function cases(env: Namespaces): DurableObjectNamespace<CaseDO> {
@@ -20,8 +19,7 @@ export function repositories(env: Namespaces): DurableObjectNamespace<Repository
 	return env.REPOSITORIES as DurableObjectNamespace<RepositoryDO>;
 }
 
-export function sandboxes(env: {
-	readonly SANDBOX?: unknown;
-}): DurableObjectNamespace<SandboxDO> | undefined {
-	return env.SANDBOX as DurableObjectNamespace<SandboxDO> | undefined;
+/** The sandbox namespace, from the loopback `ctx.exports` of the calling Worker or Durable Object. */
+export function sandboxes(exports: unknown): DurableObjectNamespace<SandboxDO> | undefined {
+	return (exports as { SandboxDO?: DurableObjectNamespace<SandboxDO> } | undefined)?.SandboxDO;
 }
