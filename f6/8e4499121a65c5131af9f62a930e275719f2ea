@@ -1,0 +1,75 @@
+.github/workflows/evals.yml
+  s_4c97aa8e7b616f::t_ee92a3d73dbabc 1-35
+cloudflare.config.ts
+  s_4c97aa8e7b616f::t_012817d558581e 39
+evals/bin/evals.ts
+  s_4c97aa8e7b616f::t_bacc892f808f7f 1-170
+evals/cases/4013.json
+  s_4c97aa8e7b616f::t_4f43fe6c817f3f 1-28
+evals/cases/4024.json
+  s_4c97aa8e7b616f::t_e400ff910316d2 1-28
+evals/cases/4070.json
+  s_4c97aa8e7b616f::t_a26198b81bc564 1-28
+evals/cases/4074.json
+  s_4c97aa8e7b616f::t_454a71baa8c53b 1-42
+evals/cases/4095.json
+  s_4c97aa8e7b616f::t_26df91b9f9cb72 1-28
+evals/cases/4141.json
+  s_4c97aa8e7b616f::t_5e93477b5511fe 1-28
+evals/cases/delivery-greeting.json
+  s_4c97aa8e7b616f::t_c1f76bfff6ee21 1-66
+evals/controller/attempt.ts
+  s_4c97aa8e7b616f::t_84bf3c77ee3e6c 1-261
+evals/controller/bot.ts
+  s_4c97aa8e7b616f::t_69e9a35c524608 1-30
+evals/controller/github.ts
+  s_4c97aa8e7b616f::t_0229dc2662fb3a 1-37
+evals/controller/grade.ts
+  s_4c97aa8e7b616f::t_3eec3a6ebbe013 1-97
+evals/controller/provision.ts
+  s_4c97aa8e7b616f::t_85014ce227fb8b 1-222
+evals/controller/types.ts
+  s_4c97aa8e7b616f::t_76ae5ca2a09818 1-91
+evals/graders/4013.json
+  s_4c97aa8e7b616f::t_857bebfa428603 1-12
+evals/graders/4024.json
+  s_4c97aa8e7b616f::t_b18591d4b4d888 1-16
+evals/graders/4070.json
+  s_4c97aa8e7b616f::t_bafb2b7944649a 1-12
+evals/graders/4074.json
+  s_4c97aa8e7b616f::t_60a83f891bd265 1-12
+evals/graders/4095.json
+  s_4c97aa8e7b616f::t_8f142c840369f2 1-15
+evals/graders/4141.json
+  s_4c97aa8e7b616f::t_1cddd33de203ad 1-12
+evals/graders/delivery-greeting.json
+  s_4c97aa8e7b616f::t_0e7febaf715a71 1-8
+evals/profiles/pi-staging.json
+  s_4c97aa8e7b616f::t_6b653d574a6e50 1-10
+profiles/staging.json
+  s_4c97aa8e7b616f::t_21603da771d65c 14,23-32
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_03a28ab2298b47 11-17,973-975,1542-1549
+src/execution/sandbox-do.ts
+  s_4c97aa8e7b616f::t_173dfb05926949 59
+src/index.ts
+  s_4c97aa8e7b616f::t_bf77be1f83eb61 7-9,217-219,234-251
+test/unit/evals.test.ts
+  s_4c97aa8e7b616f::t_37304c9931e9f7 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f68e4499121a65c5131af9f62a930e275719f2ea",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
