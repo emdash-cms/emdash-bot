@@ -7,6 +7,7 @@
 //   pnpm evals run --suite initial-six --target pi-staging
 //   pnpm evals resume --attempt <attempt-id>
 //   pnpm evals validate --case 4141
+//   pnpm evals grade-patch --case 4141 --patch candidate.patch   (grade a dry-run artifact)
 //   pnpm evals report
 
 import { spawnSync } from "node:child_process";
@@ -30,6 +31,7 @@ const { positionals, values } = parseArgs({
 		suite: { type: "string" },
 		fault: { type: "string" },
 		attempt: { type: "string" },
+		patch: { type: "string" },
 	},
 });
 
@@ -134,6 +136,28 @@ switch (command) {
 				`Set "status": "validated" in evals/graders/${values.case}.json after reviewing the failure reason.`,
 			);
 		process.exitCode = valid ? 0 : 1;
+		break;
+	}
+	case "grade-patch": {
+		if (!values.case || !values.patch) throw new Error("pass --case and --patch");
+		const { manifest, grader } = loadCase(values.case);
+		const result = grade(grader, {
+			fullName: "",
+			commit: manifest.source.startingCommit!,
+			upstream: `https://github.com/${manifest.source.repo}.git`,
+			patch: join(process.cwd(), values.patch),
+		});
+		const out = join(RESULTS, `grade-patch-${values.case}-${Date.now()}.json`);
+		mkdirSync(RESULTS, { recursive: true });
+		writeFileSync(out, JSON.stringify(result, null, 2));
+		for (const step of result.steps)
+			console.log(
+				`${step.exitCode === 0 ? "ok  " : "FAIL"} ${step.command} (${Math.round(step.durationMs / 1000)}s)`,
+			);
+		console.log(
+			`${result.passed ? "PASSED" : "FAILED"} (grader ${grader.status}); details: ${out}`,
+		);
+		process.exitCode = result.passed ? 0 : 1;
 		break;
 	}
 	case "report": {

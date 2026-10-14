@@ -43,7 +43,7 @@ function run(
  */
 export function grade(
 	grader: GraderManifest,
-	source: { fullName: string; commit: string; upstream?: string },
+	source: { fullName: string; commit: string; upstream?: string; patch?: string },
 ): GradeResult {
 	const work = mkdtempSync(join(tmpdir(), "eval-grade-"));
 	const home = mkdtempSync(join(tmpdir(), "eval-home-"));
@@ -65,6 +65,11 @@ export function grade(
 			source.commit,
 		]);
 		git(["checkout", "-q", "FETCH_HEAD"]);
+		if (source.patch)
+			execFileSync("git", ["apply", "--index", "--binary", source.patch], {
+				cwd: work,
+				env: { PATH: process.env.PATH ?? "", HOME: home },
+			});
 		if (grader.referenceCommit && grader.tests.length > 0) {
 			git([
 				"fetch",
