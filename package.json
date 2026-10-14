@@ -1,8 +1,8 @@
 {
-	"name": "worker-template",
+	"name": "emdash-bot",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Template for standalone Cloudflare Workers",
+	"description": "EmDash issue and pull-request author service built on Pi Durable and Cloudflare",
 	"keywords": [],
 	"license": "MIT",
 	"author": "Matt Kane",

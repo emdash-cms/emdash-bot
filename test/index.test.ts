@@ -11,7 +11,7 @@ afterAll(() => mf.dispose());
 describe("worker", () => {
 	it("responds with a greeting", async () => {
 		const response = await mf.dispatchFetch("https://example.com/");
-		expect(await response.text()).toBe("Hello from worker-template");
+		expect(await response.text()).toBe("EmDash bot scaffold");
 	});
 
 	it("serves the JSON API route", async () => {

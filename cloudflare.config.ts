@@ -1,10 +1,10 @@
-import { bindings, defineConfig } from "cf/config";
+import { defineConfig } from "cf/config";
 import { compatibilityDate, compatibilityFlags } from "./compatibility.ts";
 import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 
 export default defineConfig({
 	worker: {
-		name: "worker-template",
+		name: "emdash-bot",
 		entrypoint,
 		compatibilityDate,
 		compatibilityFlags,

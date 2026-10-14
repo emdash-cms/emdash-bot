@@ -4,6 +4,6 @@ export default {
 		if (url.pathname === "/api/hello") {
 			return Response.json({ hello: "world" });
 		}
-		return new Response("Hello from worker-template");
+		return new Response("EmDash bot scaffold");
 	},
 } satisfies ExportedHandler<Env>;

@@ -1,81 +1,19 @@
 This file provides guidance to agentic coding tools when working with code in this repository.
 
-## ⚠️ Template Setup Required
+## Project scope
 
-**This is currently a template repository.** If you see this message, check if this is a new repo based on the template, by seeing if the git remote is ascorbic/worker-template. If not, you need to set up a new project by updating the following:
+This is the EmDash bot repository, created from `ascorbic/worker-template`. Read [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) before adding runtime code. The current Worker is a scaffold; bot execution, resources, GitHub integration and evals are still proposed.
 
-1. **Worker name**: Update `worker.name` in `cloudflare.config.ts` and `name` in `package.json` to your new Worker name
-2. **README**: Update README.md with your project information
-3. **Test files**: Update the greeting string in `src/index.ts` and the matching assertion in `test/index.test.ts`, and rename the test file if appropriate
-4. **Workers Builds**: Deploys run on Cloudflare's [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/), not GitHub Actions. Tell the user to connect the repository in the Cloudflare dashboard (Worker → **Settings** → **Build**), leaving the build command empty and setting the deploy command to `pnpm run deploy` (`vp build`, then `cf deploy --prebuilt`).
+- Keep Pi Durable as the agent runtime. Add the Cloudflare lifecycle adapter around it; do not introduce a second model/task scheduler.
+- Preserve acknowledged edits in immutable source artifacts independently of containers, and publish only a saved candidate through trusted code.
+- Keep the existing EmDash review service. Findings and exact-head verification determine readiness; publication alone does not.
+- Human approval remains required for merges. Keep deployment and production intake as explicit operator actions.
+- Use `cf-portal` for internal Cloudflare documentation and `cloudflare-api`, `cf` or Wrangler for Cloudflare operations. Do not open the Cloudflare dashboard.
+- Follow the target repository's current instructions and contribution policy when generating its changes. This repository's checks validate the bot, not an EmDash candidate.
 
-5. **GitHub Secrets**: For `CLAUDE_CODE_OAUTH_TOKEN` (used by claude.yml): Tell the user to open Claude Code and run the `/install-github-app` command, which will guide them through setting up the GitHub app and automatically add the secret to their repository. Note: The user must be a repository admin to install the GitHub app and add secrets.
+## Deployment setup
 
-6. **Repository Settings and Branch Protection**: Configure repository settings and branch protection rules using the GitHub CLI. Get the current repository name first:
-
-   ```bash
-   # Get repository name (format: owner/repo)
-   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-
-   # Configure repository settings
-   gh api repos/$REPO --method PATCH \
-     -f allow_squash_merge=true \
-     -f allow_merge_commit=false \
-     -f allow_rebase_merge=false \
-     -f delete_branch_on_merge=true \
-     -f allow_auto_merge=true \
-     -f allow_update_branch=true \
-     -f squash_merge_commit_message=COMMIT_MESSAGES \
-     -f squash_merge_commit_title=COMMIT_OR_PR_TITLE \
-     -f has_wiki=false
-
-   # Create branch protection ruleset for main branch
-   gh api repos/$REPO/rulesets --method POST --input - <<'EOF'
-   {
-     "name": "main",
-     "target": "branch",
-     "enforcement": "active",
-     "conditions": {
-       "ref_name": {
-         "include": ["~DEFAULT_BRANCH"],
-         "exclude": []
-       }
-     },
-     "rules": [
-       {"type": "deletion"},
-       {"type": "non_fast_forward"},
-       {"type": "required_linear_history"},
-       {
-         "type": "pull_request",
-         "parameters": {
-           "required_approving_review_count": 0,
-           "dismiss_stale_reviews_on_push": false,
-           "require_code_owner_review": false,
-           "require_last_push_approval": false,
-           "required_review_thread_resolution": false,
-           "allowed_merge_methods": ["merge", "squash", "rebase"]
-         }
-       },
-       {
-         "type": "required_status_checks",
-         "parameters": {
-           "strict_required_status_checks_policy": true,
-           "do_not_enforce_on_create": true,
-           "required_status_checks": [
-             {"context": "test"},
-             {"context": "Validate PR title"}
-           ]
-         }
-       }
-     ],
-     "bypass_actors": [
-       {"actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always"}
-     ]
-   }
-   EOF
-   ```
-
-After setup, remove this section from AGENTS.md.
+No Cloudflare account, resources or deployment connection has been configured. Resolve staging setup in slice 1. Production deploys should use Workers Builds with the build command empty and deploy command `pnpm run deploy`. The optional template Claude assistant workflow has been removed; no Claude OAuth secret is required by this scaffold.
 
 ## Repository Structure
 

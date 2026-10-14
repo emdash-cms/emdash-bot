@@ -1,33 +1,29 @@
-# worker-template
+# EmDash bot
 
-Template for standalone Cloudflare Workers.
+A planned issue and pull-request author service built on Pi Durable and Cloudflare. It will preserve completed changes through interruptions, feed review findings back into the same task, and use CI plus the existing EmDash reviewer to assess each candidate.
 
-## Stack
+Created from [ascorbic/worker-template](https://github.com/ascorbic/worker-template) at `c735a72c77bb9b5f54ff7bfedba5ad86bfc4d978`. The starter Worker and its smoke tests are present. The bot runtime, Cloudflare resources, GitHub integration and evaluation controller remain to be implemented; start with [the implementation plan](IMPLEMENTATION_PLAN.md).
 
-- [Vite+](https://viteplus.dev/) (`vp`) — dev server, build, test, lint, format, and type checking in one toolchain
-- [`cf`](https://www.npmjs.com/package/cf) — the Cloudflare CLI (technical preview), for deploys and everything Cloudflare
-- [`@cloudflare/vite-plugin`](https://developers.cloudflare.com/workers/vite-plugin/) 2.0, with `cloudflare.config.ts` from `cf/config`
-- Vitest in Node, with integration tests running the built Worker in [Miniflare](https://www.npmjs.com/package/miniflare). No Wrangler
-- TypeScript, pnpm
+## Local development
 
-## Commands
+Use Node 24 and the pnpm version pinned in `package.json`.
 
 ```sh
-pnpm dev      # dev server (with the Cloudflare local explorer at /cdn-cgi/local/explorer)
-pnpm test     # build, then test the Worker in Miniflare
-pnpm check    # format, lint, and type check
-pnpm fix      # same, but auto-fix
-pnpm build    # production build
-pnpm types    # regenerate Env and runtime types
-pnpm deploy   # build and deploy via cf
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-## Configuration
+The starter responds with `EmDash bot scaffold` at `/` and a sample JSON response at `/api/hello`.
 
-- [cloudflare.config.ts](cloudflare.config.ts) — the Worker itself: name, entrypoint, compatibility, bindings. `Env` types are inferred from the bindings you declare here and generated into `.cloudflare/types/` by `cf workers types` (run on install, or with `pnpm types`).
-- [compatibility.ts](compatibility.ts) — compatibility date and flags, shared with the test runtime.
-- [vite.config.ts](vite.config.ts) — everything else: Vite, Vitest, oxlint, and oxfmt in one file.
+```sh
+pnpm check    # formatting, lint and type checking through Vite+
+pnpm test     # build, then run the Worker smoke tests in Miniflare
+pnpm build   # production Worker bundle
+pnpm types   # regenerate Env and runtime types after binding changes
+```
 
-## Template setup
+`cloudflare.config.ts` defines the Worker and its bindings through `cf/config`. `compatibility.ts` shares runtime settings with the test harness; `vite.config.ts` configures Vite+, Vitest, oxlint and oxfmt. Keep the template's toolchain and Miniflare pins together.
 
-This is a template repository. After creating a repo from it, follow the setup steps in [AGENTS.md](AGENTS.md) — or just ask Claude to do it.
+## Deployment
+
+`pnpm deploy` builds and deploys through the `cf` CLI. Account selection, staging resources, credentials and Workers Builds setup are deferred to the implementation plan. No Cloudflare deployment has been configured or performed.
