@@ -1576,8 +1576,9 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	/** One read-only model turn with no sandbox, for deployment smoke checks. */
-	async modelSmoke(prompt: string): Promise<Record<string, unknown>> {
+	async modelSmoke(prompt: string, model?: string): Promise<Record<string, unknown>> {
 		await this.lifecycle.start();
+		if (model) await this.harness.session().setModel(parseModelRef(model));
 		const started = Date.now();
 		const result = await this.harness.prompt(prompt, { operationId: `smoke-${started}` });
 		const assistant = result.messages
@@ -1591,7 +1592,7 @@ export class CaseDO extends DurableObject<Env> {
 			reason: result.reason,
 			text: result.text,
 			elapsedMs: Date.now() - started,
-			requestedModel: this.config.authorModel,
+			requestedModel: model ?? this.config.authorModel,
 			reported: assistant
 				? {
 						provider: assistant.provider,
@@ -1653,6 +1654,37 @@ export class CaseDO extends DurableObject<Env> {
 		return new TextDecoder().decode(
 			await readArtifact(this.env.ARTIFACTS, candidate.artifactKey, candidate.artifactDigest),
 		);
+	}
+
+	/**
+	 * Delete this case's checkpoint artifacts that no checkpoint or candidate
+	 * references and that are older than the grace period. Referenced source
+	 * is never deleted.
+	 */
+	async collectGarbage(
+		graceMs = 7 * 24 * 60 * 60_000,
+	): Promise<{ deleted: string[]; kept: number }> {
+		await this.lifecycle.start();
+		const identity = this.store.identity();
+		if (!identity) return { deleted: [], kept: 0 };
+		const referenced = new Set([
+			...this.store.checkpoints().map((c) => c.artifactKey),
+			...this.store.candidates().map((c) => c.artifactKey),
+		]);
+		const deleted: string[] = [];
+		let kept = 0;
+		let cursor: string | undefined;
+		do {
+			const page = await this.env.ARTIFACTS.list({ prefix: `cases/${identity.caseId}/`, cursor });
+			for (const object of page.objects) {
+				if (referenced.has(object.key) || Date.now() - object.uploaded.getTime() < graceMs) kept++;
+				else deleted.push(object.key);
+			}
+			cursor = page.truncated ? page.cursor : undefined;
+		} while (cursor);
+		if (deleted.length > 0) await this.env.ARTIFACTS.delete(deleted);
+		this.store.log("gc", { deleted: deleted.length, kept });
+		return { deleted, kept };
 	}
 
 	async armFault(boundary: string, attempt?: string): Promise<{ armed: boolean }> {

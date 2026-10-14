@@ -231,10 +231,16 @@ async function operator(
 		return json({ caseId, ...result });
 	}
 	if (parts[0] === "smoke" && request.method === "POST") {
-		const body = (await request.json().catch(() => ({}))) as { prompt?: string; repo?: string };
+		const body = (await request.json().catch(() => ({}))) as {
+			prompt?: string;
+			repo?: string;
+			model?: string;
+		};
 		if (parts[1] === "model") {
 			const stub = cases(env).getByName(`smoke-model-${Date.now()}`);
-			return json(await rpc(stub.modelSmoke(body.prompt ?? "Reply with the single word: ready")));
+			return json(
+				await rpc(stub.modelSmoke(body.prompt ?? "Reply with the single word: ready", body.model)),
+			);
 		}
 		if (parts[1] === "sandbox")
 			return json(await sandboxSmoke(env, ctx.exports, body.repo ?? "emdash-cms/emdash"));
@@ -262,6 +268,10 @@ async function operator(
 			return patch === null
 				? json({ error: "unknown candidate" }, 404)
 				: new Response(patch, { headers: { "content-type": "text/x-diff" } });
+		}
+		if (request.method === "POST" && action === "gc") {
+			const body = (await request.json().catch(() => ({}))) as { graceMs?: number };
+			return json(await rpc(stub.collectGarbage(body.graceMs)));
 		}
 		if (request.method === "POST" && action === "fixture") {
 			return json(await stub.setFixture((await request.json()) as { model?: string }));

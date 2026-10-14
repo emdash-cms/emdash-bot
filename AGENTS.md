@@ -2,7 +2,7 @@ This file provides guidance to agentic coding tools when working with code in th
 
 ## Project scope
 
-This is the EmDash bot repository, created from `ascorbic/worker-template`. Read [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) before adding runtime code. The current Worker is a scaffold; bot execution, resources, GitHub integration and evals are still proposed.
+This is the EmDash bot repository, created from `ascorbic/worker-template`. Read [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) before changing runtime code; its Implementation status section records what is built and proven. Slices 1 to 5 are implemented and deployed to the staging Worker `emdash-bot-pi`.
 
 - Keep Pi Durable as the agent runtime, hosted through `PiHarness` from `agents/harness/pi`; do not write a bespoke lifecycle adapter or introduce a second model/task scheduler.
 - Preserve acknowledged edits in immutable source artifacts independently of containers, and publish only a saved candidate through trusted code.
@@ -13,13 +13,14 @@ This is the EmDash bot repository, created from `ascorbic/worker-template`. Read
 
 ## Deployment setup
 
-No Cloudflare account, resources or deployment connection has been configured. Resolve staging setup in slice 1. Production deploys should use Workers Builds with the build command empty and deploy command `pnpm run deploy`. The optional template Claude assistant workflow has been removed; no Claude OAuth secret is required by this scaffold.
+The EmDash CMS Cloudflare account is the default for this Worker; do not pass an account. `cloudflare.config.ts` configures only the staging Worker `emdash-bot-pi`. Never deploy to the production Worker `emdash-bot` from here. `pnpm run deploy:staging` deploys with secrets from the ignored `.env.staging`. Production deploys (slice 6) should use Workers Builds with the build command empty and deploy command `pnpm run deploy`. Never target `emdash-cms/emdash` from staging or evals, and never reference its issues from fixtures.
 
 ## Repository Structure
 
 A standalone Cloudflare Worker built with Vite+ and the Cloudflare Vite plugin.
 
-- `src/index.ts` — the Worker entrypoint
+- `src/index.ts` — the Worker entrypoint (webhooks and the operator API); bot modules live under `src/` as described in the README
+- `evals/` — the evaluation controller, fixtures and private graders; `scripts/` — operator CLI and GitHub App setup
 - `test/` — Vitest tests in Node. Integration tests run the built Worker in Miniflare (`test/harness.ts`); `test/global-setup.ts` builds it first
 - `cloudflare.config.ts` — Worker configuration, via `defineConfig` from `cf/config` (there is no wrangler.jsonc, and no Wrangler dependency at all)
 - `compatibility.ts` — compatibility date/flags, shared between the Worker config and the test runtime
@@ -29,7 +30,8 @@ A standalone Cloudflare Worker built with Vite+ and the Cloudflare Vite plugin.
 ## Commands
 
 - `pnpm dev` — start the dev server (`vp dev`). `cf dev` and `cf build` expect a `vite` binary, which Vite+ doesn't provide, so use `vp`
-- `pnpm test` — build the Worker, then run tests against it in Miniflare
+- `pnpm test` — build the Worker (including the sandbox image, so Docker is required), then run unit, recovery and revision suites in Miniflare with fake GitHub and sandbox backends
+- `pnpm ops <command>` — operator CLI against the staging Worker; `pnpm evals <command>` — evaluation controller
 - `pnpm check` — format check, lint, and type check in one pass (`vp check`)
 - `pnpm fix` — apply formatting and safe lint fixes
 - `pnpm build` — production build

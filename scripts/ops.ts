@@ -6,6 +6,7 @@
 //   pnpm ops cancel <case-id>
 //   pnpm ops resume <case-id> [--direction "text for a new author round"]
 //   pnpm ops fault <case-id> <boundary>          (staging only)
+//   pnpm ops gc <case-id>                        (unreferenced artifacts older than 7 days)
 //   pnpm ops deliveries <repository-id>
 //   pnpm ops smoke model|sandbox [--repo owner/name]
 //   pnpm ops dry-run <eval-case> [--model provider:id]   (staging only; no GitHub writes)
@@ -107,11 +108,19 @@ switch (command) {
 		if (!extra) throw new Error("usage: ops fault <case-id> <boundary>");
 		print(await call(`cases/${id}/faults`, { boundary: extra }));
 		break;
+	case "gc":
+		print(await call(`cases/${id}/gc`, {}));
+		break;
 	case "deliveries":
 		print(await call(`repositories/${id}/deliveries`));
 		break;
 	case "smoke":
-		print(await call(`smoke/${target ?? "model"}`, values.repo ? { repo: values.repo } : {}));
+		print(
+			await call(`smoke/${target ?? "model"}`, {
+				...(values.repo ? { repo: values.repo } : {}),
+				...(values.model ? { model: values.model } : {}),
+			}),
+		);
 		break;
 	case "dry-run": {
 		const manifest = JSON.parse(readFileSync(`evals/cases/${target}.json`, "utf8")) as {

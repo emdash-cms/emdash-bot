@@ -113,6 +113,12 @@ describe("saved source and trusted publication", () => {
 		const bucket: any = await bot.mf.getR2Bucket("ARTIFACTS");
 		for (const checkpoint of record.checkpoints)
 			expect(await bucket.head(checkpoint.artifactKey)).not.toBeNull();
+		// Garbage collection removes only unreferenced objects past the grace period.
+		await bucket.put(`cases/${caseId}/checkpoints/orphan.patch`, "x");
+		const gc = await bot.ops(`cases/${caseId}/gc`, { body: { graceMs: 0 } });
+		expect(gc.deleted).toEqual([`cases/${caseId}/checkpoints/orphan.patch`]);
+		for (const checkpoint of record.checkpoints)
+			expect(await bucket.head(checkpoint.artifactKey)).not.toBeNull();
 		assertPublishedFix(bot, record, "emdash-bot/issue-27");
 	});
 });

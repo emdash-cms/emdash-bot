@@ -1,10 +1,60 @@
 # EmDash bot implementation plan
 
-Status: proposed bot implementation, prepared 14 October 2026. The template-based repository and starter Worker exist. Bot execution, Cloudflare resources, GitHub integration and evaluation commands have not been implemented.
+Status: slices 1 to 5 implemented and ready for human testing on the staging Worker `emdash-bot-pi`, 14 October 2026. Slice 6 (canary and cutover) is an operator action that has not started. See [Implementation status](#implementation-status) for what is proven, what is measured, and the remaining human steps.
 
 Build an EmDash-specific service around Pi Durable, hosted on Cloudflare Durable Objects. The service must deliver useful fixes with less maintainer repair, preserve completed source changes when execution fails, and carry review findings through subsequent revisions. Implement it in this repository, independently of `infra/emdash-bot` in the EmDash monorepo. Use [ascorbic/worker-template](https://github.com/ascorbic/worker-template) as the foundation; the repository has been generated from its inspected revision `c735a72c77bb9b5f54ff7bfedba5ad86bfc4d978`.
 
-This document defines the architecture, implementation order and acceptance gates. The template commands and configuration described below exist; bot modules, schemas and evaluation commands are proposed interfaces. Validate dependency APIs during the first slice before treating bot examples as executable instructions.
+This document defines the architecture, implementation order and acceptance gates. The modules, schemas and commands it describes now exist; [Implementation status](#implementation-status) records where the implementation deviates from or refines the original proposal.
+
+## Implementation status
+
+Recorded 14 October 2026. Code is on the `implement-plan` branch ([PR #1](https://github.com/emdash-cms/emdash-bot/pull/1)); CI runs `vp check`, the Miniflare suites and the build.
+
+### Evidence by slice
+
+| Slice                                   | Status                                                                            | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1. Pi hosted in a case                  | Gate met locally; deployed smoke done                                             | `test/recovery/lifecycle.test.ts`: `ctx.abort()` mid-tool resumes from the wake alarm, delivery and Pi submissions dedupe, an event during a turn stays pending, an unassigned generation is refused tools, transcript and event log are exported. Deployed read-only model turn through AI Gateway `default` (`pnpm ops smoke model`).                                                                                                                                                                                              |
+| 2. Saved source and trusted publication | Gate met locally                                                                  | `test/recovery/publication.test.ts`: sandbox loss after sealing, branch-update response loss (lost response and reset before receipt), PR-creation response loss, reset after commit creation, reporting failure, and R2 upload before pointer commit. No acknowledged-source loss, duplicate commit, duplicate PR or false completion.                                                                                                                                                                                              |
+| 3. Real author and prepared execution   | Implemented; deployed dry runs in progress; publication gate needs the GitHub App | Pi's read/write/edit/bash run unchanged over `SandboxExecutionEnv`; deployed sandbox smoke proves container start, read-only fetch through the egress gate and blocked hosts. Operator dry runs run the real author on upstream #4141 source with publication disabled. The publication half of the gate needs the staging GitHub App (a human step).                                                                                                                                                                                |
+| 4. Review repair and asynchronous CI    | Gate met locally                                                                  | `test/workers/revision.test.ts`: a structured `COMMENTED` review with green CI starts repair; findings carry across commits with explicit dispositions; old-head checks do not validate a new commit; administrative, infrastructure and stale checks start no repair; one repair round per code failure; a maintainer commit is integrated once or handed off; lost check callbacks are reconciled; cancellation after commit creation is reported accurately; an adopted PR with an existing review is repaired on its own branch. |
+| 5. Evaluation controller                | Implemented; deployed runs need the GitHub App                                    | `pnpm evals` provisions private single-commit fixtures, seeds sanitized issues and historical reviews, triggers through the label webhook, arms faults through the operator API, observes, grades the exact published commit with private reference tests in a credential-free checkout, writes anonymized review diffs, and resumes an interrupted attempt from `state.json`. `pnpm evals recovery --target local` passes. Fixtures for all six cases are pinned; graders are `unvalidated` until `pnpm evals validate` is run.     |
+| 6. Canary and cutover                   | Not started                                                                       | Requires slice 5 deployed results and explicit maintainer approval.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+
+### Refinements to the proposal
+
+- **Intake.** GitHub Apps cannot be issue assignees. A maintainer applies the `emdash-bot` label (configurable) to a specific issue or same-repository PR, or assigns a configured machine-user login. Removal cancels. Sender authority comes from the repository permission API, or configured maintainers when no credential exists.
+- **Effects outside Pi.** Publication, status reporting and reconciliation run as Lifecycle host jobs on the same `CaseDO`. They are trusted effect execution, not a second model or task scheduler; Pi still owns every author turn and tool.
+- **Publication integrity.** The publisher materializes the sealed artifact in a fresh sandbox that has run no candidate code, uploads its blobs, and refuses to create a commit unless GitHub's tree hash equals the sealed tree hash. Commit metadata, including the author date, is recorded in the intent so recovery recreates the identical commit.
+- **Sandbox binding.** The container-backed `SandboxDO` is reached through `ctx.exports.SandboxDO`. `cf/config` always records a script name on Durable Object bindings, and deploy rejects that for a container class.
+- **Environment preparation.** A marker keyed by base commit and preparation command is the environment cache key; preparation reruns when either changes.
+- **Reviewer contract.** [docs/reviewer-findings.md](docs/reviewer-findings.md) specifies the findings block the existing reviewer must add. A configured reviewer's review without a block becomes one actionable finding, so feedback is never dropped.
+- **Operator dry runs.** Staging can admit a case for a public repository at a pinned commit with publication disabled, to measure the real author before GitHub credentials exist. Dry runs are smoke checks, never evaluation scores.
+
+### Measurements
+
+| Measurement                                                         | Value                                         |
+| ------------------------------------------------------------------- | --------------------------------------------- |
+| Worker bundle (main module)                                         | 2.10 MB, 441 KB gzip; lazy chunks 763 KB more |
+| `agents` + Pi alone (slice 1 spike)                                 | 997 KB, 212 KB gzip                           |
+| Worker startup time (deploy report)                                 | 17 ms                                         |
+| Sandbox cold start (standard-3)                                     | 15.2 s                                        |
+| Read-only fetch and checkout, small repository                      | 1.5 s                                         |
+| Depth-1 fetch of EmDash at a pinned commit, including sandbox start | about 16 s                                    |
+| Checkpoint capture of an unchanged tree                             | 0.12 s                                        |
+| First model turn, Kimi K2.7 Code via AI Gateway                     | 19 s cold, about 2 s warm                     |
+
+Workers AI returned `429 Capacity temporarily exceeded` for Kimi K2.7 Code in two of the first three dry runs, after Pi's retries. Model retries are now configurable (default 8 retries from a 5-second base). Vendor models through AI Gateway unified billing return `402 Insufficient unified billing credits` on this account; enabling them is an operator decision.
+
+### Remaining human steps
+
+1. Create and install the staging GitHub App with `scripts/create-github-app.ts`, then `pnpm run deploy:staging` ([docs/staging.md](docs/staging.md)).
+2. Run the manual test script on `emdash-cms/emdash-bot-pi-fixture`.
+3. Validate each historical grader (`pnpm evals validate --case <id>`) and mark it validated after reviewing the failure reason.
+4. Run `pnpm evals recovery --target pi-staging`, then the #4141 and #4074 controls, then the six cases; fill in the human fields of each result summary after blind diff review.
+5. Choose budgets from those runs and freeze them; decide whether to fund vendor models for the writer comparison.
+6. Add the findings block to the EmDash reviewer as a reviewed change in the EmDash repository.
+7. Before slice 6: test backup and restore of case records with their artifacts, and decide the production profile, bot identity and Workers Builds setup.
 
 ## Build order at a glance
 
@@ -202,9 +252,9 @@ Every case tool declares `replay` explicitly and honours `context.abortSignal`. 
 
 Every run has required limits for setup, active author time, individual jobs, total elapsed time, token spend and revision rounds. A job deadline covers sandbox attachment, readiness, source materialization, recovery and the subprocess, rather than starting only after those preparations finish. Also bound cancellation and cleanup. Choose initial values from the first two staging cases, freeze them before the comparison, and record them in each run manifest. Start live operation at one active case; raise concurrency to two after measuring resource contention. Waiting for CI releases the sandbox and active model execution, but still counts toward elapsed time.
 
-## Proposed repository layout
+## Repository layout
 
-Extend the existing template package. Create bot directories as their slices require them; the layout is not a request to scaffold empty modules or build a reusable framework. `Dockerfile`, bot module directories and `evals/` below remain proposed.
+Extend the existing template package. The layout below now exists; `evals/workflows/` is realised as `.github/workflows/evals.yml` because GitHub only runs workflows from that directory.
 
 ```text
 README.md
@@ -382,7 +432,7 @@ Run the deterministic suite first. Then run #4141 and #4074 on Pi once each; sto
 
 Only then compare writer models, holding instructions, tools, starting source and budgets fixed. Record the runtime/provider differences that remain uncontrolled. Expand hold-out coverage when the initial results justify it; do not begin with a large model-by-case sweep.
 
-The proposed CLI is a slice 5 deliverable. These commands do not exist yet:
+The CLI is implemented as `pnpm evals` (`evals/bin/evals.ts`):
 
 ```sh
 pnpm evals recovery --target local
@@ -434,6 +484,16 @@ Resolve these at their named slice and record the result in this document:
 | Historical fixture SHAs and independent behavior tests                                       | Before each quality case runs.                                                                                                                                                                                                                                                                                                                        |
 | Setup, author, job, case and spend budgets                                                   | Slice 3 smoke; freeze before the paired evaluation.                                                                                                                                                                                                                                                                                                   |
 | Live bot identity, assignments and permitted issue participation                             | Slice 6 before enabling production intake.                                                                                                                                                                                                                                                                                                            |
+
+Recorded results, 14 October 2026:
+
+- **Account and resources.** EmDash CMS account (the default for this Worker). Staging Worker `emdash-bot-pi`, R2 bucket `emdash-bot-pi-artifacts`, container application `emdash-bot-pi-sandbox`, AI Gateway `default`. Fixture repository `emdash-cms/emdash-bot-pi-fixture`; evaluation repositories `emdash-cms/emdash-bot-pi-eval-<case>`.
+- **Pinned runtime.** `agents` 0.28.1, `@earendil-works/pi-durable`, `pi-ai` and `chord` 1.2.0, `@cloudflare/sandbox` 1.0.1 with the `cloudflare/sandbox:1.0.1` shim on `node:24-trixie-slim`, compatibility date 2026-10-06 with `nodejs_compat`. The Miniflare-from-Node harness is sufficient for Lifecycle alarms, SQLite and `ctx.abort()`.
+- **Initial writer and routing.** Kimi K2.7 Code on Workers AI through AI Gateway `default`, configurable per profile and per fixture. Gateway logs record the routed model. The writer comparison stays a slice 5 decision.
+- **Reviewer block.** Specified in [docs/reviewer-findings.md](docs/reviewer-findings.md); the reviewer change is a separate EmDash change.
+- **Fixture SHAs.** Pinned in `evals/cases/*.json` as the parent of each historical PR's first bot commit; reference tests and commits in `evals/graders/*.json`. Grader validation is a human step.
+- **Budgets.** Defaults are in `src/config.ts` (setup 15 min, author 45 min per round, job 10 min, case 6 h, 4M tokens, 6 rounds). Freeze them after the first deployed #4141 and #4074 runs.
+- **Bot identity.** Staging uses its own GitHub App, created with `scripts/create-github-app.ts`. The production identity remains a slice 6 decision.
 
 None of these requires creating a generic agent framework. Implement the concrete EmDash contract and leave a reviewed decision where measurements or existing interfaces are still needed.
 
