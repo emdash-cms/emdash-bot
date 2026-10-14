@@ -8,6 +8,8 @@
 //   pnpm ops fault <case-id> <boundary>          (staging only)
 //   pnpm ops deliveries <repository-id>
 //   pnpm ops smoke model|sandbox [--repo owner/name]
+//   pnpm ops dry-run <eval-case> [--model provider:id]   (staging only; no GitHub writes)
+//   pnpm ops artifact <case-id> <candidate-id> [--out file.patch]
 //
 // Target: BOT_URL (default https://emdash-bot-pi.emdash-cms.workers.dev).
 // Token: OPERATOR_TOKEN, else the OPERATOR_TOKEN in .env.staging.
@@ -23,6 +25,7 @@ const { positionals, values } = parseArgs({
 		direction: { type: "string" },
 		repo: { type: "string" },
 		url: { type: "string" },
+		model: { type: "string" },
 	},
 });
 
@@ -110,7 +113,47 @@ switch (command) {
 	case "smoke":
 		print(await call(`smoke/${target ?? "model"}`, values.repo ? { repo: values.repo } : {}));
 		break;
+	case "dry-run": {
+		const manifest = JSON.parse(readFileSync(`evals/cases/${target}.json`, "utf8")) as {
+			source: { repo: string; startingCommit: string };
+			issue: { title: string; body: string };
+		};
+		const repo = (await (
+			await fetch(`https://api.github.com/repos/${manifest.source.repo}`)
+		).json()) as { id: number };
+		const body = manifest.issue.body.replace(
+			/https:\/\/github\.com\/emdash-cms\/emdash\/(issues|pull)\/(\d+)/g,
+			"upstream $1 $2",
+		);
+		print(
+			await call("dry-run", {
+				repo: manifest.source.repo,
+				repoId: repo.id,
+				issueNumber: Number(target) || 1,
+				title: manifest.issue.title,
+				body,
+				baseCommit: manifest.source.startingCommit,
+				focusedChecks: { "pnpm-filter": "pnpm --filter", "vitest-root": "pnpm exec vitest run" },
+				prepare: "corepack enable >/dev/null 2>&1 || true; pnpm install --frozen-lockfile",
+				...(values.model ? { model: values.model } : {}),
+			}),
+		);
+		break;
+	}
+	case "artifact": {
+		const response = await fetch(
+			`${base}/ops/cases/${id}/artifact?candidate=${encodeURIComponent(extra ?? "")}`,
+			{ headers: { authorization: `Bearer ${token}` } },
+		);
+		const patch = await response.text();
+		if (!response.ok) throw new Error(`${response.status}: ${patch}`);
+		if (values.out) writeFileSync(values.out, patch);
+		else process.stdout.write(patch);
+		break;
+	}
 	default:
-		console.error("commands: inspect, status, evidence, cancel, resume, fault, deliveries, smoke");
+		console.error(
+			"commands: inspect, status, evidence, cancel, resume, fault, deliveries, smoke, dry-run, artifact",
+		);
 		process.exit(2);
 }

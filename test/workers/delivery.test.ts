@@ -53,3 +53,36 @@ describe("issue delivery", () => {
 		);
 	});
 });
+
+describe("operator dry run", () => {
+	it("seals a candidate at a pinned commit without any GitHub write", async () => {
+		bot = await startBot();
+		const body = `Fix it.\n\n\`\`\`scripted-author\n${JSON.stringify(fixScript())}\n\`\`\`\n`;
+		const admitted = await bot.ops("dry-run", {
+			body: {
+				repo: REPO,
+				repoId: 1001,
+				issueNumber: 5,
+				title: "Greeting",
+				body,
+				baseCommit: bot.baseCommit,
+				focusedChecks: { test: "node test.js" },
+				model: "scripted:author",
+			},
+		});
+		expect(admitted.accepted).toBe(true);
+		const record = await bot.waitFor("dry run handoff", async () => {
+			const r = await bot!.inspect(admitted.caseId);
+			return r.handoff ? r : null;
+		});
+		expect(record.handoff.reason).toContain("dry run complete");
+		expect(record.candidates).toHaveLength(1);
+		const writes = bot.github.requests.filter((r) => r.method !== "GET");
+		expect(writes).toEqual([]);
+		const patch = await bot.mf.dispatchFetch(
+			`https://bot.test/ops/cases/${admitted.caseId}/artifact?candidate=${record.candidates[0].id}`,
+			{ headers: { authorization: "Bearer test-operator-token" } },
+		);
+		expect(await patch.text()).toContain('+module.exports = (name) => "Hello, " + name + "!";');
+	});
+});

@@ -189,6 +189,47 @@ async function operator(
 		if (parts[2] === "deliveries") return json(await rpc(stub.deliveries()));
 		if (parts[2] === "aliases") return json(await rpc(stub.aliases()));
 	}
+	if (parts[0] === "dry-run" && request.method === "POST") {
+		const body = (await request.json()) as {
+			repo: string;
+			repoId: number;
+			issueNumber: number;
+			title: string;
+			body: string;
+			baseCommit: string;
+			focusedChecks?: Record<string, string>;
+			prepare?: string;
+			model?: string;
+		};
+		const caseId = `dry-${body.repoId}-${body.issueNumber}-${Date.now()}`;
+		const identity = {
+			caseId,
+			repoId: body.repoId,
+			repo: body.repo,
+			kind: "issue" as const,
+			issueId: 0,
+			issueNumber: body.issueNumber,
+			branch: `emdash-bot/dry-run-${body.issueNumber}`,
+			ownsBranch: true,
+			defaultBranch: "main",
+		};
+		const result = await rpc<{ accepted: boolean }>(
+			cases(env)
+				.getByName(caseId)
+				.operatorDryRun(
+					{
+						identity,
+						title: body.title,
+						body: body.body,
+						baseCommit: body.baseCommit,
+						repository: { focusedChecks: body.focusedChecks, prepare: body.prepare },
+						model: body.model,
+					},
+					actor,
+				),
+		);
+		return json({ caseId, ...result });
+	}
 	if (parts[0] === "smoke" && request.method === "POST") {
 		const body = (await request.json().catch(() => ({}))) as { prompt?: string; repo?: string };
 		if (parts[1] === "model") {
@@ -213,6 +254,14 @@ async function operator(
 			const body = (await request.json().catch(() => ({}))) as { newRound?: string };
 			await stub.operatorResume(actor, body);
 			return json({ resumed: true });
+		}
+		if (request.method === "GET" && action === "artifact") {
+			const patch = await rpc<string | null>(
+				stub.artifact(url.searchParams.get("candidate") ?? ""),
+			);
+			return patch === null
+				? json({ error: "unknown candidate" }, 404)
+				: new Response(patch, { headers: { "content-type": "text/x-diff" } });
 		}
 		if (request.method === "POST" && action === "fixture") {
 			return json(await stub.setFixture((await request.json()) as { model?: string }));

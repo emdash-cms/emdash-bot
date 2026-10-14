@@ -27,10 +27,11 @@ export class GitHubClient {
 
 	async raw<T>(method: string, path: string, body?: unknown): Promise<GitHubResponse<T>> {
 		const url = path.startsWith("http") ? path : `${this.baseUrl}${path}`;
+		const token = await this.token();
 		const response = await fetch(url, {
 			method,
 			headers: {
-				authorization: `Bearer ${await this.token()}`,
+				...(token ? { authorization: `Bearer ${token}` } : {}),
 				accept: "application/vnd.github+json",
 				"content-type": "application/json",
 				"user-agent": "emdash-bot-pi",

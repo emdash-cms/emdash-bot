@@ -28,6 +28,7 @@ import { setupModels } from "../runtime/models.ts";
 import { DEFAULT_PRIVILEGED_PREFIXES, PatchRejected, validatePatch } from "../source/patch.ts";
 import {
 	captureSource,
+	git,
 	materialize,
 	prepareCheckout,
 	readState,
@@ -54,6 +55,14 @@ export interface CaseDelivery {
 	readonly provenance: string;
 	readonly payload: Record<string, unknown>;
 	readonly identity?: CaseIdentity;
+}
+
+interface DryRun {
+	readonly baseCommit: string;
+	readonly repository: {
+		readonly focusedChecks?: Readonly<Record<string, string>>;
+		readonly prepare?: string;
+	};
 }
 
 interface Handoff {
@@ -182,7 +191,16 @@ export class CaseDO extends DurableObject<Env> {
 
 	#repoConfig() {
 		const identity = this.#identity();
+		const dryRun = this.#dryRun();
+		if (dryRun) return { id: identity.repoId, fullName: identity.repo, ...dryRun.repository };
 		return repositoryFor(this.config, identity.repoId, identity.repo);
+	}
+
+	/** A staging-only dry run: a pinned base, anonymous reads, and no GitHub writes. */
+	#dryRun(): DryRun | undefined {
+		return faultsEnabled(this.config)
+			? (this.store.getMeta<DryRun>("dryRun") ?? undefined)
+			: undefined;
 	}
 
 	async #ensureSandbox(): Promise<void> {
@@ -649,7 +667,7 @@ export class CaseDO extends DurableObject<Env> {
 	#github(): GitHubClient {
 		return new GitHubClient(
 			this.config.githubApiUrl,
-			() => writeToken(this.env, this.config),
+			() => (this.#dryRun() ? Promise.resolve("") : writeToken(this.env, this.config)),
 			this.#identity().repo,
 		);
 	}
@@ -663,6 +681,30 @@ export class CaseDO extends DurableObject<Env> {
 		if (response.status !== 200 || !response.data?.content) return null;
 		const binary = atob(response.data.content.replace(/\n/g, ""));
 		return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
+	}
+
+	/** Read a file at a commit from the sandbox checkout (no REST API call). */
+	async #sandboxFile(path: string, commit: string): Promise<string | null> {
+		const backend = this.#authorSandbox();
+		await prepareCheckout(backend, {
+			remoteUrl: this.#remoteUrl(),
+			baseCommit: commit,
+			timeoutMs: this.config.budgets.setupMs,
+		});
+		const result = await backend.exec({ argv: git("show", `${commit}:${path}`) });
+		return result.exitCode === 0 ? text(result.stdout) : null;
+	}
+
+	async #sandboxTree(commit: string): Promise<string> {
+		const backend = this.#authorSandbox();
+		await prepareCheckout(backend, {
+			remoteUrl: this.#remoteUrl(),
+			baseCommit: commit,
+			timeoutMs: this.config.budgets.setupMs,
+		});
+		const result = await backend.exec({ argv: git("rev-parse", `${commit}^{tree}`) });
+		if (result.exitCode !== 0) throw new Error(`cannot resolve the tree of ${commit}`);
+		return text(result.stdout).trim();
 	}
 
 	async #registerAlias(alias: string): Promise<void> {
@@ -939,11 +981,16 @@ export class CaseDO extends DurableObject<Env> {
 		// Base: the current branch head when one exists, otherwise the default branch.
 		let base = this.#currentHead();
 		if (!base && identity.kind === "pr") base = (await github.branchHead(identity.branch)) ?? null;
-		const defaultHead = await github.branchHead(identity.defaultBranch);
+		const dryRun = this.#dryRun();
+		if (dryRun) base ??= dryRun.baseCommit;
+		const defaultHead = dryRun?.baseCommit ?? (await github.branchHead(identity.defaultBranch));
 		if (!defaultHead) throw new Error(`default branch ${identity.defaultBranch} not found`);
 		base ??= defaultHead;
 		if (!this.store.getMeta("instructions")) {
-			const agents = (await this.#fileAt("AGENTS.md", defaultHead)) ?? "";
+			const agents =
+				(dryRun
+					? await this.#sandboxFile("AGENTS.md", defaultHead)
+					: await this.#fileAt("AGENTS.md", defaultHead)) ?? "";
 			this.store.setMeta("instructions", { commit: defaultHead, text: agents.slice(0, 40_000) });
 			this.store.setMeta(
 				"prTemplate",
@@ -953,7 +1000,10 @@ export class CaseDO extends DurableObject<Env> {
 		await this.#syncReviews();
 		const latest = this.store.latestCheckpoint();
 		if (!latest || latest.baseCommit !== base)
-			await this.#baseCheckpoint(base, await github.commitTree(base));
+			await this.#baseCheckpoint(
+				base,
+				dryRun ? await this.#sandboxTree(base) : await github.commitTree(base),
+			);
 		const operationId = `g${this.store.generation()}-round-${roundNumber}`;
 		const round: RoundState = {
 			round: roundNumber,
@@ -1224,6 +1274,18 @@ export class CaseDO extends DurableObject<Env> {
 
 	async #publishJob(candidateId: string, attempt: number): Promise<LifecycleJobOutcome | void> {
 		const identity = this.#identity();
+		if (this.#dryRun()) {
+			this.store.log("publication.skipped", {
+				candidate: candidateId,
+				reason: "dry run: publication disabled",
+			});
+			await this.#handoff(
+				`dry-run:${candidateId}`,
+				`dry run complete: candidate ${candidateId} sealed; publication is disabled`,
+				"export the candidate artifact and grade it",
+			);
+			return;
+		}
 		const ctx: PublishContext = {
 			store: this.store,
 			identity,
@@ -1545,6 +1607,49 @@ export class CaseDO extends DurableObject<Env> {
 		if (fixture.model) this.store.setMeta("fixtureModel", fixture.model);
 		this.store.log("fixture.set", fixture);
 		return { accepted: true };
+	}
+
+	/**
+	 * Staging only: admit a case directly from the operator for a public
+	 * repository at a pinned commit, with publication disabled. A smoke check
+	 * for the real author, sandbox and checkpoints; never an evaluation score.
+	 */
+	async operatorDryRun(
+		input: {
+			identity: CaseIdentity;
+			title: string;
+			body: string;
+			baseCommit: string;
+			repository?: DryRun["repository"];
+			model?: string;
+		},
+		actor: string,
+	): Promise<{ accepted: boolean }> {
+		if (!faultsEnabled(this.config)) return { accepted: false };
+		await this.lifecycle.start();
+		this.store.setMeta("dryRun", {
+			baseCommit: input.baseCommit,
+			repository: input.repository ?? {},
+		});
+		if (input.model) this.store.setMeta("fixtureModel", input.model);
+		const result = await this.deliver({
+			deliveryId: `dry-run-${Date.now()}`,
+			caseId: input.identity.caseId,
+			kind: "assigned",
+			actor,
+			provenance: "operator:dry-run",
+			payload: { title: input.title, body: input.body, url: "" },
+			identity: input.identity,
+		});
+		return { accepted: result.accepted };
+	}
+
+	async artifact(candidateId: string): Promise<string | null> {
+		const candidate = this.store.candidate(candidateId);
+		if (!candidate) return null;
+		return new TextDecoder().decode(
+			await readArtifact(this.env.ARTIFACTS, candidate.artifactKey, candidate.artifactDigest),
+		);
 	}
 
 	async armFault(boundary: string, attempt?: string): Promise<{ armed: boolean }> {
