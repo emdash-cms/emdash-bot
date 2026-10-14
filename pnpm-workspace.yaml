@@ -1,0 +1,8 @@
+overrides:
+  # Match the installed vite-plus version, so plugins use Vite+'s Vite.
+  vite@*: npm:@voidzero-dev/vite-plus-core@1.1.0
+  # Match `vp toolchain vitest`, so there's only one Vitest.
+  vitest@*: 5.0.3
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

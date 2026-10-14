@@ -1,0 +1,32 @@
+{
+	"name": "worker-template",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Template for standalone Cloudflare Workers",
+	"keywords": [],
+	"license": "MIT",
+	"author": "Matt Kane",
+	"type": "module",
+	"scripts": {
+		"postinstall": "cf workers types",
+		"dev": "vp dev",
+		"build": "vp build",
+		"deploy": "vp build && cf deploy --prebuilt",
+		"types": "cf workers types",
+		"test": "vp test",
+		"check": "vp check",
+		"fix": "vp check --fix"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
+		"@types/node": "^26.6.4",
+		"cf": "1.0.0-beta.14",
+		"miniflare": "5.20261006.1-alpha",
+		"typescript": "^7.0.2",
+		"vite-plus": "^1.1.0"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"packageManager": "pnpm@10.33.4"
+}
