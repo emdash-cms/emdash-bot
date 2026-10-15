@@ -16,7 +16,7 @@ The bot needs a GitHub App to read the fixture, push branches and open PRs.
 1. `node --experimental-strip-types scripts/create-github-app.ts` and follow the browser prompt. It writes the App ID, private key and webhook secret to `.env.staging`.
 2. Set `botLogin` in `profiles/staging.json` to `<app-slug>[bot]`.
 3. Install the App on `emdash-cms/emdash-bot-pi-fixture` (and the `emdash-bot-pi-eval-*` repositories when running evals).
-4. Delete the fixture's repository webhook (`gh api -X DELETE repos/emdash-cms/emdash-bot-pi-fixture/hooks/697746825`) so the App's webhook is the only source.
+4. Delete any repository webhook on the fixture so the App's webhook is the only source (already done for the current fixture).
 5. `node --experimental-strip-types scripts/create-github-app.ts --installation`, then `pnpm run deploy:staging`.
 6. `pnpm ops smoke model` to confirm the deployment.
 
@@ -24,16 +24,16 @@ The bot needs a GitHub App to read the fixture, push branches and open PRs.
 
 ## Manual test script
 
-On `emdash-cms/emdash-bot-pi-fixture` (`greet.js` lacks punctuation; `node test.js` fails):
+On `emdash-cms/emdash-bot-pi-fixture` (`greet.js` lacks punctuation; `node test.js` fails). Staging has auto-intake on.
 
-1. Open an issue describing the bug and apply the `emdash-bot` label. Expect a case (`pnpm ops deliveries 1419114614`), then a draft PR from `emdash-bot/issue-<n>` with the template filled in and an AI disclosure.
-2. Watch the status comment on the PR move from working to waiting for checks as the `test` workflow runs.
-3. Leave a review as a configured reviewer (`emdashbot[bot]` or `ascorbic` in staging) with a findings block (see [reviewer-findings.md](reviewer-findings.md)) and state `COMMENTED`. Expect a repair round, a fast-forward commit on the same branch, and the finding marked `addressed-by-author`.
-4. Review again with `"dispositions": [{ "id": "<id>", "status": "resolved" }]`. With green CI on the new head, expect "Ready for human review". Merging remains yours.
-5. Push a commit to the bot's branch yourself, then trigger another revision. Expect your commit preserved, or a handoff on conflict.
-6. Remove the label. Expect cancellation; no further tool use or publication.
+1. Open an issue describing the bug. The author decides to take it on: expect a progress comment with its plan on the issue, then a pull request from `emdash-bot/issue-<n>`, ready for review, with the template filled in and an AI disclosure. The progress comment moves to the pull request and the issue keeps a pointer.
+2. Open an issue that is a feature request. Expect a short decline message and nothing else.
+3. Comment on the pull request (no mention needed) with a question, or leave an inline review comment as a configured reviewer (`emdashbot[bot]` or `ascorbic` in staging). Expect a reply in the conversation or thread. Ask for a change and expect a new commit on the same branch.
+4. Approve as the configured reviewer once satisfied. With green CI on that head, expect "Ready for human review", and expect the author to ask the reporter on the issue to confirm the fix. Reply as the reporter that it works: expect thanks and "Reporter confirmation: confirmed" in the progress comment.
+5. Push a commit to the bot's branch yourself, then ask for another change. Expect your commit preserved; on a conflict the author rebuilds its change on top.
+6. Remove the label (or for an auto-intake issue, apply and remove it). Expect cancellation and no further tool use or publication.
 
-Inspect anything with `pnpm ops inspect <case-id>` and export evidence with `pnpm ops evidence <case-id> --out case.json`. Case IDs are `<repo-id>-issue-<issue-id>` or `<repo-id>-pr-<pr-id>`.
+Inspect anything with `pnpm ops inspect <case-id>` and export evidence, including the full transcript, with `pnpm ops evidence <case-id> --out case.json`. Case IDs are `<repo-id>-issue-<issue-id>` or `<repo-id>-pr-<pr-id>`.
 
 ## Fault injection (staging only)
 

@@ -5,6 +5,7 @@ This file provides guidance to agentic coding tools when working with code in th
 This is the EmDash bot repository, created from `ascorbic/worker-template`. Read [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) before changing runtime code; its Implementation status section records what is built and proven. Slices 1 to 5 are implemented and deployed to the staging Worker `emdash-bot-pi`.
 
 - Keep Pi Durable as the agent runtime, hosted through `PiHarness` from `agents/harness/pi`; do not write a bespoke lifecycle adapter or introduce a second model/task scheduler.
+- Keep machinery on top of Pi minimal. Trusted code owns authority and provenance, source preservation, publication, budgets and evidence-based status. Interpreting comments, reviews and checks, and deciding what to do next, is the author's judgement: deliver events to Pi as messages rather than adding states or rules.
 - Preserve acknowledged edits in immutable source artifacts independently of containers, and publish only a saved candidate through trusted code.
 - Keep the existing EmDash review service. Findings and exact-head verification determine readiness; publication alone does not.
 - Human approval remains required for merges. Keep deployment and production intake as explicit operator actions.
