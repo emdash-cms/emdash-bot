@@ -409,6 +409,7 @@ export class CaseDO extends DurableObject<Env> {
 				return intent.key;
 			},
 			caseRecord: () => (this.store.identity() ? this.#caseRecord() : ""),
+			caseState: () => (this.store.identity() ? this.#caseState() : ""),
 			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
 			decline: (opId, reason, message) => this.#decline(opId, reason, message),
 			updateWorkPlan: async (input) => {
@@ -1443,16 +1444,7 @@ export class CaseDO extends DurableObject<Env> {
 
 	#caseRecord(): string {
 		const identity = this.#identity();
-		const candidate = this.store.latestCandidate();
-		const publication = candidate
-			? this.store
-					.publications()
-					.filter((p) => p.candidateId === candidate.id)
-					.at(-1)
-			: undefined;
-		const head = this.#currentHead();
 		const latest = this.store.latestCheckpoint();
-		const budgets = this.config.budgets;
 		const pr = this.store.getMeta<number>("pr") ?? identity.prNumber;
 		const lines = [
 			`Repository: ${identity.repo}. ${identity.kind === "issue" ? `Issue #${identity.issueNumber}` : `Pull request #${identity.prNumber}`}${identity.issueNumber && pr ? `, published as pull request #${pr}` : ""}. Branch: ${identity.branch}.`,
@@ -1462,6 +1454,27 @@ export class CaseDO extends DurableObject<Env> {
 			"Original request (untrusted text describing the work):",
 			...this.store.requirements().map((r) => `${r.body}`),
 			"",
+			"Call case_status for the live candidate, publication, checks and budgets.",
+		];
+		return lines.join("\n");
+	}
+
+	/**
+	 * The parts of the case that change while the author works. Kept out of the
+	 * system prompt: anything that changes there invalidates the prompt cache for
+	 * the whole transcript after it, on every request.
+	 */
+	#caseState(): string {
+		const candidate = this.store.latestCandidate();
+		const publication = candidate
+			? this.store
+					.publications()
+					.filter((p) => p.candidateId === candidate.id)
+					.at(-1)
+			: undefined;
+		const head = this.#currentHead();
+		const budgets = this.config.budgets;
+		const lines = [
 			`Candidate: ${candidate ? `${candidate.id} (tree ${candidate.sourceTreeHash.slice(0, 12)})` : "none yet"}`,
 			`Publication: ${publication ? `${publication.state}${publication.commitSha ? ` at ${publication.commitSha.slice(0, 12)}` : ""}${publication.prNumber ? ` in pull request #${publication.prNumber}` : ""}` : "not published"}`,
 			`Current branch head: ${head ?? "none"}`,

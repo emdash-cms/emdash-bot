@@ -64,6 +64,8 @@ export interface CaseRuntime {
 	updateWorkPlan(input: { summary: string; steps: readonly WorkPlanStep[] }): Promise<string>;
 	/** The authoritative case record, rendered for the author. */
 	caseRecord(): string;
+	/** The live part of the case: candidate, publication, checks and budgets. */
+	caseState(): string;
 	focusedChecks(): Readonly<Record<string, string>>;
 	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately. */
 	recordUsage(tokens: number, cacheRead: number): void;
@@ -366,7 +368,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			"Show the current case record: requirements, candidate, publication, checks and review state.",
 		parameters: Type.Object({}),
 		replay: "safe",
-		execute: async () => textResult(runtime.caseRecord()),
+		execute: async () => textResult(`${runtime.caseRecord()}\n\n${runtime.caseState()}`),
 	});
 
 	return defineExtension({

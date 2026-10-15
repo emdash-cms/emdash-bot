@@ -146,6 +146,23 @@ describe("Pi hosted in a case", () => {
 		expect(after.status.status).toBe("cancelled");
 	});
 
+	it("keeps the system prompt identical across a run so the prompt cache holds", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(19);
+		await bot.webhook("issues", assignIssue({ issueId: 19, number: 19, script: fixScript() }));
+		await published(bot, caseId);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const systems = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.filter((m: any) => m.role === "system")
+			.map((m: any) => JSON.stringify(m.sections ?? m.content));
+		// Pi records each change to the system prompt. Live state (budgets, candidate,
+		// checks) belongs to case_status, so the prompt changes only when the work is
+		// published (the PR number and new base), not on every request.
+		expect(systems).toHaveLength(2);
+		expect(systems.join("")).not.toContain("tokens remain");
+	});
+
 	it("finishes with an inspectable transcript and event log", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(16);
