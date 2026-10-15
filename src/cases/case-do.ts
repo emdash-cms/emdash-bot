@@ -85,6 +85,15 @@ interface Handoff {
 	readonly at: number;
 }
 
+interface CheckFailure {
+	readonly head: string;
+	readonly name: string;
+	readonly url: string;
+	readonly classification: string;
+	readonly output: string;
+	readonly firstAt: number;
+}
+
 export class CaseDO extends DurableObject<Env> {
 	readonly config: BotConfig;
 	readonly store: CaseStore;
@@ -160,11 +169,13 @@ export class CaseDO extends DurableObject<Env> {
 				return this.#reportJob();
 			case "replies":
 				return this.#repliesJob();
+			case "checks":
+				return this.#checksJob();
 		}
 	}
 
 	async #schedule(
-		fn: "reconcile" | "report" | "publish" | "replies",
+		fn: "reconcile" | "report" | "publish" | "replies" | "checks",
 		time: number,
 		payload: Record<string, unknown> = {},
 		id?: string,
@@ -1291,7 +1302,50 @@ export class CaseDO extends DurableObject<Env> {
 		// are evidence only. Anything that may need the author goes to it.
 		if (!["code", "unknown"].includes(classification.classification) || p.headSha !== head)
 			return null;
-		return `## Check failed: ${p.name}\nFrom: ${event.actor} (${event.provenance})\nHead: ${p.headSha.slice(0, 12)}${p.url ? `\nLink: ${p.url}` : ""}\nClassification: ${classification.classification} (${classification.reason})\n\n${[p.output.title, p.output.summary, p.output.text].filter(Boolean).join("\n\n").slice(0, 6000) || "(no output)"}`;
+		// Batch: a CI run fails many checks at once, and each must not start its own author run.
+		const failures = this.store.getMeta<CheckFailure[]>("checkFailures") ?? [];
+		failures.push({
+			head: p.headSha,
+			name: p.name,
+			url: p.url,
+			classification: `${classification.classification} (${classification.reason})`,
+			output: [p.output.title, p.output.summary, p.output.text].filter(Boolean).join("\n\n"),
+			firstAt: failures[0]?.firstAt ?? Date.now(),
+		});
+		this.store.setMeta("checkFailures", failures);
+		void this.#schedule("checks", Date.now() + this.config.checkSettleMs);
+		return null;
+	}
+
+	/** Send the failing checks on the current head as one message once CI has gone quiet. */
+	async #checksJob(): Promise<LifecycleJobOutcome | void> {
+		if (this.store.state() !== "active") return;
+		const head = this.#currentHead();
+		const failures = (this.store.getMeta<CheckFailure[]>("checkFailures") ?? []).filter(
+			(f) => f.head === head,
+		);
+		if (failures.length === 0) {
+			this.store.setMeta("checkFailures", []);
+			return;
+		}
+		const running = this.store
+			.verifications()
+			.some((v) => v.commitSha === head && (v.outcome === "running" || v.outcome === "queued"));
+		// Wait for the rest of the run, but not forever.
+		if (running && Date.now() - failures[0]!.firstAt < 10 * 60_000)
+			return { rescheduleAt: Date.now() + this.config.checkSettleMs };
+		this.store.setMeta("checkFailures", []);
+		const per = Math.max(500, Math.floor(8000 / failures.length));
+		const body = failures
+			.map(
+				(f) =>
+					`### ${f.name}${f.url ? `\nLink: ${f.url}` : ""}\nClassification: ${f.classification}\n\n${f.output.slice(0, per) || "(no output)"}`,
+			)
+			.join("\n\n");
+		await this.#submitToAuthor(
+			`checks:${head}:${(await sha256Hex(failures.map((f) => f.name).join("\n"))).slice(0, 16)}`,
+			`## Checks failed on ${head!.slice(0, 12)}\nFrom: CI (github:check_run)\n\n${failures.length} check(s) failed on the current head. Judge which are about your change and which are environment or flaky; you can say so in a reply.\n\n${body}`,
+		);
 	}
 
 	/**

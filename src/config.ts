@@ -92,6 +92,8 @@ export interface BotConfig {
 	readonly maxActiveAuthors: number;
 	/** Interval of the case reconciliation heartbeat. */
 	readonly reconcileMs: number;
+	/** Quiet period before failing checks on a head go to the author as one message. */
+	readonly checkSettleMs: number;
 	/** Author and committer of published commits. */
 	readonly commitAuthor: { readonly name: string; readonly email: string };
 }
@@ -101,8 +103,9 @@ export const DEFAULT_BUDGETS: Budgets = {
 	authorMs: 45 * 60_000,
 	jobMs: 10 * 60_000,
 	caseMs: 6 * 60 * 60_000,
-	tokens: 4_000_000,
-	rounds: 30,
+	// A real fix with review rounds used 4.7M on its first pass; these are runaway guards, not targets.
+	tokens: 20_000_000,
+	rounds: 100,
 	cancelMs: 60_000,
 };
 
@@ -138,6 +141,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		gitRemoteBase: raw.gitRemoteBase ?? "https://github.com",
 		maxArtifactBytes: raw.maxArtifactBytes ?? 8 * 1024 * 1024,
 		reconcileMs: raw.reconcileMs ?? 15_000,
+		checkSettleMs: raw.checkSettleMs ?? 60_000,
 		maxActiveAuthors: raw.maxActiveAuthors ?? 1,
 		modelRetry: { maxRetries: 8, baseDelayMs: 5_000, maxAgentDelayMs: 120_000, ...raw.modelRetry },
 		commitAuthor: raw.commitAuthor ?? {

@@ -263,8 +263,8 @@ describe("review repair and asynchronous CI", () => {
 		await checkRun(bot, pr, branch, head, "test", "failure", "AssertionError: expected greeting");
 		await publishedCount(bot, caseId, 2);
 		const record = await bot.inspect(caseId);
-		// Each failing run reached the author; it repaired once.
-		expect(authorRuns(record)).toHaveLength(3);
+		// Both failures reached the author as one message; it repaired once.
+		expect(authorRuns(record)).toHaveLength(2);
 	});
 
 	it("preserves a maintainer commit that lands before the revision is published", async () => {

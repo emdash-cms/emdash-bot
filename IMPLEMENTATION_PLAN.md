@@ -507,7 +507,7 @@ Recorded results, 14 October 2026:
 - **Initial writer and routing.** Kimi K2.7 Code on Workers AI through AI Gateway `default`, configurable per profile and per fixture. Gateway logs record the routed model. The writer comparison stays a slice 5 decision.
 - **Reviewer block.** Specified in [docs/reviewer-findings.md](docs/reviewer-findings.md); the reviewer change is a separate EmDash change.
 - **Fixture SHAs.** Pinned in `evals/cases/*.json` as the parent of each historical PR's first bot commit; reference tests and commits in `evals/graders/*.json`. Grader validation is a human step.
-- **Budgets.** Defaults are in `src/config.ts` (setup 15 min, author 45 min per round, job 10 min, case 6 h, 4M tokens, 6 rounds). Freeze them after the first deployed #4141 and #4074 runs.
+- **Budgets.** Defaults are in `src/config.ts` (setup 15 min, author 45 min per round, job 10 min, case 6 h, 20M billable tokens, 100 author runs; failing checks reach the author batched, one message per CI round). Freeze them after the first deployed #4141 and #4074 runs.
 - **Bot identity.** Staging uses its own GitHub App, created with `scripts/create-github-app.ts`. The production identity remains a slice 6 decision.
 
 None of these requires creating a generic agent framework. Implement the concrete EmDash contract and leave a reviewed decision where measurements or existing interfaces are still needed.
