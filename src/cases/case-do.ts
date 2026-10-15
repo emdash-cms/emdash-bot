@@ -386,7 +386,10 @@ export class CaseDO extends DurableObject<Env> {
 		const budgets = this.config.budgets;
 		if (Date.now() - round.startedAt > budgets.authorMs)
 			return "the author time budget for this round is exhausted";
-		const created = this.store.getMeta<number>("createdAt") ?? Date.now();
+		const created =
+			this.store.getMeta<number>("assignedAt") ??
+			this.store.getMeta<number>("createdAt") ??
+			Date.now();
 		if (Date.now() - created > budgets.caseMs) return "the case time budget is exhausted";
 		if ((this.store.getMeta<number>("tokens") ?? 0) > budgets.tokens)
 			return "the token budget is exhausted";
@@ -815,6 +818,8 @@ export class CaseDO extends DurableObject<Env> {
 					this.store.setMeta("generation", this.store.generation() + 1);
 					this.store.setMeta("state", "active");
 					this.store.setMeta("assignedBy", event.actor);
+					// The case time budget runs per ownership generation.
+					this.store.setMeta("assignedAt", Date.now());
 					this.store.setMeta("handoff", null);
 				});
 				this.store.log("ownership.assigned", {

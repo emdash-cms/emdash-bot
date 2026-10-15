@@ -237,3 +237,35 @@ describe("budgets", () => {
 		expect(record.operations.some((o: any) => o.kind === "tool:write")).toBe(false);
 	});
 });
+
+describe("reassignment", () => {
+	it("restarts the case time budget for a new ownership generation", async () => {
+		bot = await startBot({ budgets: { caseMs: 2500, cancelMs: 2000, rounds: 4 } });
+		const caseId = issueCaseId(61);
+		const script = {
+			rounds: [
+				{ steps: [{ tool: "handoff", args: { reason: "pausing", nextAction: "reassign" } }] },
+				{
+					steps: [
+						{ tool: "write", args: FIX_GREETING },
+						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 61, number: 61, script }));
+		await bot.waitFor("first handoff", async () => (await bot!.inspect(caseId)).handoff);
+		await new Promise((r) => setTimeout(r, 3000));
+		const unassign = {
+			action: "unassigned",
+			sender: { login: "maintainer" },
+			assignee: { login: BOT },
+			issue: { id: 61, number: 61 },
+		};
+		await bot.webhook("issues", unassign);
+		await bot.webhook("issues", assignIssue({ issueId: 61, number: 61, script }));
+		const record = await published(bot, caseId);
+		expect(record.generation).toBe(3);
+		expect(record.candidates).toHaveLength(1);
+	});
+});
