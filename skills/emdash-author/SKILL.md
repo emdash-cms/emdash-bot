@@ -20,7 +20,6 @@ Use this when implementing an EmDash issue or repairing an EmDash pull request.
 - Prefer the narrowest test command that exercises the change, for example `pnpm --filter <package> exec vitest run <file>`.
 - Build declaration output for packages your test imports before trusting a test result; stale `dist` output is not evidence.
 - Broad checks (full test suite, lint, typecheck, format) run in CI on the published commit. Run focused checks here.
-- The sandbox already sets a larger Node heap (`NODE_OPTIONS`) for the root build; do not lower it.
 - `pnpm lint:json` won't run in the sandbox; use `pnpm lint:quick`.
 - Admin tests run in Chromium (Vitest browser mode), which the sandbox provides. Run them with the package's own config; a hand-written Node config does not prove anything about them.
 
