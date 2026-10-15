@@ -8,6 +8,7 @@
 //   pnpm ops fault <case-id> <boundary>          (staging only)
 //   pnpm ops gc <case-id>                        (unreferenced artifacts older than 7 days)
 //   pnpm ops deliveries <repository-id>
+//   pnpm ops unavailable <repository-id>
 //   pnpm ops smoke model|sandbox [--repo owner/name]
 //   pnpm ops dry-run <eval-case> [--model provider:id]   (staging only; no GitHub writes)
 //   pnpm ops artifact <case-id> <candidate-id> [--out file.patch]
@@ -113,6 +114,9 @@ switch (command) {
 	case "deliveries":
 		print(await call(`repositories/${id}/deliveries`));
 		break;
+	case "unavailable":
+		print(await call(`repositories/${id}/unavailable`));
+		break;
 	case "smoke":
 		print(
 			await call(`smoke/${target ?? "model"}`, {
@@ -161,7 +165,7 @@ switch (command) {
 	}
 	default:
 		console.error(
-			"commands: inspect, status, evidence, cancel, resume, fault, deliveries, smoke, dry-run, artifact",
+			"commands: inspect, status, evidence, cancel, resume, fault, deliveries, unavailable, smoke, dry-run, artifact",
 		);
 		process.exit(2);
 }

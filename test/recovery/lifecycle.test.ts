@@ -210,6 +210,35 @@ describe("model failures", () => {
 	});
 });
 
+describe("unavailable cases", () => {
+	it("reports a case whose object keeps failing, once, and a new assignment starts afresh", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(18);
+		await bot.ops(`cases/${caseId}/faults`, { body: { boundary: "unavailable" } });
+		await bot.webhook("issues", assignIssue({ issueId: 18, number: 18, script: fixScript() }));
+		const notice = await bot.waitFor("unavailable notice", async () =>
+			bot!.github.comments.find((c) => c.issue === 18 && c.body.includes("emdash-bot:unavailable")),
+		);
+		expect(notice.body).toContain("Internal error in Durable Object storage");
+		await new Promise((r) => setTimeout(r, 1000));
+		expect(
+			bot.github.comments.filter(
+				(c) => c.issue === 18 && c.body.includes("emdash-bot:unavailable"),
+			),
+		).toHaveLength(1);
+		await bot.webhook("issues", {
+			action: "unassigned",
+			sender: { login: "maintainer" },
+			assignee: { login: BOT },
+			issue: { id: 18, number: 18 },
+		});
+		await bot.webhook("issues", assignIssue({ issueId: 18, number: 18, script: fixScript() }));
+		const record = await published(bot, `${caseId}-r2`);
+		expect(record.publications[0].state).toBe("pr-ensured");
+		expect(bot.github.pulls).toHaveLength(1);
+	});
+});
+
 describe("author concurrency", () => {
 	it("runs one author at a time per repository", async () => {
 		bot = await startBot();

@@ -94,6 +94,10 @@ export interface BotConfig {
 	readonly reconcileMs: number;
 	/** Quiet period before failing checks on a head go to the author as one message. */
 	readonly checkSettleMs: number;
+	/** Retry interval for forwarding a recorded delivery to its case. */
+	readonly deliveryRetryMs: number;
+	/** Failed forwarding attempts after which a case is reported unavailable. */
+	readonly unavailableAfterAttempts: number;
 	/** Author and committer of published commits. */
 	readonly commitAuthor: { readonly name: string; readonly email: string };
 }
@@ -142,6 +146,8 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		maxArtifactBytes: raw.maxArtifactBytes ?? 8 * 1024 * 1024,
 		reconcileMs: raw.reconcileMs ?? 15_000,
 		checkSettleMs: raw.checkSettleMs ?? 60_000,
+		deliveryRetryMs: raw.deliveryRetryMs ?? 15_000,
+		unavailableAfterAttempts: raw.unavailableAfterAttempts ?? 12,
 		maxActiveAuthors: raw.maxActiveAuthors ?? 1,
 		modelRetry: { maxRetries: 8, baseDelayMs: 5_000, maxAgentDelayMs: 120_000, ...raw.modelRetry },
 		commitAuthor: raw.commitAuthor ?? {

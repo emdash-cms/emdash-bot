@@ -61,7 +61,7 @@ async function webhook(request: Request, env: Env): Promise<Response> {
 	}
 	const result = await repositories(env)
 		.getByName(String(allowed.id))
-		.admit(deliveryId, eventName, normalized);
+		.admit(deliveryId, eventName, normalized, allowed.fullName);
 	return json(result, 202);
 }
 
@@ -188,6 +188,7 @@ async function operator(
 		const stub = repositories(env).getByName(parts[1]);
 		if (parts[2] === "deliveries") return json(await rpc(stub.deliveries()));
 		if (parts[2] === "aliases") return json(await rpc(stub.aliases()));
+		if (parts[2] === "unavailable") return json(await rpc(stub.unavailableCases()));
 	}
 	if (parts[0] === "dry-run" && request.method === "POST") {
 		const body = (await request.json()) as {
@@ -289,7 +290,11 @@ export default {
 		const url = new URL(request.url);
 		if (request.method === "POST" && url.pathname === "/webhooks/github")
 			return webhook(request, env);
-		if (url.pathname.startsWith("/ops/")) return operator(request, env, ctx, url);
+		if (url.pathname.startsWith("/ops/"))
+			// A case whose Durable Object fails returns its error, not the runtime's HTML page.
+			return operator(request, env, ctx, url).catch((error: unknown) =>
+				json({ error: error instanceof Error ? error.message : String(error) }, 502),
+			);
 		if (url.pathname === "/") {
 			const config = readConfig(env);
 			const version = (env as { CF_VERSION_METADATA?: { id?: string; tag?: string } })

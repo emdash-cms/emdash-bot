@@ -68,6 +68,8 @@ export function testConfig(gitRemoteBase: string, overrides: Record<string, unkn
 		thinkingLevel: "off",
 		reconcileMs: 250,
 		checkSettleMs: 300,
+		deliveryRetryMs: 200,
+		unavailableAfterAttempts: 3,
 		budgets: { cancelMs: 2000, rounds: 4 },
 		checks: { code: ["test"], administrative: ["PR Maintenance"], required: ["test"] },
 		githubApiUrl: "https://api.github.com",

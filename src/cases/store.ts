@@ -376,6 +376,10 @@ export class CaseStore {
 		return this.sql.exec(`DELETE FROM case_faults WHERE boundary = ?`, boundary).rowsWritten > 0;
 	}
 
+	hasFault(boundary: string): boolean {
+		return this.rows(`SELECT 1 FROM case_faults WHERE boundary = ?`, boundary).length > 0;
+	}
+
 	armedFaults(): string[] {
 		return this.rows(`SELECT boundary FROM case_faults`).map((r) => r.boundary as string);
 	}

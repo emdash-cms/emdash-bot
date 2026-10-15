@@ -1011,6 +1011,11 @@ export class CaseDO extends DurableObject<Env> {
 		delivery: CaseDelivery,
 	): Promise<{ accepted: boolean; duplicate: boolean; caseId: string }> {
 		await this.lifecycle.start();
+		// Test stand-in for a Durable Object whose storage keeps failing.
+		if (faultsEnabled(this.config) && this.store.hasFault("unavailable"))
+			throw new Error(
+				"Internal error in Durable Object storage caused object to be reset; reference = fault",
+			);
 		const existing = this.store.identity();
 		if (!existing) {
 			if (delivery.kind !== "assigned" || !delivery.identity) {
