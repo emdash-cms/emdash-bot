@@ -1,0 +1,29 @@
+AGENTS.md
+  s_4c97aa8e7b616f::t_8f8e51b7bfb02b 8
+README.md
+  s_4c97aa8e7b616f::t_846717d6991bce 9-15
+docs/reviewer-findings.md
+  s_4c97aa8e7b616f::t_7c27da2811a24e 24
+docs/staging.md
+  s_4c97aa8e7b616f::t_9ae18a36faa82c 19,27,29-34,36
+profiles/staging.json
+  s_4c97aa8e7b616f::t_0e8c931c9b22aa 13-14,18-20
+IMPLEMENTATION_PLAN.md
+  s_4c97aa8e7b616f::t_927836126fbb0c 11,15-22,26-31,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e7abf78f37ab9ca76ec51a7e513da4e55e2e36d1",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
