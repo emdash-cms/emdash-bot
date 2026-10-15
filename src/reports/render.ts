@@ -81,7 +81,7 @@ export function renderPullRequestBody(input: PullRequestBodyInput): string {
 	const closes = input.identity.issueNumber ? `Closes #${input.identity.issueNumber}` : "";
 	const origin = input.assignedBy
 		? `A Maintainer (@${input.assignedBy}) assigned this ${input.identity.kind === "issue" ? "issue" : "pull request"} to the EmDash bot.`
-		: "The EmDash bot took this issue on automatically when it was opened; no Maintainer has assigned it yet.";
+		: "The EmDash bot took this issue on automatically when it was opened; no maintainer has assigned it yet.";
 	const summary = `${input.summary.trim()}\n\n${origin}`;
 	let body: string;
 	if (input.template) {
