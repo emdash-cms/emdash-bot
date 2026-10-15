@@ -15,7 +15,7 @@ import { parseArgs, parseEnv } from "node:util";
 const { values } = parseArgs({
 	options: {
 		org: { type: "string", default: "emdash-cms" },
-		name: { type: "string", default: "emdash-bot-pi" },
+		name: { type: "string", default: "emdash-autofix" },
 		url: { type: "string", default: "https://emdash-bot-pi.emdash-cms.workers.dev" },
 		port: { type: "string", default: "8976" },
 		installation: { type: "boolean", default: false },
