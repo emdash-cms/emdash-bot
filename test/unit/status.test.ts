@@ -85,7 +85,11 @@ describe("deterministic status", () => {
 
 	it("renders status without instructions and fills the PR template", () => {
 		const identity = { caseId: "1-issue-2", issueNumber: 7, kind: "issue" } as never;
-		expect(renderStatus(identity, computeStatus(base))).toContain("Ready for human review");
+		const rendered = renderStatus(identity, computeStatus(base));
+		expect(rendered).toContain("Ready for human review");
+		// The evidence table is collapsed; the status and next action stay visible.
+		expect(rendered.indexOf("<details>")).toBeLessThan(rendered.indexOf("| Candidate |"));
+		expect(rendered.indexOf("Next action")).toBeLessThan(rendered.indexOf("<details>"));
 		const body = renderPullRequestBody({
 			identity,
 			template:

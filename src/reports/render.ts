@@ -90,6 +90,9 @@ export function renderStatus(
 	if (report.candidate || report.head) {
 		lines.push(
 			"",
+			"<details>",
+			"<summary>Details</summary>",
+			"",
 			"| | |",
 			"| --- | --- |",
 			`| Candidate | ${report.candidate ? `\`${report.candidate.id}\` (tree \`${report.candidate.sourceTreeHash.slice(0, 12)}\`)` : "none"} |`,
@@ -105,6 +108,7 @@ export function renderStatus(
 					`- \`${check.name}\`: ${check.state}${check.classification && check.classification !== "success" ? ` (${check.classification})` : ""}`,
 				);
 		}
+		lines.push("", "</details>");
 	}
 	lines.push(
 		"",
