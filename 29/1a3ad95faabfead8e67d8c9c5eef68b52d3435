@@ -1,0 +1,37 @@
+IMPLEMENTATION_PLAN.md
+  s_4c97aa8e7b616f::t_bd558e990ad26b 30
+README.md
+  s_4c97aa8e7b616f::t_5318125aa0695c 11
+docs/staging.md
+  s_4c97aa8e7b616f::t_d7fa601c3c9a4a 27
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_3872e39f5bce81 29-35,777-807,1083-1103,1794
+src/config.ts
+  s_4c97aa8e7b616f::t_071ba816d70780 52-58,121
+src/github/webhook.ts
+  s_4c97aa8e7b616f::t_b7315157e2da79 90,245
+src/runtime/triage.ts
+  s_4c97aa8e7b616f::t_be6ab9be438f0f 1-190
+test/harness.ts
+  s_4c97aa8e7b616f::t_ec8fd2fead2e39 109-124,146-149
+test/unit/triage.test.ts
+  s_4c97aa8e7b616f::t_900338dad2edd0 1-36
+test/workers/auto-intake.test.ts
+  s_4c97aa8e7b616f::t_93331151ef5a89 1-3,6-14,22-28,36-38,68,98,148-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "291a3ad95faabfead8e67d8c9c5eef68b52d3435",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
