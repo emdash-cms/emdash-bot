@@ -32,6 +32,19 @@ export async function gh<T = any>(
 	return { status: response.status, data };
 }
 
-export function gitAuthUrl(fullName: string): string {
-	return `https://x-access-token:${token()}@github.com/${fullName}.git`;
+/** A plain remote URL. Authenticate with gitAuthEnv(), never by putting the token in the URL. */
+export function gitUrl(fullName: string): string {
+	return `https://github.com/${fullName}.git`;
+}
+
+/**
+ * Git environment that sends the token as an HTTP header, so it never appears
+ * in a command line, a remote URL or an error message.
+ */
+export function gitAuthEnv(): Record<string, string> {
+	return {
+		GIT_CONFIG_COUNT: "1",
+		GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
+		GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token()}`).toString("base64")}`,
+	};
 }

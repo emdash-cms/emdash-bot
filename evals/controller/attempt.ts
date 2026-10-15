@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ops } from "./bot.ts";
 import { grade } from "./grade.ts";
-import { gh, gitAuthUrl } from "./github.ts";
+import { gh, gitAuthEnv, gitUrl } from "./github.ts";
 import { ensureRepo, resetRepo, seed, trigger } from "./provision.ts";
 import type { AttemptState, CaseManifest, GraderManifest, Outcome, Profile } from "./types.ts";
 
@@ -180,9 +180,9 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 				"bash",
 				[
 					"-c",
-					`d=$(mktemp -d) && cd $d && git init -q && git fetch -q --depth=50 ${JSON.stringify(gitAuthUrl(state.repo!.fullName))} ${head} ${base} && git diff ${base} ${head}; rm -rf $d`,
+					`d=$(mktemp -d) && cd $d && git init -q && git fetch -q --depth=50 ${JSON.stringify(gitUrl(state.repo!.fullName))} ${head} ${base} && git diff ${base} ${head}; rm -rf $d`,
 				],
-				{ maxBuffer: 64 * 1024 * 1024 },
+				{ maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...gitAuthEnv() } },
 			).toString();
 			// Anonymized for blind human review: no model, harness or bot identity.
 			writeFileSync(

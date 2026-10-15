@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { gh, gitAuthUrl } from "./github.ts";
+import { gh, gitAuthEnv, gitUrl } from "./github.ts";
 import type { CaseManifest, Profile } from "./types.ts";
 
 const GREETING: Record<string, string> = {
@@ -32,6 +32,7 @@ function git(cwd: string, args: string[], input?: string): string {
 			GIT_COMMITTER_NAME: "eval-controller",
 			GIT_COMMITTER_EMAIL: "eval@example.invalid",
 			GIT_TERMINAL_PROMPT: "0",
+			...gitAuthEnv(),
 		},
 		maxBuffer: 256 * 1024 * 1024,
 	})
@@ -136,7 +137,7 @@ export async function resetRepo(
 			"-m",
 			`fixture snapshot for case ${manifest.id}${manifest.source.startingCommit ? ` (tree of ${manifest.source.startingCommit})` : ""}`,
 		]);
-		git(work, ["push", "-q", "--force", gitAuthUrl(fullName), `${snapshot}:refs/heads/main`]);
+		git(work, ["push", "-q", "--force", gitUrl(fullName), `${snapshot}:refs/heads/main`]);
 		if (manifest.originalCandidate) {
 			const candidate = manifest.originalCandidate;
 			git(work, [
@@ -160,7 +161,7 @@ export async function resetRepo(
 				"push",
 				"-q",
 				"--force",
-				gitAuthUrl(fullName),
+				gitUrl(fullName),
 				`${commit}:refs/heads/fixture/original-candidate`,
 			]);
 		}

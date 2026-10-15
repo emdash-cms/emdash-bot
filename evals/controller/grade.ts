@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitAuthUrl } from "./github.ts";
+import { gitAuthEnv, gitUrl } from "./github.ts";
 import type { GraderManifest } from "./types.ts";
 
 export interface GradeResult {
@@ -70,7 +70,7 @@ export function grade(
 	const git = (args: string[]) =>
 		execFileSync("git", args, {
 			cwd: work,
-			env: { PATH: process.env.PATH ?? "", HOME: home, GIT_TERMINAL_PROMPT: "0" },
+			env: { PATH: process.env.PATH ?? "", HOME: home, GIT_TERMINAL_PROMPT: "0", ...gitAuthEnv() },
 		})
 			.toString()
 			.trim();
@@ -81,7 +81,7 @@ export function grade(
 			"-q",
 			"--depth=1",
 			"--no-tags",
-			source.upstream ?? gitAuthUrl(source.fullName),
+			source.upstream ?? gitUrl(source.fullName),
 			source.commit,
 		]);
 		git(["checkout", "-q", "FETCH_HEAD"]);
