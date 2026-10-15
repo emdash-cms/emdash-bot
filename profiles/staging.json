@@ -1,6 +1,6 @@
 {
 	"profile": "staging",
-	"botLogin": "emdash-bot-pi[bot]",
+	"botLogin": "emdash-cms-bot[bot]",
 	"repositories": [
 		{
 			"id": 1419114614,
@@ -10,14 +10,25 @@
 			}
 		}
 	],
-	"maintainers": ["ascorbic"],
-	"reviewers": ["emdashbot[bot]", "ascorbic"],
+	"maintainers": [
+		"ascorbic"
+	],
+	"reviewers": [
+		"emdashbot[bot]",
+		"ascorbic"
+	],
 	"authorModel": "cloudflare:@cf/moonshotai/kimi-k2.7-code",
 	"thinkingLevel": "medium",
 	"checks": {
-		"code": ["test"],
-		"administrative": ["PR Maintenance"],
-		"required": ["test"]
+		"code": [
+			"test"
+		],
+		"administrative": [
+			"PR Maintenance"
+		],
+		"required": [
+			"test"
+		]
 	},
 	"gatewayId": "default",
 	"intakeLabel": "emdash-bot",

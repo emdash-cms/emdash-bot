@@ -13,7 +13,7 @@ An EmDash issue and pull-request author service built on Pi Durable, hosted in C
 
 ## Development
 
-Use Node 24, pnpm (pinned in `package.json`) and Docker (the build also builds the sandbox image).
+Use Node 24 and pnpm (pinned in `package.json`). Production builds and deploys also build the sandbox image and need Docker; tests do not.
 
 ```sh
 pnpm install --frozen-lockfile

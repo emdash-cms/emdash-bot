@@ -30,7 +30,7 @@ A standalone Cloudflare Worker built with Vite+ and the Cloudflare Vite plugin.
 ## Commands
 
 - `pnpm dev` — start the dev server (`vp dev`). `cf dev` and `cf build` expect a `vite` binary, which Vite+ doesn't provide, so use `vp`
-- `pnpm test` — build the Worker (including the sandbox image, so Docker is required), then run unit, recovery and revision suites in Miniflare with fake GitHub and sandbox backends
+- `pnpm test` — build the Worker in test mode (the sandbox image is referenced, not built), then run unit, recovery and revision suites in Miniflare with fake GitHub and sandbox backends. `pnpm build` and deploys build the image and need Docker
 - `pnpm ops <command>` — operator CLI against the staging Worker; `pnpm evals <command>` — evaluation controller
 - `pnpm check` — format check, lint, and type check in one pass (`vp check`)
 - `pnpm fix` — apply formatting and safe lint fixes
