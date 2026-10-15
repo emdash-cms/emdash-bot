@@ -1,14 +1,14 @@
 // The deployed bot's operator API.
 
 import { existsSync, readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import type { Profile } from "./types.ts";
 
 function operatorToken(): string {
 	const token =
 		process.env.OPERATOR_TOKEN ??
 		(existsSync(".env.staging")
-			? (JSON.parse(readFileSync(".env.staging", "utf8")) as { OPERATOR_TOKEN?: string })
-					.OPERATOR_TOKEN
+			? parseEnv(readFileSync(".env.staging", "utf8")).OPERATOR_TOKEN
 			: undefined);
 	if (!token) throw new Error("set OPERATOR_TOKEN or create .env.staging");
 	return token;

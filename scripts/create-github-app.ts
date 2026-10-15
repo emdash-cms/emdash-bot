@@ -10,7 +10,7 @@
 import { createSign } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { parseArgs } from "node:util";
+import { parseArgs, parseEnv } from "node:util";
 
 const { values } = parseArgs({
 	options: {
@@ -23,10 +23,17 @@ const { values } = parseArgs({
 });
 
 const SECRETS = ".env.staging";
+// .env format; multi-line values (the private key) are double-quoted with \n escapes.
 const read = (): Record<string, string> =>
-	existsSync(SECRETS) ? (JSON.parse(readFileSync(SECRETS, "utf8")) as Record<string, string>) : {};
+	existsSync(SECRETS) ? (parseEnv(readFileSync(SECRETS, "utf8")) as Record<string, string>) : {};
 const write = (patch: Record<string, string>) =>
-	writeFileSync(SECRETS, JSON.stringify({ ...read(), ...patch }, null, 2), { mode: 0o600 });
+	writeFileSync(
+		SECRETS,
+		Object.entries({ ...read(), ...patch })
+			.map(([k, v]) => (v.includes("\n") ? `${k}="${v.replaceAll("\n", "\\n")}"` : `${k}=${v}`))
+			.join("\n") + "\n",
+		{ mode: 0o600 },
+	);
 
 function appJwt(appId: string, pem: string): string {
 	const b64 = (v: string | Buffer) => Buffer.from(v).toString("base64url");

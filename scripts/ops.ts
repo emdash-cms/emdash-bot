@@ -17,7 +17,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
-import { parseArgs } from "node:util";
+import { parseArgs, parseEnv } from "node:util";
 
 const { positionals, values } = parseArgs({
 	allowPositionals: true,
@@ -38,8 +38,7 @@ const base = (
 const token =
 	process.env.OPERATOR_TOKEN ??
 	(existsSync(".env.staging")
-		? (JSON.parse(readFileSync(".env.staging", "utf8")) as { OPERATOR_TOKEN?: string })
-				.OPERATOR_TOKEN
+		? parseEnv(readFileSync(".env.staging", "utf8")).OPERATOR_TOKEN
 		: undefined);
 if (!token) {
 	console.error("Set OPERATOR_TOKEN or create .env.staging.");

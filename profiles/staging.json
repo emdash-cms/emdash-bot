@@ -28,7 +28,7 @@
 			"pnpm-filter": "pnpm --filter",
 			"vitest-root": "pnpm exec vitest run"
 		},
-		"prepare": "if [ -f pnpm-lock.yaml ]; then corepack enable >/dev/null 2>&1 || true; pnpm install --frozen-lockfile; fi",
+		"prepare": "if [ -f pnpm-lock.yaml ]; then corepack enable >/dev/null 2>&1 || true; for i in 1 2 3 4; do corepack install && break; sleep 5; done; pnpm install --frozen-lockfile; fi",
 		"autoIntake": false
 	},
 	"autoIntake": true,
