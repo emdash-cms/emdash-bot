@@ -1,0 +1,23 @@
+test/fakes/github.ts
+  s_4c97aa8e7b616f::t_d8bde7524833b5 52,338-360,362-366
+test/harness.ts
+  s_4c97aa8e7b616f::t_b9fc86a8b89339 200,215
+test/workers/conversation.test.ts
+  s_4c97aa8e7b616f::t_9dd9a09b55995f 1-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a5a51ce0692ddb95e40210bd406511c3b0129d9f",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
