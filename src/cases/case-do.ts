@@ -21,9 +21,10 @@ import { writeToken } from "../github/auth.ts";
 import { classifyCheck, outcomeOf } from "../github/checks.ts";
 import { GitHubClient } from "../github/client.ts";
 import { type PublishContext, publish, readArtifact } from "../github/publisher.ts";
-import { type ReviewComment, parseReview } from "../github/review.ts";
-import { renderStatus, statusMarker } from "../reports/render.ts";
-import { type StatusReport, computeStatus, outstandingFindings } from "../reports/status.ts";
+import { type ReviewComment, actionableCount, parseReview } from "../github/review.ts";
+import { renderMovedToPullRequest, renderStatus, statusMarker } from "../reports/render.ts";
+import { type WorkPlan, updateWorkPlan } from "../reports/work-plan.ts";
+import { type StatusReport, computeStatus } from "../reports/status.ts";
 import { setupModels } from "../runtime/models.ts";
 import { DEFAULT_PRIVILEGED_PREFIXES, PatchRejected, validatePatch } from "../source/patch.ts";
 import {
@@ -43,7 +44,7 @@ import type {
 	CaseEvent,
 	CaseIdentity,
 	CheckpointRow,
-	Finding,
+	ReplyIntent,
 	Verification,
 } from "./types.ts";
 
@@ -69,22 +70,7 @@ interface Handoff {
 	readonly reason: string;
 	readonly nextAction: string;
 	readonly at: number;
-	readonly round: number;
 }
-
-interface RoundState {
-	readonly round: number;
-	readonly generation: number;
-	readonly operationId: string;
-	readonly startedAt: number;
-	readonly baseCommit: string;
-	open: boolean;
-	candidateId?: string;
-	handedOff?: boolean;
-	respondedToFindings?: boolean;
-}
-
-const AUTHOR_KINDS = new Set(["assigned", "direction", "operator-round"]);
 
 export class CaseDO extends DurableObject<Env> {
 	readonly config: BotConfig;
@@ -159,11 +145,13 @@ export class CaseDO extends DurableObject<Env> {
 				return this.#publishJob(String(payload.candidateId), Number(payload.attempt ?? 0));
 			case "report":
 				return this.#reportJob();
+			case "replies":
+				return this.#repliesJob();
 		}
 	}
 
 	async #schedule(
-		fn: "reconcile" | "report" | "publish",
+		fn: "reconcile" | "report" | "publish" | "replies",
 		time: number,
 		payload: Record<string, unknown> = {},
 		id?: string,
@@ -221,8 +209,7 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	async #ensureSandbox(): Promise<void> {
-		const latest = this.store.latestCheckpoint();
-		if (!latest) throw new Error("no source checkpoint exists yet");
+		const latest = this.store.latestCheckpoint() ?? (await this.#prepareCase());
 		const backend = this.#authorSandbox();
 		if (this.#sandboxVerified && (await readState(backend)) === latest.id) return;
 		const started = Date.now();
@@ -250,6 +237,40 @@ export class CaseDO extends DurableObject<Env> {
 			prepareMs: prepared.prepareMs,
 			totalMs: Date.now() - started,
 		});
+	}
+
+	/**
+	 * Establish where work starts: the pinned dry-run commit, the adopted pull
+	 * request's head, or the default branch. Loads the repository instructions
+	 * from the default branch at that commit. Idempotent.
+	 */
+	async #prepareCase(): Promise<CheckpointRow> {
+		const existing = this.store.latestCheckpoint();
+		if (existing && this.store.getMeta("instructions")) return existing;
+		const identity = this.#identity();
+		const dryRun = this.#dryRun();
+		const github = this.#github();
+		const defaultHead = dryRun?.baseCommit ?? (await github.branchHead(identity.defaultBranch));
+		if (!defaultHead) throw new Error(`default branch ${identity.defaultBranch} not found`);
+		if (!this.store.getMeta("instructions")) {
+			const agents =
+				(dryRun
+					? await this.#sandboxFile("AGENTS.md", defaultHead)
+					: await this.#fileAt("AGENTS.md", defaultHead)) ?? "";
+			this.store.setMeta("instructions", { commit: defaultHead, text: agents.slice(0, 40_000) });
+			if (!dryRun)
+				this.store.setMeta(
+					"prTemplate",
+					await this.#fileAt(".github/PULL_REQUEST_TEMPLATE.md", defaultHead),
+				);
+		}
+		if (existing) return existing;
+		const base =
+			dryRun?.baseCommit ??
+			(identity.kind === "pr" ? await github.branchHead(identity.branch) : null) ??
+			defaultHead;
+		const tree = dryRun ? await this.#sandboxTree(base) : await github.commitTree(base);
+		return this.#baseCheckpoint(base, tree);
 	}
 
 	/** Capture the sandbox source as an acknowledged checkpoint (inside the source mutex). */
@@ -352,8 +373,24 @@ export class CaseDO extends DurableObject<Env> {
 			runCheck: (opId, name, args) => this.#runCheck(opId, name, args),
 			submitCandidate: (opId, title, summary) => this.#submitCandidate(opId, title, summary),
 			handoff: (opId, reason, nextAction) => this.#handoff(opId, reason, nextAction),
-			respondToFinding: (id, disposition, note) => this.#respondToFinding(id, disposition, note),
-			caseStatus: () => this.#caseRecord(),
+			reply: async (opId, inReplyTo, onIssue, body) => {
+				const intent = this.#queueReply(opId, inReplyTo, onIssue, body);
+				await this.#schedule("replies", Date.now(), {}, "replies");
+				return intent.key;
+			},
+			caseRecord: () => (this.store.identity() ? this.#caseRecord() : ""),
+			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
+			updateWorkPlan: async (input) => {
+				const plan = updateWorkPlan(
+					this.store.getMeta<WorkPlan>("workPlan") ?? null,
+					input,
+					Date.now(),
+				);
+				this.store.setMeta("workPlan", plan);
+				this.store.log("plan.updated", { steps: plan.steps.length });
+				await this.#schedule("report", Date.now());
+				return "Plan updated; it appears in the progress comment.";
+			},
 			focusedChecks: () => this.#repoConfig()?.focusedChecks ?? {},
 			recordUsage: (tokens, cacheRead) => {
 				this.store.setMeta("tokens", (this.store.getMeta<number>("tokens") ?? 0) + tokens);
@@ -379,18 +416,19 @@ export class CaseDO extends DurableObject<Env> {
 	#guard(terminal = false): string | undefined {
 		const state = this.store.state();
 		if (state !== "active") return `the case is ${state ?? "not admitted"}; tool use is refused`;
-		const round = this.store.getMeta<RoundState>("round");
-		if (!round || round.generation !== this.store.generation())
+		if (this.store.getMeta<number>("runGeneration") !== this.store.generation()) {
 			return "this run belongs to an obsolete ownership generation";
+		}
 		if (terminal) return undefined;
 		const budgets = this.config.budgets;
-		if (Date.now() - round.startedAt > budgets.authorMs)
-			return "the author time budget for this round is exhausted";
-		const created =
+		const runStartedAt = this.store.getMeta<number>("runStartedAt");
+		if (runStartedAt && Date.now() - runStartedAt > budgets.authorMs)
+			return "the author time budget for this run is exhausted";
+		const assignedAt =
 			this.store.getMeta<number>("assignedAt") ??
 			this.store.getMeta<number>("createdAt") ??
 			Date.now();
-		if (Date.now() - created > budgets.caseMs) return "the case time budget is exhausted";
+		if (Date.now() - assignedAt > budgets.caseMs) return "the case time budget is exhausted";
 		if ((this.store.getMeta<number>("tokens") ?? 0) > budgets.tokens)
 			return "the token budget is exhausted";
 		return undefined;
@@ -585,8 +623,6 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.putOperation(opId, "submit_candidate", sealed.ownershipGeneration, "completed", {
 					candidateId: sealed.id,
 				});
-				const round = this.store.getMeta<RoundState>("round");
-				if (round) this.store.setMeta("round", { ...round, candidateId: sealed.id });
 			});
 			this.store.log("candidate.sealed", {
 				candidate: sealed.id,
@@ -663,29 +699,131 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	async #handoff(opId: string, reason: string, nextAction: string): Promise<void> {
-		const round = this.store.getMeta<RoundState>("round");
-		const handoff: Handoff = { reason, nextAction, at: Date.now(), round: round?.round ?? 0 };
+		const handoff: Handoff = { reason, nextAction, at: Date.now() };
 		this.store.transaction(() => {
 			this.store.setMeta("handoff", handoff);
 			this.store.putOperation(opId, "handoff", this.store.generation(), "completed", handoff);
-			if (round) this.store.setMeta("round", { ...round, handedOff: true });
 		});
 		this.store.log("handoff", { reason, nextAction });
-		await this.#schedule("reconcile", Date.now() + 2000);
+		await this.#schedule("report", Date.now());
 	}
 
-	#respondToFinding(id: string, disposition: "addressed" | "disputed", note: string): Finding {
-		const finding = this.store.updateFinding(
-			id,
-			disposition === "addressed" ? "addressed-by-author" : "disputed",
-			"author",
-			note,
+	// ---------------- conversation ----------------
+
+	/** Record a reply for trusted code to post once. */
+	#queueReply(
+		opId: string,
+		inReplyTo: number | undefined,
+		onIssue: boolean,
+		body: string,
+	): ReplyIntent {
+		const intents = this.store.getMeta<ReplyIntent[]>("replyIntents") ?? [];
+		const existing = intents.find((i) => i.key === opId);
+		if (existing) return existing;
+		const intent: ReplyIntent = {
+			key: opId,
+			inReplyTo: inReplyTo ?? null,
+			target: onIssue ? "issue" : "pr",
+			body: body.slice(0, 20_000),
+			generation: this.store.generation(),
+			status: "pending",
+			postedCommentId: null,
+			createdAt: Date.now(),
+		};
+		this.store.setMeta("replyIntents", [...intents, intent]);
+		this.store.log("reply.intent", { key: opId, inReplyTo: intent.inReplyTo });
+		return intent;
+	}
+
+	#recordReporterConfirmation(commentId: number): string {
+		const event = this.store
+			.events()
+			.find((e) => e.kind === "comment" && Number(e.payload.commentId) === commentId);
+		if (!event) throw new Error(`comment ${commentId} is not a recorded comment on this case`);
+		if (event.provenance !== "reporter" && event.actor !== this.store.getMeta<string>("reporter")) {
+			throw new Error(`comment ${commentId} is from ${event.actor}, not the reporter`);
+		}
+		this.store.setMeta("reporterConfirmation", { commentId, actor: event.actor, at: Date.now() });
+		this.store.log("reporter.confirmed", { comment: commentId, by: event.actor });
+		return `Recorded the reporter's confirmation (comment ${commentId}).`;
+	}
+
+	async #repliesJob(): Promise<LifecycleJobOutcome | void> {
+		const intents = this.store.getMeta<ReplyIntent[]>("replyIntents") ?? [];
+		const pending = intents.filter((i) => i.status === "pending");
+		if (pending.length === 0) return;
+		const identity = this.#identity();
+		const prNumber = this.store.getMeta<number>("pr") ?? identity.prNumber;
+		if (this.#dryRun()) return;
+		const github = this.#github();
+		for (const intent of pending) {
+			if (intent.generation !== this.store.generation()) {
+				this.#saveIntent({ ...intent, status: "dropped" });
+				this.store.log("reply.dropped", { key: intent.key, reason: "obsolete generation" });
+				continue;
+			}
+			const target =
+				intent.inReplyTo || intent.target === "pr"
+					? (prNumber ?? identity.issueNumber)
+					: (identity.issueNumber ?? prNumber);
+			if (!target) {
+				this.#saveIntent({ ...intent, status: "dropped" });
+				this.store.log("reply.dropped", {
+					key: intent.key,
+					reason: "no issue or pull request to post on",
+				});
+				continue;
+			}
+			const marker = `<!-- emdash-bot:reply key=${intent.key} -->`;
+			const body = `${intent.body.trim()}\n\n${marker}`;
+			let postedId: number | undefined;
+			if (intent.inReplyTo) {
+				const path = github.repoPath(`/pulls/${target}/comments?per_page=100`);
+				const find = async () =>
+					(await github.request<Array<{ id: number; body: string }>>("GET", path)).find((c) =>
+						c.body.includes(marker),
+					)?.id;
+				postedId = await find();
+				if (!postedId) {
+					const created = await github.raw<{ id?: number }>(
+						"POST",
+						github.repoPath(`/pulls/${target}/comments/${intent.inReplyTo}/replies`),
+						{ body },
+					);
+					postedId = created.status === 201 && created.data.id ? created.data.id : await find();
+				}
+			} else {
+				const path = github.repoPath(`/issues/${target}/comments?per_page=100`);
+				const find = async () =>
+					(await github.request<Array<{ id: number; body: string }>>("GET", path)).find((c) =>
+						c.body.includes(marker),
+					)?.id;
+				postedId = await find();
+				if (!postedId) {
+					const created = await github.raw<{ id?: number }>(
+						"POST",
+						path.replace("?per_page=100", ""),
+						{ body },
+					);
+					postedId = created.status === 201 && created.data.id ? created.data.id : await find();
+				}
+			}
+			if (!postedId) throw new Error(`reply ${intent.key} could not be posted or found`);
+			this.#saveIntent({ ...intent, status: "posted", postedCommentId: postedId });
+			this.store.log("reply.posted", {
+				key: intent.key,
+				comment: postedId,
+				inReplyTo: intent.inReplyTo,
+			});
+		}
+	}
+
+	#saveIntent(intent: ReplyIntent): void {
+		const intents = this.store.getMeta<ReplyIntent[]>("replyIntents") ?? [];
+		this.store.setMeta(
+			"replyIntents",
+			intents.map((i) => (i.key === intent.key ? intent : i)),
 		);
-		if (!finding) throw new Error(`unknown finding ${id}`);
-		const round = this.store.getMeta<RoundState>("round");
-		if (round) this.store.setMeta("round", { ...round, respondedToFindings: true });
-		this.store.log("finding.author-disposition", { id, disposition });
-		return finding;
 	}
 
 	// ---------------- GitHub ----------------
@@ -813,19 +951,34 @@ export class CaseDO extends DurableObject<Env> {
 			provenance: delivery.provenance,
 		});
 		const event = this.store.events().at(-1)!;
-		const needsAuthor = await this.#apply(event, delivery);
-		if (!needsAuthor) this.store.markConsumed([event.seq], 0);
+		const message = await this.#apply(event, delivery);
+		if (message && this.store.state() === "active")
+			await this.#submitToAuthor(event.deliveryId, message);
+		// An adopted pull request may already carry reviews: read them now.
+		if (
+			event.kind === "assigned" &&
+			this.store.identity()?.kind === "pr" &&
+			this.store.state() === "active"
+		) {
+			await this.#syncReviews().catch((error: unknown) =>
+				this.store.log("reviews.sync-failed", { error: errorMessage(error) }),
+			);
+		}
 		if (this.store.state() === "active") await this.#schedule("reconcile", Date.now() + 500);
 		return { accepted: true, duplicate: false, caseId: delivery.caseId };
 	}
 
-	/** Apply an admitted event to the case record. Returns whether it needs author work. */
-	async #apply(event: CaseEvent, delivery: CaseDelivery): Promise<boolean> {
+	/**
+	 * Record an admitted event and return the message the author should
+	 * receive, if any. Authority and provenance are decided here; what the
+	 * message means is left to the author's judgement.
+	 */
+	async #apply(event: CaseEvent, delivery: CaseDelivery): Promise<string | null> {
 		const payload = event.payload;
+		const from = `${event.actor} (${event.provenance})`;
 		switch (event.kind) {
 			case "assigned": {
-				const state = this.store.state();
-				if (state === "active") return false;
+				if (this.store.state() === "active") return null;
 				this.store.transaction(() => {
 					if (!this.store.identity()) {
 						this.store.setMeta("identity", delivery.identity);
@@ -836,6 +989,7 @@ export class CaseDO extends DurableObject<Env> {
 							body: `# ${str(payload.title ?? "")}\n\n${str(payload.body ?? "")}`,
 							createdAt: Date.now(),
 						});
+						if (payload.reporter) this.store.setMeta("reporter", str(payload.reporter));
 					}
 					this.store.setMeta("generation", this.store.generation() + 1);
 					this.store.setMeta("state", "active");
@@ -848,46 +1002,47 @@ export class CaseDO extends DurableObject<Env> {
 					generation: this.store.generation(),
 					by: event.actor,
 				});
-				return true;
+				await this.#prepareCase().catch((error: unknown) =>
+					this.store.log("case.prepare-failed", { error: errorMessage(error) }),
+				);
+				const identity = this.#identity();
+				const what =
+					identity.kind === "issue"
+						? `issue #${identity.issueNumber}`
+						: `pull request #${identity.prNumber}`;
+				return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}. Its text is in the case record. ${identity.kind === "issue" ? "Implement it and submit a candidate." : "Take over this pull request: bring it to a correct, reviewable state and submit a candidate."}`;
 			}
 			case "operator-round":
-				this.store.setMeta("handoff", null);
-				return this.store.state() === "active";
+				return `## Operator note\nFrom: ${from}\n\n${str(payload.note ?? "")}`;
 			case "unassigned":
 				await this.#cancel(`unassigned by ${event.actor}`);
-				return false;
+				return null;
 			case "direction":
-				this.store.addRequirement({
-					source: str(payload.url ?? ""),
-					actor: event.actor,
-					body: str(payload.body ?? ""),
-					createdAt: Date.now(),
-				});
-				this.store.setMeta("handoff", null);
-				return this.store.state() === "active";
+			case "comment":
+				return `## Comment ${str(payload.commentId ?? "")} on ${payload.isPullRequest ? "the pull request" : "the issue"}\nFrom: ${from}${payload.url ? `\nLink: ${str(payload.url)}` : ""}\n\n${str(payload.body ?? "")}`;
 			case "review":
-				return await this.#applyReview(event);
+			case "maintainer-review":
+				return this.#applyReview(event);
 			case "check":
 				return this.#applyCheck(event);
 			case "head-changed":
-				this.store.setMeta("observedHead", String(payload.after));
+				this.store.setMeta("observedHead", str(payload.after));
 				this.store.log("branch.advanced", { by: event.actor, head: payload.after });
-				return false;
+				return `## Branch updated\nFrom: ${from}\n\n${event.actor} pushed ${str(payload.after).slice(0, 12)} to the case branch. Your next candidate is published on top of it.`;
 			case "pr-opened":
-				return false;
+				return null;
 			case "closed": {
 				const isIssue = payload.issue === true;
-				if (isIssue && this.store.publications().some((p) => p.state === "pr-ensured"))
-					return false;
+				if (isIssue && this.store.publications().some((p) => p.state === "pr-ensured")) return null;
 				this.store.setMeta("state", "terminal");
 				this.store.setMeta("generation", this.store.generation() + 1);
 				this.store.log("case.terminal", { merged: payload.merged === true, issue: isIssue });
 				await this.#stopAuthor();
 				await this.#schedule("report", Date.now());
-				return false;
+				return null;
 			}
 			default:
-				return false;
+				return null;
 		}
 	}
 
@@ -902,19 +1057,25 @@ export class CaseDO extends DurableObject<Env> {
 		);
 	}
 
-	async #applyReview(event: CaseEvent): Promise<boolean> {
+	/**
+	 * Record a review as readiness evidence and describe it for the author:
+	 * its state, body, findings block and inline comments with their IDs, so
+	 * the author can reply in the right thread.
+	 */
+	async #applyReview(event: CaseEvent): Promise<string | null> {
 		const payload = event.payload as {
 			reviewId: number;
 			body: string;
 			commitId: string;
 			state: string;
+			url?: string;
 		};
 		const comments = await this.#reviewComments(payload.reviewId).catch((error: unknown) => {
 			this.store.log("review.comments-unavailable", {
 				review: payload.reviewId,
 				error: errorMessage(error),
 			});
-			return [];
+			return [] as ReviewComment[];
 		});
 		const parsed = parseReview(
 			payload.body,
@@ -923,67 +1084,48 @@ export class CaseDO extends DurableObject<Env> {
 			payload.state,
 			comments,
 		);
-		const fresh = this.store.putReview({
-			reviewId: String(payload.reviewId),
-			reviewer: event.actor,
-			commit: parsed.reviewedCommit,
-			state: payload.state,
-			structured: parsed.structured,
-			receivedAt: Date.now(),
-		});
-		if (!fresh) return false;
-		const at = Date.now();
-		for (const f of parsed.findings) {
-			const existing = this.store.finding(f.id);
-			if (!existing) {
-				this.store.putFinding({
-					id: f.id,
-					reviewId: String(payload.reviewId),
-					reviewedCommit: parsed.reviewedCommit,
-					path: f.path,
-					line: f.line,
-					severity: f.severity,
-					title: f.title,
-					body: f.body,
-					actionable: f.actionable,
-					status: "open",
-					authorNote: null,
-					updatedAt: at,
-					history: [{ at, status: "open", by: event.actor, commit: parsed.reviewedCommit }],
-				});
-			} else if (existing.status !== "open") {
-				// The reviewer still reports it on the new head.
-				this.store.updateFinding(
-					f.id,
-					"open",
-					event.actor,
-					"reported again",
-					parsed.reviewedCommit,
-				);
-			}
-		}
-		for (const d of parsed.dispositions) {
-			const status = d.status === "open" ? "open" : "confirmed-by-reviewer";
-			if (this.store.finding(d.id))
-				this.store.updateFinding(
-					d.id,
-					status,
-					event.actor,
-					d.note ?? d.status,
-					parsed.reviewedCommit,
-				);
+		const configured = event.kind === "review";
+		if (configured) {
+			const fresh = this.store.putReview({
+				reviewId: String(payload.reviewId),
+				reviewer: event.actor,
+				commit: parsed.reviewedCommit,
+				state: payload.state,
+				structured: parsed.structured,
+				actionable: actionableCount(parsed),
+				receivedAt: Date.now(),
+			});
+			if (!fresh) return null;
 		}
 		this.store.log("review.recorded", {
 			review: payload.reviewId,
-			commit: parsed.reviewedCommit,
+			by: event.actor,
+			configured,
+			state: payload.state,
 			structured: parsed.structured,
-			findings: parsed.findings.length,
-			dispositions: parsed.dispositions.length,
+			comments: comments.length,
 		});
-		return this.store.findings().some((f) => f.actionable && f.status === "open");
+		const lines = [
+			`## Review (${payload.state.toLowerCase()}) of ${parsed.reviewedCommit.slice(0, 12)}`,
+			`From: ${event.actor} (${event.provenance})${configured ? ", the configured reviewer" : ""}`,
+		];
+		if (payload.body.trim()) lines.push("", payload.body.trim());
+		for (const c of comments) {
+			const where = c.path ? `${c.path}${c.line ? `:${c.line}` : ""}` : "general";
+			lines.push(
+				"",
+				`### Comment ${c.id}${c.inReplyTo ? ` (reply in the thread of comment ${c.inReplyTo})` : ""} on ${where}`,
+				c.body,
+			);
+		}
+		if (comments.length === 0 && !payload.body.trim()) {
+			if (payload.state.toUpperCase() === "APPROVED") return null;
+			lines.push("", "(no text)");
+		}
+		return lines.join("\n");
 	}
 
-	#applyCheck(event: CaseEvent): boolean {
+	#applyCheck(event: CaseEvent): string | null {
 		const p = event.payload as {
 			checkRunId: number;
 			name: string;
@@ -1029,91 +1171,17 @@ export class CaseDO extends DurableObject<Env> {
 			classification: classification.classification,
 			reason: classification.reason,
 		});
-		if (classification.classification !== "code" || p.headSha !== head) return false;
-		const repaired = this.store.getMeta<string[]>("repairsRequested") ?? [];
-		const key = `${p.name}@${p.headSha}`;
-		if (repaired.includes(key)) return false;
-		this.store.setMeta("repairsRequested", [...repaired, key]);
-		return true;
+		// Clear administrative and infrastructure noise, stale runs and successes
+		// are evidence only. Anything that may need the author goes to it.
+		if (!["code", "unknown"].includes(classification.classification) || p.headSha !== head)
+			return null;
+		return `## Check failed: ${p.name}\nFrom: ${event.actor} (${event.provenance})\nHead: ${p.headSha.slice(0, 12)}${p.url ? `\nLink: ${p.url}` : ""}\nClassification: ${classification.classification} (${classification.reason})\n\n${[p.output.title, p.output.summary, p.output.text].filter(Boolean).join("\n\n").slice(0, 6000) || "(no output)"}`;
 	}
 
-	// ---------------- rounds ----------------
-
-	async #startRound(): Promise<void> {
-		const identity = this.#identity();
-		const previous = this.store.getMeta<RoundState>("round");
-		const roundNumber = (previous?.round ?? 0) + 1;
-		const pending = this.store.pendingEvents();
-		if (roundNumber > this.config.budgets.rounds) {
-			this.store.markConsumed(
-				pending.map((e) => e.seq),
-				-1,
-			);
-			await this.#handoff(
-				`round:${roundNumber}:budget`,
-				`the revision round budget (${this.config.budgets.rounds}) is exhausted`,
-				"a maintainer reviews the case and decides how to continue",
-			);
-			return;
-		}
-		const github = this.#github();
-		// Base: the current branch head when one exists, otherwise the default branch.
-		let base = this.#currentHead();
-		if (!base && identity.kind === "pr") base = (await github.branchHead(identity.branch)) ?? null;
-		const dryRun = this.#dryRun();
-		if (dryRun) base ??= dryRun.baseCommit;
-		const defaultHead = dryRun?.baseCommit ?? (await github.branchHead(identity.defaultBranch));
-		if (!defaultHead) throw new Error(`default branch ${identity.defaultBranch} not found`);
-		base ??= defaultHead;
-		if (!this.store.getMeta("instructions")) {
-			const agents =
-				(dryRun
-					? await this.#sandboxFile("AGENTS.md", defaultHead)
-					: await this.#fileAt("AGENTS.md", defaultHead)) ?? "";
-			this.store.setMeta("instructions", { commit: defaultHead, text: agents.slice(0, 40_000) });
-			this.store.setMeta(
-				"prTemplate",
-				await this.#fileAt(".github/PULL_REQUEST_TEMPLATE.md", defaultHead),
-			);
-		}
-		await this.#syncReviews();
-		const latest = this.store.latestCheckpoint();
-		if (!latest || latest.baseCommit !== base)
-			await this.#baseCheckpoint(
-				base,
-				dryRun ? await this.#sandboxTree(base) : await github.commitTree(base),
-			);
-		const operationId = `g${this.store.generation()}-round-${roundNumber}`;
-		const round: RoundState = {
-			round: roundNumber,
-			generation: this.store.generation(),
-			operationId,
-			startedAt: Date.now(),
-			baseCommit: base,
-			open: true,
-		};
-		this.store.transaction(() => {
-			this.store.setMeta("round", round);
-			this.store.markConsumed(
-				pending.map((e) => e.seq),
-				roundNumber,
-			);
-		});
-		const fixtureModel = this.store.getMeta<string>("fixtureModel");
-		if (fixtureModel && faultsEnabled(this.config))
-			await this.harness.session().setModel(parseModelRef(fixtureModel));
-		const prompt = this.#roundPrompt(round, pending);
-		const receipt = await this.harness.submit(prompt, { operationId });
-		this.store.log("round.start", {
-			round: roundNumber,
-			operation: operationId,
-			accepted: receipt.accepted,
-			base,
-			events: pending.map((e) => e.deliveryId),
-		});
-	}
-
-	/** Re-read the configured reviewer's reviews on the live pull request; record any not yet seen. */
+	/**
+	 * Re-read the configured reviewer's reviews on the live pull request, so a
+	 * lost webhook cannot drop one; any not yet seen go to the author.
+	 */
 	async #syncReviews(): Promise<void> {
 		const pr = this.store.getMeta<number>("pr") ?? this.#identity().prNumber;
 		if (!pr || this.config.reviewers.length === 0) return;
@@ -1148,26 +1216,57 @@ export class CaseDO extends DurableObject<Env> {
 			});
 			if (!inserted) continue;
 			const event = this.store.events().at(-1)!;
-			await this.#applyReview(event);
-			this.store.markConsumed([event.seq], 0);
+			const message = await this.#applyReview(event);
+			if (message && this.store.state() === "active")
+				await this.#submitToAuthor(event.deliveryId, message);
 		}
 	}
 
-	#roundPrompt(round: RoundState, events: readonly CaseEvent[]): string {
-		const triggers = events.map((e) => `- ${e.kind} from ${e.actor} (${e.provenance})`).join("\n");
-		return [
-			`# Case round ${round.round}`,
-			"",
-			"New events since the last round:",
-			triggers || "- (none)",
-			"",
-			this.#caseRecord(),
-		].join("\n");
+	/**
+	 * Hand one message to Pi. Pi's inbox holds it until the author reaches its
+	 * next decision point; the operation ID makes resubmission harmless. The
+	 * only gates are capacity (one author per repository) and the run budget.
+	 */
+	async #submitToAuthor(key: string, text: string): Promise<void> {
+		// The bot's own milestone notices do not spend the author's run budget.
+		const counted = !/^(published|ready|publication-stopped):/.test(key);
+		const slot = await this.#authorSlot("acquire");
+		if (!slot.granted) {
+			const held = this.store.getMeta<Array<{ key: string; text: string }>>("held") ?? [];
+			if (!held.some((h) => h.key === key)) this.store.setMeta("held", [...held, { key, text }]);
+			this.store.log("author.held", { key, holders: slot.holders });
+			await this.#schedule("reconcile", Date.now() + Math.max(this.config.reconcileMs, 30_000));
+			return;
+		}
+		const runs = (this.store.getMeta<number>("runs") ?? 0) + (counted ? 1 : 0);
+		if (counted && runs > this.config.budgets.rounds) {
+			await this.#handoff(
+				`runs:${runs}`,
+				`the author run budget (${this.config.budgets.rounds}) is exhausted`,
+				"a maintainer decides how to continue (operator resume grants more)",
+			);
+			return;
+		}
+		if (!(await this.#authorBusy())) this.store.setMeta("runStartedAt", Date.now());
+		const fixtureModel = this.store.getMeta<string>("fixtureModel");
+		if (fixtureModel && faultsEnabled(this.config))
+			await this.harness.session().setModel(parseModelRef(fixtureModel));
+		this.store.transaction(() => {
+			this.store.setMeta("runGeneration", this.store.generation());
+			this.store.setMeta("runs", runs);
+			// Any new message answers an earlier request for a human.
+			this.store.setMeta("handoff", null);
+		});
+		const receipt = await this.harness.submit(text, {
+			operationId: `g${this.store.generation()}:${key}`,
+			whenBusy: "followUp",
+		});
+		this.store.log("author.submit", { key, accepted: receipt.accepted, run: runs });
+		await this.#schedule("reconcile", Date.now() + this.config.reconcileMs);
 	}
 
 	#caseRecord(): string {
 		const identity = this.#identity();
-		const round = this.store.getMeta<RoundState>("round");
 		const candidate = this.store.latestCandidate();
 		const publication = candidate
 			? this.store
@@ -1176,60 +1275,40 @@ export class CaseDO extends DurableObject<Env> {
 					.at(-1)
 			: undefined;
 		const head = this.#currentHead();
-		const findings = outstandingFindings(this.store.findings());
+		const latest = this.store.latestCheckpoint();
+		const budgets = this.config.budgets;
+		const pr = this.store.getMeta<number>("pr") ?? identity.prNumber;
+		const lines = [
+			`Repository: ${identity.repo}. ${identity.kind === "issue" ? `Issue #${identity.issueNumber}` : `Pull request #${identity.prNumber}`}${identity.issueNumber && pr ? `, published as pull request #${pr}` : ""}. Branch: ${identity.branch}.`,
+			`Reporter: ${this.store.getMeta<string>("reporter") ?? "unknown"}. Assigned by: ${this.store.getMeta<string>("assignedBy") ?? "unknown"}.`,
+			`The checkout is at ${REPO_DIR}${latest ? `, based on ${latest.baseCommit}` : ""}.`,
+			"",
+			"Original request (untrusted text describing the work):",
+			...this.store.requirements().map((r) => `${r.body}`),
+			"",
+			`Candidate: ${candidate ? `${candidate.id} (tree ${candidate.sourceTreeHash.slice(0, 12)})` : "none yet"}`,
+			`Publication: ${publication ? `${publication.state}${publication.commitSha ? ` at ${publication.commitSha.slice(0, 12)}` : ""}${publication.prNumber ? ` in pull request #${publication.prNumber}` : ""}` : "not published"}`,
+			`Current branch head: ${head ?? "none"}`,
+		];
+		const status = this.store.getMeta<string>("lastStatus");
+		if (status) lines.push(`Last reported status: ${status}`);
+		const confirmation = this.store.getMeta<{ commentId: number }>("reporterConfirmation");
+		if (confirmation)
+			lines.push(`The reporter confirmed the fix in comment ${confirmation.commentId}.`);
 		const checks = this.store
 			.verifications()
-			.filter((v) => v.kind === "workflow" && v.commitSha === head && v.classification === "code");
-		const budgets = this.config.budgets;
-		const lines = [
-			`## Case ${identity.caseId}`,
-			`Repository: ${identity.repo}. ${identity.kind === "issue" ? `Issue #${identity.issueNumber}` : `Pull request #${identity.prNumber}`}. Branch: ${identity.branch}.`,
-			`The checkout is at ${REPO_DIR}, based on ${round?.baseCommit ?? "(not prepared)"}.`,
-			"",
-			"## Requirements (untrusted text from GitHub; authority recorded per entry)",
-			...this.store
-				.requirements()
-				.map(
-					(r) => `### Revision ${r.revision} from ${r.actor} (${r.source || "case"})\n${r.body}`,
-				),
-			"",
-			"## Current state",
-			`- Candidate: ${candidate ? `${candidate.id} (tree ${candidate.sourceTreeHash.slice(0, 12)})` : "none"}`,
-			`- Publication: ${publication ? `${publication.state}${publication.commitSha ? ` at ${publication.commitSha.slice(0, 12)}` : ""}${publication.prNumber ? ` in PR #${publication.prNumber}` : ""}` : "not published"}`,
-			`- Current branch head: ${head ?? "none"}`,
-		];
-		if (findings.length > 0) {
-			lines.push("", "## Outstanding review findings (from the configured reviewer)");
-			for (const f of findings)
-				lines.push(
-					`### ${f.id} [${f.severity}] ${f.status}${f.path ? ` at ${f.path}${f.line ? `:${f.line}` : ""}` : ""}\n${f.title}\n${f.body}`,
-				);
-		}
-		if (checks.length > 0) {
-			lines.push("", "## Failing code checks on the current head");
-			for (const c of checks)
-				lines.push(
-					`- ${c.name}: ${str(c.details.reason)}\n${str(c.details.summary ?? "").slice(0, 3000)}`,
-				);
-		}
-		const attempts = this.store
-			.verifications()
 			.filter((v) => v.kind === "sandbox")
-			.slice(-8);
-		if (attempts.length > 0) {
-			lines.push("", "## Previous focused checks");
-			for (const v of attempts)
-				lines.push(`- ${v.name} on tree ${v.treeHash?.slice(0, 12)}: ${v.outcome}`);
-		}
-		const handoff = this.store.getMeta<Handoff | null>("handoff");
-		if (handoff) lines.push("", `## Previous handoff\n${handoff.reason}`);
+			.slice(-5);
+		if (checks.length > 0)
+			lines.push(
+				"",
+				"Recent focused checks:",
+				...checks.map((v) => `- ${v.name} on tree ${v.treeHash?.slice(0, 12)}: ${v.outcome}`),
+			);
 		const tokens = this.store.getMeta<number>("tokens") ?? 0;
 		lines.push(
 			"",
-			"## Remaining budgets",
-			`- Rounds: ${budgets.rounds - (round?.round ?? 0)} after this one`,
-			`- Author time this round: ${Math.round(budgets.authorMs / 60_000)} minutes`,
-			`- Tokens: ${Math.max(0, budgets.tokens - tokens)}`,
+			`Budgets: ${Math.max(0, budgets.rounds - (this.store.getMeta<number>("runs") ?? 0))} runs and ${Math.max(0, budgets.tokens - tokens)} tokens remain.`,
 		);
 		return lines.join("\n");
 	}
@@ -1274,96 +1353,41 @@ export class CaseDO extends DurableObject<Env> {
 		return (await this.harness.pending()).length > 0;
 	}
 
+	/**
+	 * Heartbeat with capacity and budget duties only: cap a run's time, free the
+	 * author slot when Pi is idle, submit messages held for capacity, and refresh
+	 * the status. It never decides what the author should do.
+	 */
 	async #reconcile(): Promise<LifecycleJobOutcome | void> {
 		if (this.store.state() !== "active") return;
-		const round = this.store.getMeta<RoundState>("round");
 		if (await this.#authorBusy()) {
-			if (round && Date.now() - round.startedAt > this.config.budgets.authorMs) {
+			const started = this.store.getMeta<number>("runStartedAt");
+			if (started && Date.now() - started > this.config.budgets.authorMs) {
 				await this.#stopAuthor();
 				await this.#handoff(
-					`round:${round.round}:timeout`,
-					"the author exceeded the round time budget",
-					"inspect the transcript and resume or reassign",
+					`run-timeout:${started}`,
+					"the author exceeded the run time budget",
+					"inspect the transcript; a new comment or operator resume continues",
 				);
 			}
 			return { rescheduleAt: Date.now() + this.config.reconcileMs };
 		}
-		if (round?.open) {
-			const current = this.store.getMeta<RoundState>("round")!;
-			this.store.setMeta("round", { ...current, open: false });
-			await this.#authorSlot("release");
-			const result = await this.harness.wait(current.operationId).catch(() => undefined);
-			this.store.log("round.end", {
-				round: current.round,
-				status: result?.status,
-				reason: result?.reason,
-				candidate: current.candidateId ?? null,
-				handedOff: current.handedOff ?? false,
-			});
-			if (!current.candidateId && !current.handedOff && !current.respondedToFindings) {
-				await this.#handoff(
-					`round:${current.round}:no-outcome`,
-					`the author ended round ${current.round} without submitting a candidate or handing off${result?.reason ? ` (${result.reason})` : ""}`,
-					"inspect the transcript; resume with a direction or reassign",
-				);
-			}
+		if (this.store.getMeta<number>("runStartedAt")) {
+			this.store.setMeta("runStartedAt", null);
+			this.store.log("author.idle", {});
 		}
-		let handoff = this.store.getMeta<Handoff | null>("handoff");
-		// An unconsumed maintainer direction or operator round arrived after the
-		// last round started, so it answers any handoff that round recorded.
-		if (
-			handoff &&
-			this.store.pendingEvents().some((e) => e.kind === "direction" || e.kind === "operator-round")
-		) {
-			this.store.setMeta("handoff", null);
-			this.store.log("handoff.answered", { reason: handoff.reason });
-			handoff = null;
+		await this.#authorSlot("release");
+		const held = this.store.getMeta<Array<{ key: string; text: string }>>("held") ?? [];
+		if (held.length > 0) {
+			this.store.setMeta("held", []);
+			for (const h of held) await this.#submitToAuthor(h.key, h.text);
 		}
-		const pending = this.store
-			.pendingEvents()
-			.filter((e) => AUTHOR_KINDS.has(e.kind) || e.kind === "review" || e.kind === "check");
+		await this.#schedule("report", Date.now());
 		const publishing = this.store
 			.publications()
 			.some((p) => p.state === "intent" || p.state === "commit-created");
-		const unpublished =
-			this.store.latestCandidate() &&
-			!this.store.publication(`publish:${this.store.latestCandidate()!.id}`);
-		if (pending.length > 0 && !handoff && !publishing && !unpublished) {
-			const slot = await this.#authorSlot("acquire");
-			if (!slot.granted) {
-				if (this.store.getMeta<boolean>("waitingForSlot") !== true) {
-					this.store.setMeta("waitingForSlot", true);
-					this.store.log("round.waiting-for-slot", {
-						holders: slot.holders,
-						limit: this.config.maxActiveAuthors,
-					});
-				}
-				return { rescheduleAt: Date.now() + Math.max(this.config.reconcileMs, 30_000) };
-			}
-			this.store.setMeta("waitingForSlot", false);
-			try {
-				await this.#startRound();
-			} catch (error) {
-				await this.#authorSlot("release").catch(() => undefined);
-				const failures = (this.store.getMeta<number>("startFailures") ?? 0) + 1;
-				this.store.setMeta("startFailures", failures);
-				this.store.log("round.start-failed", { error: errorMessage(error), failures });
-				if (failures >= 10) {
-					this.store.setMeta("startFailures", 0);
-					await this.#handoff(
-						`round-start:${Date.now()}`,
-						`the author round could not start: ${errorMessage(error)}`,
-						"fix the configuration, then resume the case",
-					);
-					return;
-				}
-				return { rescheduleAt: Date.now() + Math.max(this.config.reconcileMs, 30_000) };
-			}
-			this.store.setMeta("startFailures", 0);
+		if (publishing || (this.store.getMeta<unknown[]>("held") ?? []).length > 0)
 			return { rescheduleAt: Date.now() + this.config.reconcileMs };
-		}
-		await this.#schedule("report", Date.now());
-		if (publishing || unpublished) return { rescheduleAt: Date.now() + this.config.reconcileMs };
 	}
 
 	async #publishJob(candidateId: string, attempt: number): Promise<LifecycleJobOutcome | void> {
@@ -1405,12 +1429,19 @@ export class CaseDO extends DurableObject<Env> {
 			if (result.state === "published") {
 				this.store.setMeta("observedHead", result.commitSha);
 				this.store.setMeta("pr", result.prNumber);
-			} else if (result.state === "needs-human") {
-				await this.#handoff(
-					`publish:${candidateId}:handoff`,
-					result.reason,
-					"inspect the publication receipt and the branch",
+				// Further work starts from the published commit.
+				const published = this.store.candidate(candidateId)!;
+				await this.#source.run(() =>
+					this.#baseCheckpoint(result.commitSha, published.sourceTreeHash),
 				);
+				if (this.store.state() === "active") {
+					await this.#submitToAuthor(
+						`published:${candidateId}`,
+						`## Published\nFrom: the bot (publication)\n\nCandidate ${candidateId} was published as ${result.commitSha.slice(0, 12)} in pull request #${result.prNumber}. CI and review follow; you will hear about failures and feedback.`,
+					);
+				}
+			} else if (result.state === "needs-human") {
+				await this.#publicationStopped(candidateId, result.reason);
 			}
 			await this.#schedule("report", Date.now());
 			await this.#schedule("reconcile", Date.now() + 500);
@@ -1437,9 +1468,45 @@ export class CaseDO extends DurableObject<Env> {
 		}
 	}
 
+	/**
+	 * A branch-level publication stop goes to the author with its preserved
+	 * patch, so it can rebuild the change on the current head. Integrity
+	 * failures are bot faults and go to a human.
+	 */
+	async #publicationStopped(candidateId: string, reason: string): Promise<void> {
+		if (/tree|integrity|materialization/i.test(reason) || this.store.state() !== "active") {
+			await this.#handoff(
+				`publish:${candidateId}:handoff`,
+				reason,
+				"inspect the publication receipt and the branch",
+			);
+			return;
+		}
+		const identity = this.#identity();
+		const github = this.#github();
+		const head = await github.branchHead(identity.branch);
+		if (head)
+			await this.#source.run(async () => this.#baseCheckpoint(head, await github.commitTree(head)));
+		const candidate = this.store.candidate(candidateId)!;
+		const patch = await readArtifact(
+			this.env.ARTIFACTS,
+			candidate.artifactKey,
+			candidate.artifactDigest,
+		)
+			.then((b) => new TextDecoder().decode(b))
+			.catch(() => "");
+		await this.#submitToAuthor(
+			`publication-stopped:${candidateId}`,
+			`## Publication stopped\nFrom: the bot (publication)\n\n${reason}\n\nYour checkout now starts from the branch head ${head?.slice(0, 12) ?? "(unknown)"}. Rebuild your change on top of it and submit a new candidate. Your previous change, preserved as candidate ${candidateId}:\n\n\`\`\`diff\n${patch.slice(0, 20_000)}\n\`\`\``,
+		);
+	}
+
 	async #observe(): Promise<void> {
 		const pr = this.store.getMeta<number>("pr") ?? this.#identity().prNumber;
 		if (!pr) return;
+		await this.#syncReviews().catch((error: unknown) =>
+			this.store.log("reviews.sync-failed", { error: errorMessage(error) }),
+		);
 		const github = this.#github();
 		const data = await github.request<{
 			head: { sha: string };
@@ -1523,14 +1590,11 @@ export class CaseDO extends DurableObject<Env> {
 		await this.lifecycle.start();
 		return computeStatus({
 			state: this.store.state(),
-			authorBusy:
-				this.store.state() === "active" &&
-				((await this.#authorBusy()) || this.store.getMeta<RoundState>("round")?.open === true),
+			authorBusy: this.store.state() === "active" && (await this.#authorBusy()),
 			handoff: this.store.getMeta<Handoff | null>("handoff") ?? undefined,
 			candidates: this.store.candidates(),
 			publications: this.store.publications(),
 			verifications: this.store.verifications(),
-			findings: this.store.findings(),
 			reviews: this.store.reviews(),
 			observedHead: this.store.getMeta<string>("observedHead") ?? null,
 			mergeability: this.store.getMeta("mergeability"),
@@ -1550,12 +1614,26 @@ export class CaseDO extends DurableObject<Env> {
 		if (last !== report.status) {
 			this.store.setMeta("lastStatus", report.status);
 			this.store.log("status", { status: report.status, reasons: report.reasons });
+			if (report.status === "ready-for-human" && report.head && this.store.state() === "active") {
+				await this.#submitToAuthor(
+					`ready:${report.head}`,
+					`## Ready for human review\nFrom: the bot (status)\n\nThe current head ${report.head.slice(0, 12)} passed the required checks, the reviewer's latest review is clean, and it merges cleanly. A maintainer still has to approve and merge.`,
+				);
+			}
 		}
-		const pr = this.store.getMeta<number>("pr") ?? this.#identity().prNumber;
-		if (pr) {
+		// One progress comment: on the issue until a pull request exists, then on the pull request.
+		const identity = this.#identity();
+		const pr = this.store.getMeta<number>("pr") ?? identity.prNumber;
+		const target = pr ?? identity.issueNumber;
+		if (target && !this.#dryRun()) {
 			try {
 				await this.#fault("report-failure");
-				await this.#upsertStatusComment(pr, renderStatus(this.#identity(), report));
+				const body = renderStatus(identity, report, {
+					plan: this.store.getMeta<WorkPlan>("workPlan"),
+					prNumber: pr ?? null,
+					reporterConfirmed: !!this.store.getMeta("reporterConfirmation"),
+				});
+				await this.#upsertStatusComment(target, body);
 			} catch (error) {
 				this.store.log("report.failed", { error: errorMessage(error) });
 				return { rescheduleAt: Date.now() + 60_000 };
@@ -1565,28 +1643,39 @@ export class CaseDO extends DurableObject<Env> {
 			return { rescheduleAt: Date.now() + Math.max(this.config.reconcileMs, 120_000) };
 	}
 
-	async #upsertStatusComment(pr: number, body: string): Promise<void> {
+	async #upsertStatusComment(target: number, body: string): Promise<void> {
 		const hash = await sha256Hex(body);
-		const stored = this.store.getMeta<{ id: number; hash: string }>("statusComment");
-		if (stored?.hash === hash) return;
+		const stored = this.store.getMeta<{ id: number; hash: string; target?: number }>(
+			"statusComment",
+		);
+		const identity = this.#identity();
 		const github = this.#github();
-		let id = stored?.id;
+		if (stored && stored.target !== undefined && stored.target !== target) {
+			// The work moved to the pull request: leave a pointer on the issue.
+			await github.request("PATCH", github.repoPath(`/issues/comments/${stored.id}`), {
+				body: renderMovedToPullRequest(identity, target),
+			});
+			this.store.log("progress.moved", { from: stored.target, to: target });
+		} else if (stored?.hash === hash) return;
+		let id = stored && stored.target === target ? stored.id : undefined;
 		if (!id) {
-			const marker = statusMarker(this.#identity().caseId);
+			const marker = statusMarker(identity.caseId);
 			const comments = await github.request<Array<{ id: number; body: string }>>(
 				"GET",
-				github.repoPath(`/issues/${pr}/comments?per_page=100`),
+				github.repoPath(`/issues/${target}/comments?per_page=100`),
 			);
 			id = comments.find((c) => c.body.includes(marker))?.id;
 		}
 		if (id) await github.request("PATCH", github.repoPath(`/issues/comments/${id}`), { body });
 		else
 			id = (
-				await github.request<{ id: number }>("POST", github.repoPath(`/issues/${pr}/comments`), {
-					body,
-				})
+				await github.request<{ id: number }>(
+					"POST",
+					github.repoPath(`/issues/${target}/comments`),
+					{ body },
+				)
 			).id;
-		this.store.setMeta("statusComment", { id, hash });
+		this.store.setMeta("statusComment", { id, hash, target });
 	}
 
 	// ---------------- operator interface ----------------
@@ -1611,8 +1700,8 @@ export class CaseDO extends DurableObject<Env> {
 			candidates: this.store.candidates(),
 			publications: this.store.publications(),
 			verifications: this.store.verifications(),
-			findings: this.store.findings(),
 			reviews: this.store.reviews(),
+			reporterConfirmation: this.store.getMeta("reporterConfirmation") ?? null,
 			operations: this.store.operations(),
 			pending: await this.harness.pending(),
 			faults: this.store.armedFaults(),

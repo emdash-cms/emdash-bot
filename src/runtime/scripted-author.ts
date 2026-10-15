@@ -40,17 +40,32 @@ interface Script {
 const BLOCK = /```scripted-author\s*\n([\s\S]*?)\n```/;
 
 function messageText(message: Message): string {
-	if (typeof message.content === "string") return message.content;
-	return message.content
-		.map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
-		.join("\n");
+	const sections =
+		message.role === "system"
+			? Object.values(message.sections ?? {})
+					.filter(Boolean)
+					.join("\n")
+			: "";
+	const content =
+		typeof message.content === "string"
+			? message.content
+			: message.content
+					.map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
+					.join("\n");
+	return `${content}\n${sections}`;
 }
 
 export function nextScriptedResponse(messages: readonly Message[]) {
-	const users = messages.flatMap((m, i) => (m.role === "user" ? [i] : []));
+	// Each human-originated message starts a script round; the bot's own
+	// milestone notices (publication, readiness) do not.
+	const milestone = /^## (Published|Ready for human review)\b/;
+	const users = messages.flatMap((m, i) =>
+		m.role === "user" && !milestone.test(messageText(m).trimStart()) ? [i] : [],
+	);
 	let script: Script | undefined;
-	for (const index of users) {
-		const match = BLOCK.exec(messageText(messages[index]!));
+	// The script may sit in a message or in the case record's system section.
+	for (const message of messages) {
+		const match = BLOCK.exec(messageText(message));
 		if (match) script = JSON.parse(match[1]!) as Script;
 	}
 	if (!script) return fauxAssistantMessage("No scripted-author block was provided; nothing to do.");

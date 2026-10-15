@@ -21,6 +21,7 @@ export interface Budgets {
 	readonly jobMs: number;
 	readonly caseMs: number;
 	readonly tokens: number;
+	/** Messages that may start the author working (assignment, comments, reviews, failing checks). */
 	readonly rounds: number;
 	readonly cancelMs: number;
 }
@@ -88,7 +89,7 @@ export const DEFAULT_BUDGETS: Budgets = {
 	jobMs: 10 * 60_000,
 	caseMs: 6 * 60 * 60_000,
 	tokens: 4_000_000,
-	rounds: 6,
+	rounds: 30,
 	cancelMs: 60_000,
 };
 

@@ -13,6 +13,8 @@
 
 export interface ReviewFinding {
 	readonly id: string;
+	/** The inline comment this finding came from, so replies can join its thread. */
+	readonly commentId?: number | null;
 	readonly severity: string;
 	readonly path: string | null;
 	readonly line: number | null;
@@ -32,6 +34,8 @@ export interface ParsedReview {
 	readonly reviewedCommit: string;
 	readonly findings: readonly ReviewFinding[];
 	readonly dispositions: readonly ReviewDisposition[];
+	/** Inline comments that reply to an existing thread rather than raising something new. */
+	readonly replies: readonly ReviewComment[];
 }
 
 const BLOCK = /```emdash-review-findings\s*\n([\s\S]*?)\n```/;
@@ -39,6 +43,8 @@ const BLOCK = /```emdash-review-findings\s*\n([\s\S]*?)\n```/;
 /** An inline comment that belongs to the review. */
 export interface ReviewComment {
 	readonly id: number;
+	/** The thread's first comment, when this comment is a reply. */
+	readonly inReplyTo?: number | null;
 	readonly path: string | null;
 	readonly line: number | null;
 	readonly body: string;
@@ -61,6 +67,7 @@ export function parseReview(
 			};
 			return {
 				structured: true,
+				replies: comments.filter((c) => c.inReplyTo),
 				reviewedCommit: data.reviewedCommit || commitId,
 				findings: (data.findings ?? []).flatMap((f) =>
 					f.id
@@ -103,9 +110,10 @@ export function parseReview(
 		});
 	}
 	for (const comment of comments) {
-		if (comment.body.trim() === "") continue;
+		if (comment.body.trim() === "" || comment.inReplyTo) continue;
 		findings.push({
 			id: `review-${reviewId}-c${comment.id}`,
+			commentId: comment.id,
 			severity: "unspecified",
 			path: comment.path,
 			line: comment.line,
@@ -114,5 +122,16 @@ export function parseReview(
 			actionable: !approved,
 		});
 	}
-	return { structured: false, reviewedCommit: commitId, findings, dispositions: [] };
+	return {
+		structured: false,
+		reviewedCommit: commitId,
+		findings,
+		dispositions: [],
+		replies: comments.filter((c) => c.inReplyTo && c.body.trim() !== ""),
+	};
+}
+
+/** How many actionable items a review carries, for readiness. */
+export function actionableCount(parsed: ParsedReview): number {
+	return parsed.findings.filter((f) => f.actionable).length;
 }

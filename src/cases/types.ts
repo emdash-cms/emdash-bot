@@ -174,5 +174,20 @@ export interface ReviewRecord {
 	readonly commit: string;
 	readonly state: string;
 	readonly structured: boolean;
+	/** Actionable items in the review: findings-block entries, or the body and inline comments. */
+	readonly actionable: number;
 	readonly receivedAt: number;
+}
+
+/** A reply the author asked trusted code to post. */
+export interface ReplyIntent {
+	readonly key: string;
+	/** Review comment to reply under; null posts a top-level comment on `target`. */
+	readonly inReplyTo: number | null;
+	readonly target: "pr" | "issue";
+	readonly body: string;
+	readonly generation: number;
+	readonly status: "pending" | "posted" | "dropped";
+	readonly postedCommentId: number | null;
+	readonly createdAt: number;
 }

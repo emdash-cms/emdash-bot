@@ -1,17 +1,16 @@
-// Deterministic case status from recorded evidence. Statuses describe what
-// can be observed; they are not model stages.
+// Deterministic case status from recorded evidence and the live pull request.
+// Status reports what can be observed; it never decides what the author does.
 
 import type { CheckPolicy } from "../config.ts";
-import { str } from "../util.ts";
 import type {
 	Candidate,
 	CaseState,
 	CaseStatus,
-	Finding,
 	Publication,
 	ReviewRecord,
 	Verification,
 } from "../cases/types.ts";
+import { str } from "../util.ts";
 
 export interface StatusInput {
 	readonly state: CaseState | undefined;
@@ -20,7 +19,6 @@ export interface StatusInput {
 	readonly candidates: readonly Candidate[];
 	readonly publications: readonly Publication[];
 	readonly verifications: readonly Verification[];
-	readonly findings: readonly Finding[];
 	readonly reviews: readonly ReviewRecord[];
 	/** The branch head last observed on GitHub, when known. */
 	readonly observedHead: string | null;
@@ -43,20 +41,10 @@ export interface StatusReport {
 	readonly publication: Publication | undefined;
 	readonly head: string | null;
 	readonly requiredChecks: readonly RequiredCheck[];
-	readonly outstandingFindings: readonly Finding[];
+	/** The configured reviewer's latest review of the current head, if any. */
+	readonly review: ReviewRecord | undefined;
 	readonly reviewedHead: boolean;
 	readonly humanApproval: "required";
-}
-
-const UNRESOLVED: ReadonlySet<Finding["status"]> = new Set([
-	"open",
-	"addressed-by-author",
-	"disputed",
-	"needs-human",
-]);
-
-export function outstandingFindings(findings: readonly Finding[]): Finding[] {
-	return findings.filter((f) => f.actionable && UNRESOLVED.has(f.status));
 }
 
 export function requiredChecks(
@@ -89,6 +77,13 @@ export function requiredChecks(
 	});
 }
 
+/** A review is clean when it approves, or when its findings block lists nothing actionable. */
+export function reviewIsClean(review: ReviewRecord): boolean {
+	return (
+		review.state.toUpperCase() === "APPROVED" || (review.structured && review.actionable === 0)
+	);
+}
+
 export function computeStatus(input: StatusInput): StatusReport {
 	const candidate = input.candidates.at(-1);
 	const publication = candidate
@@ -99,16 +94,15 @@ export function computeStatus(input: StatusInput): StatusReport {
 			? publication.commitSha
 			: null;
 	const head = input.observedHead ?? publishedHead;
-	const outstanding = outstandingFindings(input.findings);
 	const checks = requiredChecks(input.policy, input.verifications, head);
-	const reviewedHead = head !== null && input.reviews.some((r) => r.commit === head);
+	const review = head ? input.reviews.filter((r) => r.commit === head).at(-1) : undefined;
 	const base = {
 		candidate,
 		publication,
 		head,
 		requiredChecks: checks,
-		outstandingFindings: outstanding,
-		reviewedHead,
+		review,
+		reviewedHead: review !== undefined,
 		humanApproval: "required" as const,
 	};
 	const report = (status: CaseStatus, reasons: string[], nextAction: string): StatusReport => ({
@@ -124,7 +118,11 @@ export function computeStatus(input: StatusInput): StatusReport {
 	if (input.authorBusy) return report("working", ["the author is working"], "wait for the author");
 	if (input.handoff) return report("needs-human", [input.handoff.reason], input.handoff.nextAction);
 	if (!candidate)
-		return report("working", ["no candidate has been submitted"], "wait for the author");
+		return report(
+			"working",
+			["no candidate has been submitted yet"],
+			"comment on the issue to direct the author",
+		);
 	if (!publication || publication.state === "intent" || publication.state === "commit-created") {
 		return report("working", ["the saved candidate is being published"], "wait for publication");
 	}
@@ -142,15 +140,6 @@ export function computeStatus(input: StatusInput): StatusReport {
 			"verify and review the new head",
 		);
 	}
-
-	const reasons: string[] = [];
-	const open = outstanding.filter((f) => f.status === "open");
-	if (open.length > 0)
-		return report(
-			"changes-required",
-			[`${open.length} open review finding(s)`],
-			"the author addresses the findings",
-		);
 	const failedCode = checks.filter((c) => c.state === "failed" && c.classification === "code");
 	if (failedCode.length > 0)
 		return report(
@@ -168,29 +157,26 @@ export function computeStatus(input: StatusInput): StatusReport {
 				: "inspect the failed check",
 		);
 	}
-	const disputed = outstanding.filter((f) => f.status === "disputed" || f.status === "needs-human");
-	if (disputed.length > 0)
+	if (review && !reviewIsClean(review)) {
 		return report(
-			"needs-human",
-			[`${disputed.length} disputed finding(s)`],
-			"a maintainer resolves the disputed findings",
+			"changes-required",
+			[
+				`the reviewer's latest review of the current head has ${review.actionable} item(s) of feedback`,
+			],
+			"the author responds; approve when satisfied",
 		);
-	const pending = checks.filter((c) => c.state === "missing" || c.state === "pending");
-	if (pending.length > 0) {
-		reasons.push(...pending.map((c) => `${c.name}: ${c.detail}`));
-		return report("waiting-for-checks", reasons, "wait for the required checks");
 	}
-	if (!reviewedHead)
+	const pending = checks.filter((c) => c.state === "missing" || c.state === "pending");
+	if (pending.length > 0)
 		return report(
-			"candidate-published",
-			["no independent review of the current head yet"],
-			"wait for the reviewer",
+			"waiting-for-checks",
+			pending.map((c) => `${c.name}: ${c.detail}`),
+			"wait for the required checks",
 		);
-	const awaiting = outstanding.filter((f) => f.status === "addressed-by-author");
-	if (awaiting.length > 0)
+	if (!review)
 		return report(
 			"candidate-published",
-			[`${awaiting.length} finding(s) await reviewer confirmation`],
+			["no review of the current head by the configured reviewer yet"],
 			"wait for the reviewer",
 		);
 	if (
@@ -213,7 +199,7 @@ export function computeStatus(input: StatusInput): StatusReport {
 	return report(
 		"ready-for-human",
 		[
-			"required checks passed, independent review has no unresolved findings, and the head merges cleanly",
+			"required checks passed, the reviewer's latest review of the current head is clean, and the head merges cleanly",
 		],
 		"maintainer review and approval",
 	);

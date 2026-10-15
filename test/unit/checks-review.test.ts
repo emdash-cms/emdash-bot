@@ -142,6 +142,7 @@ describe("inline review comments", () => {
 		expect(parsed.findings).toEqual([
 			{
 				id: "review-9-c4",
+				commentId: 4,
 				severity: "unspecified",
 				path: "greet.js",
 				line: 1,

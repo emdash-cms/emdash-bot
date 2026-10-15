@@ -21,7 +21,6 @@ const base: StatusInput = {
 	candidates: [candidate],
 	publications: [publication],
 	verifications: [check("test", "h1", "succeeded", "success")],
-	findings: [],
 	reviews: [
 		{
 			reviewId: "r",
@@ -29,6 +28,7 @@ const base: StatusInput = {
 			commit: "h1",
 			state: "APPROVED",
 			structured: true,
+			actionable: 0,
 			receivedAt: 0,
 		},
 	],
@@ -53,11 +53,21 @@ describe("deterministic status", () => {
 		);
 	});
 
-	it("lets a new finding invalidate readiness and a green check not erase it", () => {
-		const finding = { id: "F1", actionable: true, status: "open", title: "t" } as never;
-		expect(computeStatus({ ...base, findings: [finding] }).status).toBe("changes-required");
-		const disputed = { id: "F1", actionable: true, status: "disputed", title: "t" } as never;
-		expect(computeStatus({ ...base, findings: [disputed] }).status).toBe("needs-human");
+	it("treats the reviewer's latest review of the head as the readiness signal", () => {
+		const commented = {
+			reviewId: "r2",
+			reviewer: "x",
+			commit: "h1",
+			state: "COMMENTED",
+			structured: false,
+			actionable: 1,
+			receivedAt: 1,
+		};
+		expect(computeStatus({ ...base, reviews: [commented] }).status).toBe("changes-required");
+		const clean = { ...commented, structured: true, actionable: 0 };
+		expect(computeStatus({ ...base, reviews: [clean] }).status).toBe("ready-for-human");
+		const older = { ...commented, commit: "h0" };
+		expect(computeStatus({ ...base, reviews: [older] }).status).toBe("candidate-published");
 	});
 
 	it("separates code failures from infrastructure failures", () => {

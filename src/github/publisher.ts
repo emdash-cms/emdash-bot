@@ -230,7 +230,7 @@ async function ensurePullRequest(
 			head: ctx.identity.branch,
 			base: ctx.identity.defaultBranch,
 			body,
-			draft: true,
+			draft: false,
 		},
 	);
 	if (created.status === 201 && created.data.number && created.data.id) {

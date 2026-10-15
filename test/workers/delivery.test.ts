@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 describe("issue delivery", () => {
-	it("publishes the saved candidate as a draft pull request", async () => {
+	it("publishes the saved candidate as a pull request ready for review", async () => {
 		bot = await startBot();
 		const response = await bot.webhook(
 			"issues",
@@ -38,7 +38,7 @@ describe("issue delivery", () => {
 		);
 		expect(bot.github.pulls).toHaveLength(1);
 		expect(bot.github.pulls[0]).toMatchObject({
-			draft: true,
+			draft: false,
 			head: "emdash-bot/issue-7",
 			base: "main",
 		});

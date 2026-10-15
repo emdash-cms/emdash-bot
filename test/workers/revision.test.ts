@@ -10,6 +10,7 @@ import {
 	REPO,
 	REVIEWER,
 	assignIssue,
+	authorRuns,
 	issueCaseId,
 	startBot,
 } from "../harness.ts";
@@ -39,10 +40,7 @@ const twoRoundScript = {
 		{
 			steps: [
 				{ tool: "write", args: REVISED },
-				{
-					tool: "respond_to_finding",
-					args: { id: "F1", disposition: "addressed", note: "Added a default name." },
-				},
+				{ tool: "reply", args: { body: "Added a default name." } },
 				{
 					tool: "submit_candidate",
 					args: {
@@ -158,14 +156,14 @@ describe("review repair and asynchronous CI", () => {
 		const head2 = bot.github.head(REPO, branch)!;
 		expect(head2).not.toBe(head1);
 		expect(bot.github.git(REPO, ["rev-parse", `${head2}^`])).toBe(head1); // fast-forward, no force push
-		expect(second.findings.find((f: any) => f.id === "F1").status).toBe("addressed-by-author");
+		expect(second.reviews[0]).toMatchObject({ structured: true, actionable: 1, commit: head1 });
 
 		// The green check on the old head does not validate the new commit.
 		const waiting = await statusIs(bot, caseId, "waiting-for-checks");
 		expect(waiting.requiredChecks[0].state).toBe("missing");
 
 		await checkRun(bot, pr, branch, head2, "test", "success");
-		await statusIs(bot, caseId, "candidate-published"); // the finding still awaits the reviewer
+		await statusIs(bot, caseId, "candidate-published"); // the new head has no review yet
 		await bot.webhook(
 			"pull_request_review",
 			review(
@@ -184,8 +182,9 @@ describe("review repair and asynchronous CI", () => {
 		const ready = await statusIs(bot, caseId, "ready-for-human");
 		expect(ready.humanApproval).toBe("required");
 		const record = await bot.inspect(caseId);
-		expect(record.findings.find((f: any) => f.id === "F1").status).toBe("confirmed-by-reviewer");
-		expect(record.log.filter((e: any) => e.type === "round.start")).toHaveLength(2);
+		expect(record.reviews.at(-1)).toMatchObject({ commit: head2, state: "APPROVED" });
+		// Assignment, the COMMENTED review and the approval each reached the author.
+		expect(authorRuns(record)).toHaveLength(3);
 	});
 
 	it("does not request code repair for administrative, infrastructure or stale checks", async () => {
@@ -222,11 +221,11 @@ describe("review repair and asynchronous CI", () => {
 			.filter((v: any) => v.kind === "workflow")
 			.map((v: any) => v.classification);
 		expect(classes).toEqual(expect.arrayContaining(["administrative", "infrastructure", "stale"]));
-		expect(record.log.filter((e: any) => e.type === "round.start")).toHaveLength(1);
+		expect(authorRuns(record)).toHaveLength(1);
 		expect(record.candidates).toHaveLength(1);
 	});
 
-	it("starts one repair round for a supported code failure on the current head", async () => {
+	it("sends code failures on the current head to the author, which repairs them", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(33);
 		const branch = "emdash-bot/issue-33";
@@ -249,7 +248,8 @@ describe("review repair and asynchronous CI", () => {
 		await checkRun(bot, pr, branch, head, "test", "failure", "AssertionError: expected greeting");
 		await publishedCount(bot, caseId, 2);
 		const record = await bot.inspect(caseId);
-		expect(record.log.filter((e: any) => e.type === "round.start")).toHaveLength(2);
+		// Each failing run reached the author; it repaired once.
+		expect(authorRuns(record)).toHaveLength(3);
 	});
 
 	it("preserves a maintainer commit that lands before the revision is published", async () => {
@@ -380,10 +380,7 @@ describe("adopted pull request revision", () => {
 				{
 					steps: [
 						{ tool: "write", args: REVISED },
-						{
-							tool: "respond_to_finding",
-							args: { id: "F1", disposition: "addressed", note: "Default added." },
-						},
+						{ tool: "reply", args: { body: "Default added." } },
 						{
 							tool: "submit_candidate",
 							args: { title: "fix: greeting", summary: "Adds the default name." },
@@ -428,7 +425,6 @@ describe("adopted pull request revision", () => {
 		expect(bot.github.show(REPO, head, "greet.js")).toBe(REVISED.content.trimEnd());
 		expect(bot.github.pulls).toHaveLength(1);
 		expect(record.reviews[0]).toMatchObject({ reviewId: "4242", structured: true });
-		expect(record.findings[0]).toMatchObject({ id: "F1", status: "addressed-by-author" });
 		expect(record.candidates[0].expectedBranchHead).toBe(candidate);
 	});
 });
@@ -455,8 +451,14 @@ describe("inline-only reviews", () => {
 			review: { id: 777, user: { login: REVIEWER }, commit_id: head, state: "COMMENTED", body: "" },
 		});
 		const second = await publishedCount(bot, caseId, 2);
-		const finding = second.findings.find((f: any) => f.id === "review-777-c55");
-		expect(finding).toMatchObject({ path: "greet.js", line: 1, actionable: true });
+		expect(second.reviews.find((r: any) => r.reviewId === "777")).toMatchObject({
+			structured: false,
+			actionable: 1,
+		});
+		const message = second.log.find(
+			(e: any) => e.type === "review.recorded" && e.data.review === 777,
+		);
+		expect(message.data.comments).toBe(1);
 		const status = await bot.ops(`cases/${caseId}/status`);
 		expect(status.status).not.toBe("ready-for-human");
 	});

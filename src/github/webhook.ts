@@ -45,6 +45,8 @@ export type DeliveryKind =
 	| "assigned"
 	| "unassigned"
 	| "direction"
+	| "comment"
+	| "maintainer-review"
 	| "review"
 	| "check"
 	| "head-changed"
@@ -230,6 +232,7 @@ export function normalize(
 			title: issue.title ?? "",
 			body: issue.body ?? "",
 			url: issue.html_url ?? "",
+			reporter: issue.user?.login ?? "",
 		};
 		return intake === "assign"
 			? {
@@ -295,20 +298,27 @@ export function normalize(
 		const issue = payload.issue;
 		const comment = payload.comment;
 		if (!issue?.number || !comment?.id) return { skip: "comment payload incomplete" };
-		if (!maintainer) return { skip: "comment author is not a maintainer" };
-		if (!(comment.body ?? "").toLowerCase().includes(`@${botHandle(config).toLowerCase()}`)) {
-			return { skip: "comment does not address the bot" };
-		}
+		// Comments are conversation: the author reads them with its judgement, as a
+		// human would. Only maintainers and the configured reviewer are heard.
+		const reviewerComment = config.reviewers.some((r) => same(sender, r));
+		// The reporter of the original issue is heard on that issue, without maintainer authority.
+		const reporter =
+			!issue.pull_request && same(issue.user?.login, sender) && !sender.endsWith("[bot]");
+		if (!maintainer && !reviewerComment && !reporter)
+			return {
+				skip: "comment author is not a maintainer, the configured reviewer or the reporter",
+			};
 		return {
-			kind: "direction",
+			kind: "comment",
 			actor: sender,
-			provenance: maintainer,
+			provenance: maintainer ?? (reviewerComment ? "reviewer:configured" : "reporter"),
 			route: { aliases: [`number:${issue.number}`] },
 			payload: {
 				commentId: comment.id,
 				body: comment.body ?? "",
 				url: comment.html_url ?? "",
 				number: issue.number,
+				isPullRequest: issue.pull_request !== undefined,
 			},
 		};
 	}
@@ -319,22 +329,25 @@ export function normalize(
 		if (!review?.id || !pr?.number) return { skip: "review payload incomplete" };
 		const reviewer = review.user?.login ?? sender;
 		if (!config.reviewers.some((r) => same(reviewer, r))) {
-			// Human reviews are directions when they come from a maintainer.
-			if (maintainer && (review.body ?? "").trim() !== "") {
+			// A maintainer's review: its state is a signal, its text is conversation.
+			if (!maintainer)
 				return {
-					kind: "direction",
-					actor: sender,
-					provenance: maintainer,
-					route: { aliases: [`number:${pr.number}`] },
-					payload: {
-						reviewId: review.id,
-						body: review.body ?? "",
-						url: review.html_url ?? "",
-						number: pr.number,
-					},
+					skip: `review by ${reviewer} is from neither the configured reviewer nor a maintainer`,
 				};
-			}
-			return { skip: `review by ${reviewer} is not from the configured reviewer` };
+			return {
+				kind: "maintainer-review",
+				actor: sender,
+				provenance: maintainer,
+				route: { aliases: [`number:${pr.number}`] },
+				payload: {
+					reviewId: review.id,
+					body: review.body ?? "",
+					commitId: review.commit_id ?? "",
+					state: review.state ?? "",
+					url: review.html_url ?? "",
+					number: pr.number,
+				},
+			};
 		}
 		return {
 			kind: "review",

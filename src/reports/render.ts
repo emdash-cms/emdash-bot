@@ -3,6 +3,7 @@
 
 import type { CaseIdentity } from "../cases/types.ts";
 import type { StatusReport } from "./status.ts";
+import { type WorkPlan, renderWorkPlan } from "./work-plan.ts";
 
 export function statusMarker(caseId: string): string {
 	return `<!-- emdash-bot:status case=${caseId} -->`;
@@ -23,11 +24,23 @@ const LABEL: Record<StatusReport["status"], string> = {
 	terminal: "Closed",
 };
 
-export function renderStatus(identity: CaseIdentity, report: StatusReport): string {
+export interface CommentExtras {
+	readonly plan?: WorkPlan | null;
+	readonly prNumber?: number | null;
+	readonly reporterConfirmed?: boolean;
+}
+
+/** The bot's single progress comment: the author's plan and the evidence-based status. */
+export function renderStatus(
+	identity: CaseIdentity,
+	report: StatusReport,
+	extras: CommentExtras = {},
+): string {
 	const lines = [
 		statusMarker(identity.caseId),
-		`**EmDash bot status: ${LABEL[report.status]}**`,
+		`### EmDash bot: ${LABEL[report.status]}`,
 		"",
+		...(extras.plan ? [...renderWorkPlan(extras.plan), ""] : []),
 		...report.reasons.map((r) => `- ${r}`),
 		"",
 		`Next action: ${report.nextAction}.`,
@@ -36,8 +49,8 @@ export function renderStatus(identity: CaseIdentity, report: StatusReport): stri
 		"| --- | --- |",
 		`| Candidate | ${report.candidate ? `\`${report.candidate.id}\` (tree \`${report.candidate.sourceTreeHash.slice(0, 12)}\`)` : "none"} |`,
 		`| Published head | ${report.head ? `\`${report.head.slice(0, 12)}\`` : "not published"} |`,
-		`| Independent review of head | ${report.reviewedHead ? "yes" : "no"} |`,
-		`| Outstanding findings | ${report.outstandingFindings.length} |`,
+		`| Reviewer's latest review of head | ${report.review ? `${report.review.state.toLowerCase()}${report.review.actionable ? `, ${report.review.actionable} item(s)` : ""}` : "none"} |`,
+		`| Reporter confirmation | ${extras.reporterConfirmed ? "confirmed" : "not yet"} |`,
 		`| Human approval | required before merge |`,
 	];
 	if (report.requiredChecks.length > 0) {
@@ -46,10 +59,6 @@ export function renderStatus(identity: CaseIdentity, report: StatusReport): stri
 			lines.push(
 				`- \`${check.name}\`: ${check.state}${check.classification && check.classification !== "success" ? ` (${check.classification})` : ""}`,
 			);
-	}
-	if (report.outstandingFindings.length > 0) {
-		lines.push("", "Outstanding findings:", "");
-		for (const f of report.outstandingFindings) lines.push(`- \`${f.id}\` ${f.status}: ${f.title}`);
 	}
 	lines.push(
 		"",
@@ -97,4 +106,9 @@ export function renderPullRequestBody(input: PullRequestBodyInput): string {
 		].join("\n");
 	}
 	return `${body.trim()}\n\n${prMarker(input.identity.caseId)}\n`;
+}
+
+/** What the issue's comment becomes once work moves to the pull request. */
+export function renderMovedToPullRequest(identity: CaseIdentity, prNumber: number): string {
+	return `${statusMarker(identity.caseId)}\nThe EmDash bot's work on this issue continues in #${prNumber}.`;
 }

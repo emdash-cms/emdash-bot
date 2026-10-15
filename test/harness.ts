@@ -242,3 +242,18 @@ export function fixScript(extra: unknown[] = []) {
 		],
 	};
 }
+
+/** Author submissions for human-originated messages (excluding the bot's milestone notices). */
+export function authorRuns(record: any): any[] {
+	return (record.log ?? []).filter(
+		(e: any) => e.type === "author.submit" && !/^(published|ready):/.test(String(e.data.key)),
+	);
+}
+
+/** Wait until the author is working on the case. */
+export function authorBusy(bot: Bot, caseId: string): Promise<unknown> {
+	return bot.waitFor("author busy", async () => {
+		const r = await bot.inspect(caseId);
+		return (r.pending ?? []).length > 0 ? r : null;
+	});
+}

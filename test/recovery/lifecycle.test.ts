@@ -8,6 +8,8 @@ import {
 	FIX_GREETING,
 	REPO,
 	assignIssue,
+	authorBusy,
+	authorRuns,
 	fixScript,
 	issueCaseId,
 	startBot,
@@ -66,11 +68,11 @@ describe("Pi hosted in a case", () => {
 		expect(second.duplicate).toBe(true);
 		const record = await published(bot, caseId);
 		expect(record.events.filter((e: any) => e.deliveryId === "delivery-13")).toHaveLength(1);
-		expect(record.log.filter((e: any) => e.type === "round.start")).toHaveLength(1);
+		expect(authorRuns(record)).toHaveLength(1);
 		expect(bot.github.pulls).toHaveLength(1);
 	});
 
-	it("keeps an event that arrives during a turn pending until the next round", async () => {
+	it("queues a comment that arrives during a run until the author reaches its next decision point", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(14);
 		const script = {
@@ -90,10 +92,7 @@ describe("Pi hosted in a case", () => {
 			],
 		};
 		await bot.webhook("issues", assignIssue({ issueId: 14, number: 14, script }));
-		await bot.waitFor(
-			"round 1 running",
-			async () => (await bot!.inspect(caseId)).round?.round === 1,
-		);
+		await authorBusy(bot, caseId);
 		await bot.webhook("issue_comment", {
 			action: "created",
 			sender: { login: "maintainer" },
@@ -106,11 +105,10 @@ describe("Pi hosted in a case", () => {
 			},
 		});
 		const during = await bot.inspect(caseId);
-		const direction = during.events.find((e: any) => e.kind === "direction");
-		expect(direction.consumedRound).toBeNull();
+		expect(during.pending.map((p: any) => p.status)).toEqual(["running", "queued"]);
 		const record = await published(bot, caseId);
-		expect(record.events.find((e: any) => e.kind === "direction").consumedRound).toBe(2);
-		expect(record.requirements).toHaveLength(2);
+		expect(authorRuns(record)).toHaveLength(2);
+		expect(record.handoff).toBeNull();
 	});
 
 	it("refuses tools from an unassigned generation", async () => {
@@ -128,7 +126,7 @@ describe("Pi hosted in a case", () => {
 			],
 		};
 		await bot.webhook("issues", assignIssue({ issueId: 15, number: 15, script }));
-		await bot.waitFor("round running", async () => (await bot!.inspect(caseId)).round?.round === 1);
+		await authorBusy(bot, caseId);
 		await bot.webhook("issues", {
 			action: "unassigned",
 			sender: { login: "maintainer" },
@@ -158,7 +156,7 @@ describe("Pi hosted in a case", () => {
 		const types = new Set(evidence.log.map((e: any) => e.type));
 		for (const t of [
 			"admission",
-			"round.start",
+			"author.submit",
 			"checkpoint.commit",
 			"candidate.sealed",
 			"publication.intent",
@@ -169,7 +167,7 @@ describe("Pi hosted in a case", () => {
 });
 
 describe("author concurrency", () => {
-	it("runs one author round at a time per repository", async () => {
+	it("runs one author at a time per repository", async () => {
 		bot = await startBot();
 		const slow = {
 			rounds: [
@@ -183,16 +181,13 @@ describe("author concurrency", () => {
 			],
 		};
 		await bot.webhook("issues", assignIssue({ issueId: 41, number: 41, script: slow }));
-		await bot.waitFor(
-			"first round",
-			async () => (await bot!.inspect(issueCaseId(41))).round?.round === 1,
-		);
+		await authorBusy(bot, issueCaseId(41));
 		await bot.webhook("issues", assignIssue({ issueId: 42, number: 42, script: fixScript() }));
 		const waiting = await bot.waitFor("second case waits", async () => {
 			const r = await bot!.inspect(issueCaseId(42));
-			return r.log?.some((e: any) => e.type === "round.waiting-for-slot") ? r : null;
+			return r.log?.some((e: any) => e.type === "author.held") ? r : null;
 		});
-		expect(waiting.round).toBeFalsy();
+		expect(authorRuns(waiting)).toHaveLength(0);
 		for (const id of [41, 42]) {
 			await bot.waitFor(`case ${id} published`, async () =>
 				(await bot!.inspect(issueCaseId(id))).publications?.some(
@@ -202,8 +197,8 @@ describe("author concurrency", () => {
 		}
 		const first = await bot.inspect(issueCaseId(41));
 		const second = await bot.inspect(issueCaseId(42));
-		const firstEnd = first.log.find((e: any) => e.type === "round.end").at;
-		const secondStart = second.log.find((e: any) => e.type === "round.start").at;
+		const firstEnd = first.log.find((e: any) => e.type === "author.idle").at;
+		const secondStart = authorRuns(second)[0].at;
 		expect(secondStart).toBeGreaterThanOrEqual(firstEnd);
 	});
 });
