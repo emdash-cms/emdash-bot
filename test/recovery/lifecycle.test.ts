@@ -166,6 +166,50 @@ describe("Pi hosted in a case", () => {
 	});
 });
 
+describe("model failures", () => {
+	it("reports a failed model call as needing a human, and a comment retries", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(17);
+		const script = {
+			rounds: [
+				{ steps: [{ tool: "model_error", args: { message: "upstream returned nothing" } }] },
+				{
+					steps: [
+						{ tool: "write", args: FIX_GREETING },
+						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 17, number: 17, script }));
+		const failed = await bot.waitFor("handoff", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.handoff ? r : null;
+		});
+		expect(failed.handoff.reason).toContain("upstream returned nothing");
+		expect(failed.status.status).toBe("needs-human");
+		await bot.waitFor("error in the progress comment", async () =>
+			bot!.github.comments.find(
+				(c) =>
+					c.issue === 17 && c.body.includes("the model call failed: upstream returned nothing"),
+			),
+		);
+		await bot.webhook("issue_comment", {
+			action: "created",
+			sender: { login: "maintainer" },
+			issue: { id: 17, number: 17 },
+			comment: {
+				id: 917,
+				body: "Please try again.",
+				user: { login: "maintainer" },
+				author_association: "MEMBER",
+			},
+		});
+		const record = await published(bot, caseId);
+		expect(record.handoff).toBeNull();
+	});
+});
+
 describe("author concurrency", () => {
 	it("runs one author at a time per repository", async () => {
 		bot = await startBot();

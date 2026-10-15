@@ -1430,6 +1430,22 @@ export class CaseDO extends DurableObject<Env> {
 		return lines.join("\n");
 	}
 
+	/** The current run's last model turn, if it ended in an error and nothing is running. */
+	async #failedTurn(): Promise<{ message: string; at: number } | null> {
+		const started = this.store.getMeta<number>("runStartedAt");
+		if (!started) return null;
+		if ((await this.harness.pending()).some((p) => p.status === "running")) return null;
+		type Turn = { role?: string; stopReason?: string; errorMessage?: string; timestamp?: number };
+		const entries = (await this.harness.messages()) as Array<{ model?: Turn[] }>;
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const message = entries[i]!.model?.[0];
+			if (message?.role !== "assistant") continue;
+			if (message.stopReason !== "error" || (message.timestamp ?? 0) < started) return null;
+			return { message: message.errorMessage ?? "unknown error", at: message.timestamp ?? started };
+		}
+		return null;
+	}
+
 	async #stopAuthor(): Promise<void> {
 		if (this.store.identity()) await this.#authorSlot("release").catch(() => undefined);
 		const aborted = this.harness.abort().catch(() => false);
@@ -1477,6 +1493,19 @@ export class CaseDO extends DurableObject<Env> {
 	 */
 	async #reconcile(): Promise<LifecycleJobOutcome | void> {
 		if (this.store.state() !== "active") return;
+		// Pi ends a run whose model call failed after its retries, and stops there:
+		// input queued behind it is never driven. Report the failure instead of
+		// looking busy forever.
+		const failure = await this.#failedTurn();
+		if (failure) {
+			this.store.log("author.failed", { error: failure.message });
+			await this.#stopAuthor();
+			await this.#handoff(
+				`model-error:${failure.at}`,
+				`the model call failed: ${failure.message}`,
+				"a new comment or operator resume retries",
+			);
+		}
 		if (await this.#authorBusy()) {
 			const started = this.store.getMeta<number>("runStartedAt");
 			if (started && Date.now() - started > this.config.budgets.authorMs) {
@@ -1902,7 +1931,13 @@ export class CaseDO extends DurableObject<Env> {
 		await this.lifecycle.start();
 		this.store.log("operator.resume", { actor, newRound: !!options.newRound });
 		// Resuming is the operator's explicit answer to any handoff.
+		const handoff = this.store.getMeta<Handoff | null>("handoff");
 		this.store.setMeta("handoff", null);
+		if (handoff && !options.newRound && this.store.state() === "active")
+			await this.#submitToAuthor(
+				`resume:${Date.now()}`,
+				`## Resumed by the operator\nFrom: ${actor} (operator)\n\nThe case had stopped: ${handoff.reason}. Continue the work from the case record.`,
+			);
 		const candidate = this.store.latestCandidate();
 		const publication = candidate ? this.store.publication(`publish:${candidate.id}`) : undefined;
 		if (

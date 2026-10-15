@@ -11,6 +11,8 @@
 //                   "final": "Submitted." } ] }
 //   ```
 //
+// A step `{ "tool": "model_error", "args": { "message": "..." } }` fails the model call.
+//
 // Only non-production profiles register this provider.
 
 import type { JsonObject } from "@earendil-works/pi-durable";
@@ -78,6 +80,13 @@ export function nextScriptedResponse(messages: readonly Message[]) {
 	const step = messages.slice(lastUser + 1).filter((m) => m.role === "assistant").length;
 	const next = plan.steps[step];
 	if (!next) return fauxAssistantMessage(plan.final ?? "Done.");
+	// A failed model call, as a provider reports one after its retries.
+	if (next.tool === "model_error")
+		return fauxAssistantMessage("", {
+			stopReason: "error",
+			errorMessage:
+				typeof next.args.message === "string" ? next.args.message : "scripted model error",
+		});
 	return fauxAssistantMessage(
 		[
 			fauxText(`Step ${step + 1}: ${next.tool}`),
