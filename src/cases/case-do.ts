@@ -1390,7 +1390,7 @@ export class CaseDO extends DurableObject<Env> {
 			.join("\n\n");
 		await this.#submitToAuthor(
 			`checks:${head}:${(await sha256Hex(failures.map((f) => f.name).join("\n"))).slice(0, 16)}`,
-			`## Checks failed on ${head!.slice(0, 12)}\nFrom: CI (github:check_run)\n\n${failures.length} check(s) failed on the current head. Judge which are about your change and which are environment or flaky; you can say so in a reply. Read the tail of any check's log with ci_log and its check run id.\n\n${body}`,
+			`## Checks failed on ${head!.slice(0, 12)}\nFrom: CI (github:check_run)\n\n${failures.length} check(s) failed on the current head. Judge which are about your change and which are environment or flaky; read the tail of any check's log with ci_log and its check run id. Fix what your change caused. Record your conclusion in the work plan; reply on the pull request only when a maintainer has to act, and not again for later runs with the same cause.\n\n${body}`,
 		);
 	}
 
