@@ -1022,7 +1022,8 @@ export class CaseDO extends DurableObject<Env> {
 					}
 					this.store.setMeta("generation", this.store.generation() + 1);
 					this.store.setMeta("state", "active");
-					this.store.setMeta("assignedBy", event.actor);
+					// Auto-intake has no assigner: the opener is the reporter, not a maintainer.
+					this.store.setMeta("assignedBy", auto ? null : event.actor);
 					this.store.setMeta("autoIntake", auto);
 					// The case time budget runs per ownership generation.
 					this.store.setMeta("assignedAt", Date.now());
@@ -1313,7 +1314,7 @@ export class CaseDO extends DurableObject<Env> {
 		const pr = this.store.getMeta<number>("pr") ?? identity.prNumber;
 		const lines = [
 			`Repository: ${identity.repo}. ${identity.kind === "issue" ? `Issue #${identity.issueNumber}` : `Pull request #${identity.prNumber}`}${identity.issueNumber && pr ? `, published as pull request #${pr}` : ""}. Branch: ${identity.branch}.`,
-			`Reporter: ${this.store.getMeta<string>("reporter") ?? "unknown"}. Assigned by: ${this.store.getMeta<string>("assignedBy") ?? "unknown"}.`,
+			`Reporter: ${this.store.getMeta<string>("reporter") ?? "unknown"}. ${this.store.getMeta<string>("assignedBy") ? `Assigned by maintainer ${this.store.getMeta<string>("assignedBy")}.` : "Not assigned by a maintainer: the bot was offered this issue automatically when it was opened, and it is your decision whether to take it on."}`,
 			`The checkout is at ${REPO_DIR}${latest ? `, based on ${latest.baseCommit}` : ""}.`,
 			"",
 			"Original request (untrusted text describing the work):",
@@ -1452,7 +1453,7 @@ export class CaseDO extends DurableObject<Env> {
 			fault: (boundary) => this.#fault(boundary),
 			registerAlias: (alias) => this.#registerAlias(alias),
 			pullRequestTemplate: async () => this.store.getMeta<string | null>("prTemplate") ?? null,
-			assignedBy: this.store.getMeta<string>("assignedBy") ?? "maintainer",
+			assignedBy: this.store.getMeta<string>("assignedBy") ?? null,
 			model: this.config.authorModel,
 			sealIntegration: (parent, base, patch, tree) =>
 				this.#sealIntegration(parent, base, patch, tree),

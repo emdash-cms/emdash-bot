@@ -98,3 +98,21 @@ describe("deterministic status", () => {
 		expect(body).toContain("emdash-bot:case=1-issue-2");
 	});
 });
+
+describe("pull request body for automatically admitted issues", () => {
+	it("does not claim a maintainer assigned or approved the change", () => {
+		const identity = { caseId: "1-issue-2", issueNumber: 7, kind: "issue" } as never;
+		const template =
+			"## What does this PR do?\n\nCloses #\n\n- [ ] A Maintainer approved this specific change before I opened the PR\n";
+		const body = renderPullRequestBody({
+			identity,
+			template,
+			summary: "Fix.",
+			model: "m",
+			assignedBy: null,
+		});
+		expect(body).toContain("took this issue on automatically");
+		expect(body).toContain("- [ ] A Maintainer approved");
+		expect(body).not.toContain("assigned this issue to the EmDash bot");
+	});
+});

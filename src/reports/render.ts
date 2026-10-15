@@ -73,13 +73,16 @@ export interface PullRequestBodyInput {
 	readonly template: string | null;
 	readonly summary: string;
 	readonly model: string;
-	readonly assignedBy: string;
+	readonly assignedBy: string | null;
 }
 
 /** Fill the target repository's pull request template accurately. */
 export function renderPullRequestBody(input: PullRequestBodyInput): string {
 	const closes = input.identity.issueNumber ? `Closes #${input.identity.issueNumber}` : "";
-	const summary = `${input.summary.trim()}\n\nA Maintainer (@${input.assignedBy}) assigned this ${input.identity.kind === "issue" ? "issue" : "pull request"} to the EmDash bot.`;
+	const origin = input.assignedBy
+		? `A Maintainer (@${input.assignedBy}) assigned this ${input.identity.kind === "issue" ? "issue" : "pull request"} to the EmDash bot.`
+		: "The EmDash bot took this issue on automatically when it was opened; no Maintainer has assigned it yet.";
+	const summary = `${input.summary.trim()}\n\n${origin}`;
 	let body: string;
 	if (input.template) {
 		body = input.template
@@ -87,7 +90,10 @@ export function renderPullRequestBody(input: PullRequestBodyInput): string {
 			.replace(/(## What does this PR do\?\s*\n(?:\s*<!--[\s\S]*?-->\s*\n)?)/, `$1\n${summary}\n\n`)
 			.replace(
 				/- \[ \] A Maintainer approved this specific change before I opened the PR/,
-				"- [x] A Maintainer approved this specific change before I opened the PR",
+				(box) =>
+					input.assignedBy
+						? "- [x] A Maintainer approved this specific change before I opened the PR"
+						: box,
 			)
 			.replace(
 				/- \[ \] This PR includes AI-generated code or text — model\/tool: (<!--[^>]*-->)?/,

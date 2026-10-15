@@ -32,7 +32,8 @@ export interface PublishContext {
 	fault(boundary: string): Promise<void>;
 	registerAlias(alias: string): Promise<void>;
 	pullRequestTemplate(): Promise<string | null>;
-	readonly assignedBy: string;
+	/** The maintainer who assigned the case; null when the bot took it on automatically. */
+	readonly assignedBy: string | null;
 	readonly model: string;
 	/** Seal a candidate produced by trusted integration. */
 	sealIntegration(
