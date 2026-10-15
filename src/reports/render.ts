@@ -48,9 +48,9 @@ export function renderStatusCheck(report: StatusReport): StatusCheck {
 	].join("\n");
 	const title = LABEL[report.status];
 	switch (report.status) {
+		// In progress only while the bot itself is doing something; waiting for
+		// review, CI or a reply is a completed, neutral check titled with what is awaited.
 		case "working":
-		case "candidate-published":
-		case "waiting-for-checks":
 			return { status: "in_progress", title, summary };
 		case "ready-for-human":
 			return { status: "completed", conclusion: "success", title, summary };

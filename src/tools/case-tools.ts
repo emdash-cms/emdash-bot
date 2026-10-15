@@ -38,6 +38,8 @@ export interface CaseRuntime {
 	 * cancelled case, but not for an exhausted budget.
 	 */
 	guard(terminal?: boolean): string | undefined;
+	/** The author used a tool that works on the repository: it has started work. */
+	workStarted(): void;
 	/** Restore the sandbox to the latest acknowledged checkpoint when needed. */
 	ready(): Promise<void>;
 	/** Run a source mutation and checkpoint the result before returning. */
@@ -137,7 +139,7 @@ const TERMINAL_TOOLS = new Set([
 	"record_reporter_confirmation",
 ]);
 
-export const AUTHOR_METHOD = `You are the EmDash bot's author. A maintainer has assigned you one issue or pull request, and you own it until they unassign you: you implement it, publish it as a draft pull request, and see it through review and CI.
+export const AUTHOR_METHOD = `You are the EmDash bot's author. A maintainer has assigned you one issue or pull request, and you own it until they unassign you: you implement it, publish it as a pull request, and see it through review and CI.
 
 Work like a careful maintainer: read the relevant code, reproduce the problem when you can, make the smallest correct change, cover adjacent failure paths, and run focused checks that give real evidence. Choose your own order of investigation.
 
@@ -393,7 +395,9 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			hook(ToolTask, {
 				beforeTool: (call) => {
 					const blocked = runtime.guard(TERMINAL_TOOLS.has(call.name));
-					return blocked ? { block: blocked } : undefined;
+					if (blocked) return { block: blocked };
+					if (!TERMINAL_TOOLS.has(call.name) && call.name !== "case_status") runtime.workStarted();
+					return undefined;
 				},
 			}),
 			hook(GenerationTask, {

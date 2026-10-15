@@ -191,6 +191,13 @@ describe("auto-intake", () => {
 				{
 					steps: [
 						{
+							tool: "update_work_plan",
+							args: {
+								summary: "Asking for details.",
+								steps: [{ id: "ask", title: "Ask the reporter", status: "in_progress" }],
+							},
+						},
+						{
 							tool: "reply",
 							args: { onIssue: true, body: "Which version are you on?" },
 						},
@@ -205,6 +212,12 @@ describe("auto-intake", () => {
 		);
 		const evidence = await bot.ops(`cases/${caseId}/evidence`);
 		expect(JSON.stringify(evidence.transcript)).toContain("needs information");
+		// Asking for information is one comment: no progress comment until work starts.
+		await bot.waitFor("idle", async () =>
+			(await bot!.inspect(caseId)).log.some((e: any) => e.type === "author.idle"),
+		);
+		await new Promise((r) => setTimeout(r, 1500));
+		expect(bot.github.comments.filter((c) => c.issue === 88)).toHaveLength(1);
 		expect(bot.github.pulls).toHaveLength(0);
 	});
 

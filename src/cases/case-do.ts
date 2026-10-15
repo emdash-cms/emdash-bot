@@ -379,6 +379,12 @@ export class CaseDO extends DurableObject<Env> {
 	#runtime(): CaseRuntime {
 		return {
 			guard: (terminal) => this.#guard(terminal),
+			workStarted: () => {
+				if (this.store.getMeta<boolean>("workStarted")) return;
+				this.store.setMeta("workStarted", true);
+				this.store.log("work.started", {});
+				void this.#schedule("report", Date.now());
+			},
 			ready: () => this.#source.run(() => this.#ensureSandbox()),
 			mutate: <T>(opId: string, tool: string, fn: () => Promise<T>) => this.#mutate(opId, tool, fn),
 			search: (pattern, path, glob) => this.#search(pattern, path, glob),
@@ -1727,12 +1733,13 @@ export class CaseDO extends DurableObject<Env> {
 		const pr = this.store.getMeta<number>("pr") ?? identity.prNumber;
 		const target = pr ?? identity.issueNumber;
 		// Quiet until engaged: an automatically admitted or declined issue gets no
-		// progress comment until the author has a plan or a candidate.
+		// progress comment until the author starts work on the repository, so
+		// asking the reporter for information is a single comment.
 		const engaged =
 			!!this.store.getMeta("statusComment") ||
 			(this.store.state() !== "declined" &&
 				(!this.store.getMeta<boolean>("autoIntake") ||
-					!!this.store.getMeta("workPlan") ||
+					!!this.store.getMeta("workStarted") ||
 					!!this.store.latestCandidate()));
 		if (target && engaged && !this.#dryRun()) {
 			try {
