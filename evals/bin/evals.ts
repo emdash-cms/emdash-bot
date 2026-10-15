@@ -140,12 +140,16 @@ switch (command) {
 			commit: grader.referenceCommit,
 			upstream: `https://github.com/${manifest.source.repo}.git`,
 		});
-		const valid = !before.passed && after.passed;
+		// The starting commit must get through setup and fail its tests, not fail to install.
+		const setupOk = (r: typeof before) =>
+			r.steps.length > grader.setup.length &&
+			r.steps.slice(0, grader.setup.length).every((s) => s.exitCode === 0);
+		const valid = setupOk(before) && !before.passed && after.passed;
 		const out = join(RESULTS, `validate-${values.case}-${Date.now()}.json`);
 		mkdirSync(RESULTS, { recursive: true });
 		writeFileSync(out, JSON.stringify({ case: values.case, valid, before, after }, null, 2));
 		console.log(
-			`${valid ? "VALID" : "NOT VALID"}: starting commit ${before.passed ? "passed" : "failed"}, reference ${after.passed ? "passed" : "failed"}. Details: ${out}`,
+			`${valid ? "VALID" : "NOT VALID"}: starting commit ${before.passed ? "passed" : setupOk(before) ? "failed its tests" : "failed during setup"}, reference ${after.passed ? "passed" : "failed"}. Details: ${out}`,
 		);
 		if (valid)
 			console.log(

@@ -42,6 +42,14 @@ function run(
 					process.platform === "darwin" ? "Library/Caches" : ".cache",
 					"ms-playwright",
 				),
+			// A store of its own, with copied files: packages that patch their own files on
+			// install (workerd swaps in its binary) cannot corrupt a shared, hard-linked store.
+			npm_config_store_dir: join(
+				homedir(),
+				process.platform === "darwin" ? "Library/Caches" : ".cache",
+				"emdash-bot-grader-store",
+			),
+			npm_config_package_import_method: "copy",
 			// Trust settings only (for TLS-inspecting networks such as WARP); never credentials.
 			...pick(["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR"]),
 		},
