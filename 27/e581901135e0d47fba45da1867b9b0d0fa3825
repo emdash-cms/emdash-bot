@@ -1,0 +1,25 @@
+src/runtime/triage.ts
+  s_4c97aa8e7b616f::t_987edace20a30f 100,106-107
+test/harness.ts
+  s_4c97aa8e7b616f::t_ecfb78a17dc69b 111
+test/unit/triage.test.ts
+  s_4c97aa8e7b616f::t_1b742dbe56271b 6
+test/workers/auto-intake.test.ts
+  s_4c97aa8e7b616f::t_dfb7ace8368580 150,173,188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "27e581901135e0d47fba45da1867b9b0d0fa3825",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
