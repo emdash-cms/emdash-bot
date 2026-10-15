@@ -1,8 +1,17 @@
-// Every newly opened issue reaches the author when auto-intake is on. The
-// author decides: work on it, ask for information, or decline.
+// Every newly opened issue is triaged by Clef when auto-intake is on. Clear,
+// small bugs reach the author, which can still decline; feature requests,
+// questions and spam are declined before any author run.
 
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import { type Bot, FIX_GREETING, REPO, fixScript, issueCaseId, startBot } from "../harness.ts";
+import {
+	type Bot,
+	FIX_GREETING,
+	REPO,
+	authorRuns,
+	fixScript,
+	issueCaseId,
+	startBot,
+} from "../harness.ts";
 
 let bot: Bot | undefined;
 afterEach(async () => {
@@ -10,7 +19,13 @@ afterEach(async () => {
 	bot = undefined;
 });
 
-function opened(issueId: number, number: number, script: unknown, opener = "reporter") {
+function opened(
+	issueId: number,
+	number: number,
+	script: unknown,
+	opener = "reporter",
+	triage?: unknown,
+) {
 	return {
 		action: "opened",
 		sender: { login: opener },
@@ -18,7 +33,9 @@ function opened(issueId: number, number: number, script: unknown, opener = "repo
 			id: issueId,
 			number,
 			title: "Report",
-			body: `Something.\n\n\`\`\`scripted-author\n${JSON.stringify(script)}\n\`\`\`\n`,
+			body:
+				`Something.\n\n\`\`\`scripted-author\n${JSON.stringify(script)}\n\`\`\`\n` +
+				(triage ? `\n\`\`\`triage-answers\n${JSON.stringify(triage)}\n\`\`\`\n` : ""),
 			html_url: `https://github.com/${REPO}/issues/${number}`,
 			user: { login: opener },
 		},
@@ -48,7 +65,7 @@ describe("auto-intake", () => {
 		expect(bot.github.pulls).toHaveLength(1);
 	});
 
-	it("declines a feature request with a message and posts nothing else", async () => {
+	it("lets the author decline an issue triage passed, with a message", async () => {
 		bot = await startBot({ autoIntake: true });
 		const caseId = issueCaseId(82);
 		const script = {
@@ -78,7 +95,7 @@ describe("auto-intake", () => {
 		expect(bot.github.pulls).toHaveLength(0);
 	});
 
-	it("declines a malicious report silently", async () => {
+	it("lets the author decline a malicious report silently", async () => {
 		bot = await startBot({ autoIntake: true });
 		const caseId = issueCaseId(83);
 		const script = {
@@ -125,6 +142,93 @@ describe("auto-intake", () => {
 			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
 		});
 		expect(record.state).toBe("active");
+		expect(record.generation).toBe(2);
+	});
+
+	const FEATURE = {
+		kind: { choice: "feature_request", probabilities: { feature_request: 0.85, bug: 0.1 } },
+		actionable: { probability: 0.8 },
+		size: { score: 2 },
+	};
+
+	it("declines a feature request at triage without running the author", async () => {
+		bot = await startBot({ autoIntake: true });
+		const caseId = issueCaseId(86);
+		await bot.webhook("issues", opened(86, 86, fixScript(), "reporter", FEATURE));
+		const record = await declined(bot, caseId);
+		await bot.waitFor("decline message", async () =>
+			bot!.github.comments.find((c) => c.issue === 86),
+		);
+		expect(record.triage).toMatchObject({ decision: "decline", kind: "feature_request" });
+		expect(bot.github.comments.filter((c) => c.issue === 86)[0]!.body).toContain("feature request");
+		expect(authorRuns(record)).toHaveLength(0);
+		expect(bot.github.pulls).toHaveLength(0);
+	});
+
+	it("declines likely spam silently at triage", async () => {
+		bot = await startBot({ autoIntake: true });
+		const caseId = issueCaseId(87);
+		const spam = {
+			kind: { choice: "spam", probabilities: { spam: 0.9, bug: 0.1 } },
+			actionable: { probability: 0.1 },
+			size: { score: 0 },
+		};
+		await bot.webhook("issues", opened(87, 87, fixScript(), "spammer", spam));
+		const record = await declined(bot, caseId);
+		await new Promise((r) => setTimeout(r, 1500));
+		expect(record.triage.decision).toBe("decline-silently");
+		expect(bot.github.comments.filter((c) => c.issue === 87)).toHaveLength(0);
+		expect(authorRuns(record)).toHaveLength(0);
+	});
+
+	it("asks the author to request information when the report is not actionable", async () => {
+		bot = await startBot({ autoIntake: true });
+		const caseId = issueCaseId(88);
+		const vague = { ...FEATURE, kind: { choice: "bug", probabilities: { bug: 0.9 } } };
+		vague.actionable = { probability: 0.2 };
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{
+							tool: "reply",
+							args: { onIssue: true, body: "Which version are you on?" },
+						},
+						{ tool: "handoff", args: { reason: "waiting for the reporter", nextAction: "answer" } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", opened(88, 88, script, "reporter", vague));
+		await bot.waitFor("question posted", async () =>
+			bot!.github.comments.find((c) => c.issue === 88 && c.body.includes("Which version")),
+		);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		expect(JSON.stringify(evidence.transcript)).toContain("needs information");
+		expect(bot.github.pulls).toHaveLength(0);
+	});
+
+	it("lets a maintainer assign an issue triage declined", async () => {
+		bot = await startBot({ autoIntake: true });
+		const caseId = issueCaseId(89);
+		await bot.webhook("issues", opened(89, 89, fixScript(), "reporter", FEATURE));
+		await declined(bot, caseId);
+		await bot.webhook("issues", {
+			action: "labeled",
+			sender: { login: "maintainer" },
+			label: { name: "emdash-bot" },
+			issue: {
+				id: 89,
+				number: 89,
+				title: "Report",
+				body: `\`\`\`scripted-author\n${JSON.stringify(fixScript())}\n\`\`\`\n`,
+				user: { login: "reporter" },
+			},
+		});
+		const record = await bot.waitFor("published", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
+		});
 		expect(record.generation).toBe(2);
 	});
 

@@ -87,6 +87,7 @@ interface Payload {
 		html_url?: string;
 		pull_request?: unknown;
 		user?: User;
+		author_association?: string;
 	};
 	comment?: {
 		id?: number;
@@ -241,6 +242,7 @@ export function normalize(
 				url: issue.html_url ?? "",
 				reporter: issue.user?.login ?? sender,
 				autoIntake: true,
+				openerIsMaintainer: isMaintainer(config, sender, issue.author_association) !== null,
 			},
 		};
 	}

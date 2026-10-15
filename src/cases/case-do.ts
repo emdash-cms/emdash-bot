@@ -26,6 +26,13 @@ import { renderMovedToPullRequest, renderStatus, statusMarker } from "../reports
 import { type WorkPlan, updateWorkPlan } from "../reports/work-plan.ts";
 import { type StatusReport, computeStatus } from "../reports/status.ts";
 import { setupModels } from "../runtime/models.ts";
+import {
+	type TriageVerdict,
+	decide,
+	declineMessage,
+	runClef,
+	triageRequest,
+} from "../runtime/triage.ts";
 import { DEFAULT_PRIVILEGED_PREFIXES, PatchRejected, validatePatch } from "../source/patch.ts";
 import {
 	captureSource,
@@ -767,6 +774,37 @@ export class CaseDO extends DurableObject<Env> {
 		await this.#schedule("report", Date.now());
 	}
 
+	/** Ask Clef whether an unassigned issue is in scope. Fails closed. */
+	async #triage(payload: Record<string, unknown>): Promise<TriageVerdict> {
+		const identity = this.#identity();
+		const request = triageRequest({
+			repo: identity.repo,
+			title: str(payload.title ?? ""),
+			body: str(payload.body ?? ""),
+			opener: str(payload.reporter ?? ""),
+			openerIsMaintainer: payload.openerIsMaintainer === true,
+			rules: this.store.getMeta<{ text: string }>("instructions")?.text ?? "",
+		});
+		try {
+			const fake = (this.env as { TRIAGE_FAKE?: Fetcher }).TRIAGE_FAKE;
+			const answers = fake
+				? await (
+						await fake.fetch("https://triage/classify", {
+							method: "POST",
+							body: JSON.stringify(request),
+						})
+					).json<Record<string, never>>()
+				: await runClef(this.env.AI, request, this.config.gatewayId);
+			return decide(answers, this.config.triage, "@cf/cloudflare/clef");
+		} catch (error) {
+			return decide(
+				{},
+				this.config.triage,
+				`@cf/cloudflare/clef (unavailable: ${errorMessage(error)})`,
+			);
+		}
+	}
+
 	async #repliesJob(): Promise<LifecycleJobOutcome | void> {
 		const intents = this.store.getMeta<ReplyIntent[]>("replyIntents") ?? [];
 		const pending = intents.filter((i) => i.status === "pending");
@@ -1042,7 +1080,27 @@ export class CaseDO extends DurableObject<Env> {
 						? `issue #${identity.issueNumber}`
 						: `pull request #${identity.prNumber}`;
 				if (auto) {
-					return `## New issue\nFrom: ${from}\n\n${event.actor} opened ${what}; its text is in the case record. No maintainer has assigned it. Decide whether to take it on. Work on it when it is a real bug or small, clear task with a bounded fix you can verify. If it only lacks information you need, reply on the issue asking for it. Otherwise call decline: feature requests and design questions, intended behaviour, duplicates, reports you cannot reproduce, anything out of scope, and malicious or spam reports (decline those without a message). Nothing is posted on the issue until you plan, reply or submit.`;
+					const verdict = await this.#triage(payload);
+					this.store.setMeta("triage", verdict);
+					this.store.log("triage", {
+						decision: verdict.decision,
+						kind: verdict.kind,
+						reason: verdict.reason,
+						actionable: verdict.actionable,
+						size: verdict.size,
+					});
+					if (verdict.decision === "decline" || verdict.decision === "decline-silently") {
+						await this.#decline(
+							`triage:${event.deliveryId}`,
+							`${verdict.kind}: ${verdict.reason}`,
+							verdict.decision === "decline" ? declineMessage(verdict) : undefined,
+						);
+						return null;
+					}
+					if (verdict.decision === "needs-info") {
+						return `## New issue (needs information)\nFrom: ${from}\n\n${event.actor} opened ${what}; its text is in the case record. No maintainer has assigned it. Independent triage judged it in scope but not actionable as written (${verdict.reason}). Reply on the issue asking the reporter for exactly what you need. Do not implement anything until they answer.`;
+					}
+					return `## New issue\nFrom: ${from}\n\n${event.actor} opened ${what}; its text is in the case record. No maintainer has assigned it. Independent triage judged it in scope: ${verdict.reason}. Work on it. If on closer inspection it is not a real bug or small, clear task with a bounded fix you can verify, call decline instead.`;
 				}
 				return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}. Its text is in the case record. ${identity.kind === "issue" ? "Implement it and submit a candidate." : "Take over this pull request: bring it to a correct, reviewable state and submit a candidate."}`;
 			}
@@ -1733,6 +1791,7 @@ export class CaseDO extends DurableObject<Env> {
 			generation: this.store.generation(),
 			round: this.store.getMeta("round"),
 			handoff: this.store.getMeta("handoff"),
+			triage: this.store.getMeta("triage") ?? null,
 			status: await this.status(),
 			tokens: this.store.getMeta("tokens") ?? 0,
 			cacheReadTokens: this.store.getMeta("cacheReadTokens") ?? 0,

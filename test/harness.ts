@@ -106,6 +106,22 @@ export interface Bot {
 	dispose(): Promise<void>;
 }
 
+export const TRIAGE_TAKE_ON = {
+	kind: { choice: "bug", probabilities: { bug: 0.9, small_task: 0.05, feature_request: 0.05 } },
+	actionable: { probability: 0.9 },
+	size: { score: 1 },
+};
+
+/**
+ * Stands in for Clef. An issue body may carry a `triage-answers` block with the
+ * answers to return; otherwise the issue is a clear, small bug.
+ */
+async function triageFake(request: Request): Promise<Response> {
+	const { state } = (await request.json()) as { state: { issue: { body: string } } };
+	const block = /```triage-answers\s*\n([\s\S]*?)\n```/.exec(state.issue.body);
+	return Response.json(block ? JSON.parse(block[1]!) : TRIAGE_TAKE_ON);
+}
+
 export async function startBot(overrides: Record<string, unknown> = {}): Promise<Bot> {
 	const base = mkdtempSync(join(tmpdir(), "emdash-bot-test-"));
 	const github = new FakeGitHub(base);
@@ -127,7 +143,10 @@ export async function startBot(overrides: Record<string, unknown> = {}): Promise
 				OPERATOR_TOKEN,
 				GITHUB_TOKEN: "test-token",
 			},
-			serviceBindings: { EXEC_FAKE: (request: Request) => exec.handler(request) },
+			serviceBindings: {
+				EXEC_FAKE: (request: Request) => exec.handler(request),
+				TRIAGE_FAKE: triageFake,
+			},
 			outboundService: (request: Request) => github.handler(request),
 		} as Parameters<typeof convertV4MiniflareOptions>[0]),
 	);

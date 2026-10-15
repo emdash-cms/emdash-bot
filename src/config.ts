@@ -49,6 +49,13 @@ export interface BotConfig {
 	readonly intakeLabel: string;
 	/** Also admit every newly opened issue; the author decides whether to take it on. */
 	readonly autoIntake: boolean;
+	/** Thresholds for Clef triage of automatically admitted issues. */
+	readonly triage: {
+		readonly takeOn: number;
+		readonly decline: number;
+		readonly spam: number;
+		readonly actionable: number;
+	};
 	readonly repositories: readonly RepositoryConfig[];
 	/**
 	 * Staging only: also admit repositories whose `owner/name` matches this
@@ -111,6 +118,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		assignee: raw.assignee ?? raw.botLogin,
 		intakeLabel: raw.intakeLabel ?? "emdash-bot",
 		autoIntake: raw.autoIntake ?? false,
+		triage: { takeOn: 0.6, decline: 0.6, spam: 0.5, actionable: 0.5, ...raw.triage },
 		repositories: raw.repositories ?? [],
 		repositoryPattern: profile === "production" ? undefined : raw.repositoryPattern,
 		defaultRepository: raw.defaultRepository,

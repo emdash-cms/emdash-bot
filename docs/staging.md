@@ -24,7 +24,7 @@ The bot needs a GitHub App to read the fixture, push branches and open PRs.
 
 ## Manual test script
 
-On `emdash-cms/emdash-bot-pi-fixture` (`greet.js` lacks punctuation; `node test.js` fails). Staging has auto-intake on.
+On `emdash-cms/emdash-bot-pi-fixture` (`greet.js` lacks punctuation; `node test.js` fails). Staging has auto-intake on, gated by Clef triage; `pnpm ops inspect` shows the verdict under `triage`.
 
 1. Open an issue describing the bug. The author decides to take it on: expect a progress comment with its plan on the issue, then a pull request from `emdash-bot/issue-<n>`, ready for review, with the template filled in and an AI disclosure. The progress comment moves to the pull request and the issue keeps a pointer.
 2. Open an issue that is a feature request. Expect a short decline message and nothing else.
