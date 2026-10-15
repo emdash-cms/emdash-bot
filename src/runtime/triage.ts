@@ -97,14 +97,14 @@ export function triageRequest(input: TriageInput) {
 
 interface ClefAnswers {
 	readonly kind?: { choice?: string; probabilities?: Record<string, number> };
-	readonly actionable?: { probability?: number } | number;
+	readonly actionable?: { noul?: number } | number;
 	readonly size?: { score?: number } | number;
 }
 
 function probability(answer: unknown): number {
 	if (typeof answer === "number") return answer;
-	if (answer && typeof answer === "object" && "probability" in answer)
-		return Number((answer as { probability: unknown }).probability);
+	if (answer && typeof answer === "object" && "noul" in answer)
+		return Number((answer as { noul: unknown }).noul);
 	return Number.NaN;
 }
 

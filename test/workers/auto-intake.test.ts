@@ -147,7 +147,7 @@ describe("auto-intake", () => {
 
 	const FEATURE = {
 		kind: { choice: "feature_request", probabilities: { feature_request: 0.85, bug: 0.1 } },
-		actionable: { probability: 0.8 },
+		actionable: { noul: 0.8 },
 		size: { score: 2 },
 	};
 
@@ -170,7 +170,7 @@ describe("auto-intake", () => {
 		const caseId = issueCaseId(87);
 		const spam = {
 			kind: { choice: "spam", probabilities: { spam: 0.9, bug: 0.1 } },
-			actionable: { probability: 0.1 },
+			actionable: { noul: 0.1 },
 			size: { score: 0 },
 		};
 		await bot.webhook("issues", opened(87, 87, fixScript(), "spammer", spam));
@@ -185,7 +185,7 @@ describe("auto-intake", () => {
 		bot = await startBot({ autoIntake: true });
 		const caseId = issueCaseId(88);
 		const vague = { ...FEATURE, kind: { choice: "bug", probabilities: { bug: 0.9 } } };
-		vague.actionable = { probability: 0.2 };
+		vague.actionable = { noul: 0.2 };
 		const script = {
 			rounds: [
 				{

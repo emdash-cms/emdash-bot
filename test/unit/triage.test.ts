@@ -3,7 +3,7 @@ import { DEFAULT_THRESHOLDS, decide } from "../../src/runtime/triage.ts";
 
 const answers = (kind: Record<string, number>, actionable: number, size: number) => ({
 	kind: { probabilities: kind },
-	actionable: { probability: actionable },
+	actionable: { noul: actionable },
 	size: { score: size },
 });
 const run = (a: Parameters<typeof decide>[0]) => decide(a, DEFAULT_THRESHOLDS, "clef").decision;

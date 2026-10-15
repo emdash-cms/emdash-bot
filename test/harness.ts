@@ -108,7 +108,7 @@ export interface Bot {
 
 export const TRIAGE_TAKE_ON = {
 	kind: { choice: "bug", probabilities: { bug: 0.9, small_task: 0.05, feature_request: 0.05 } },
-	actionable: { probability: 0.9 },
+	actionable: { noul: 0.9 },
 	size: { score: 1 },
 };
 
