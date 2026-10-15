@@ -79,6 +79,8 @@ export interface AttemptState {
 	readonly caseId: string;
 	readonly profile: string;
 	readonly fault: string | null;
+	/** Writer model for this attempt, overriding the case and the bot default. */
+	readonly model?: string | null;
 	stage: Stage;
 	repo?: { fullName: string; id: number };
 	issueNumber?: number;

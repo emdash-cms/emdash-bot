@@ -14,6 +14,24 @@ describe("webhook admission", () => {
 		expect(await verifySignature("other", '{"a":1}', header)).toBe(false);
 	});
 
+	it("lets a repository turn auto-intake off", () => {
+		const opened = {
+			action: "opened",
+			repository,
+			sender: { login: "someone" },
+			issue: { id: 6, number: 10, title: "t", body: "b", user: { login: "someone" } },
+		};
+		const on = readConfig({ BOT_CONFIG: testConfig("file:///x", { autoIntake: true }) });
+		expect(normalize(on, "issues", opened)).toMatchObject({ provenance: "auto-intake" });
+		const off = readConfig({
+			BOT_CONFIG: testConfig("file:///x", {
+				autoIntake: true,
+				repositories: [{ id: repository.id, fullName: repository.full_name, autoIntake: false }],
+			}),
+		});
+		expect(normalize(off, "issues", opened)).toHaveProperty("skip");
+	});
+
 	it("creates a case only for a maintainer assigning the bot", () => {
 		const payload = {
 			action: "assigned",

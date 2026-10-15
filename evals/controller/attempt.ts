@@ -47,12 +47,18 @@ function advance(state: AttemptState, stage: AttemptState["stage"], note?: strin
 	console.log(`[${state.attemptId}] ${stage}${note ? `: ${note}` : ""}`);
 }
 
-export function newAttempt(caseId: string, profile: Profile, fault: string | null): AttemptState {
+export function newAttempt(
+	caseId: string,
+	profile: Profile,
+	fault: string | null,
+	model: string | null = null,
+): AttemptState {
 	const state: AttemptState = {
 		attemptId: `${caseId}-${fault ?? "none"}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 6)}`,
 		caseId,
 		profile: profile.name,
 		fault,
+		model,
 		stage: "created",
 		history: [],
 	};
@@ -97,7 +103,7 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 			},
 			lockDigest: createHash("sha256").update(readFileSync("pnpm-lock.yaml")).digest("hex"),
 			imageDigest: process.env.SANDBOX_IMAGE_DIGEST ?? null,
-			requestedModel: manifest.fixtureModel ?? bot.authorModel,
+			requestedModel: state.model ?? manifest.fixtureModel ?? bot.authorModel,
 			promptHash: bot.promptHash,
 			skillHash: bot.skillHash,
 			budgets: { bot: bot.budgets, case: manifest.budget },
@@ -106,8 +112,8 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 			seed: null,
 		};
 		// Fixture overrides and faults enter through the authenticated operator path before intake.
-		if (manifest.fixtureModel)
-			await ops(profile, `/ops/cases/${state.botCaseId}/fixture`, { model: manifest.fixtureModel });
+		const model = state.model ?? manifest.fixtureModel;
+		if (model) await ops(profile, `/ops/cases/${state.botCaseId}/fixture`, { model });
 		const faults = [
 			...(manifest.faults ?? []),
 			...(state.fault && state.fault !== "none" ? [state.fault] : []),

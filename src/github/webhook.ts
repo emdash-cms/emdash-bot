@@ -2,7 +2,7 @@
 // payloads into case deliveries. Authority comes from the payload's actor and
 // the configured allowlists, never from text inside a comment.
 
-import type { BotConfig } from "../config.ts";
+import { type BotConfig, repositoryFor } from "../config.ts";
 import type { CaseIdentity } from "../cases/types.ts";
 
 import { constantTimeEqual } from "../util.ts";
@@ -213,7 +213,9 @@ export function normalize(
 	);
 	const intake = intakeAction(config, payload);
 
-	if (eventName === "issues" && payload.action === "opened" && config.autoIntake) {
+	const autoIntake =
+		repositoryFor(config, repo.id, repo.full_name)?.autoIntake ?? config.autoIntake;
+	if (eventName === "issues" && payload.action === "opened" && autoIntake) {
 		const issue = payload.issue;
 		if (!issue?.id || !issue.number) return { skip: "issue payload incomplete" };
 		if (sender.endsWith("[bot]"))

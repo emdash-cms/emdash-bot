@@ -13,6 +13,8 @@ export interface RepositoryConfig {
 	readonly focusedChecks?: Readonly<Record<string, string>>;
 	/** One bounded bootstrap command run after a fresh checkout. */
 	readonly prepare?: string;
+	/** Overrides the global `autoIntake` for this repository. */
+	readonly autoIntake?: boolean;
 }
 
 export interface Budgets {

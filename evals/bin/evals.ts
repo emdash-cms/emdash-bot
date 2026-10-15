@@ -5,6 +5,7 @@
 //   pnpm evals recovery --target pi-staging
 //   pnpm evals run --case 4074 --target pi-staging [--fault after-candidate-sealed]
 //   pnpm evals run --suite initial-six --target pi-staging
+//   pnpm evals run --case 4141 --model cloudflare:@cf/deepseek-ai/deepseek-v4-flash-0731
 //   pnpm evals resume --attempt <attempt-id>
 //   pnpm evals validate --case 4141
 //   pnpm evals grade-patch --case 4141 --patch candidate.patch   (grade a dry-run artifact)
@@ -30,6 +31,7 @@ const { positionals, values } = parseArgs({
 		case: { type: "string" },
 		suite: { type: "string" },
 		fault: { type: "string" },
+		model: { type: "string" },
 		attempt: { type: "string" },
 		patch: { type: "string" },
 	},
@@ -44,10 +46,15 @@ function profile(name: string): Profile {
 	return loaded;
 }
 
-async function runCases(ids: string[], target: string, fault: string | null): Promise<void> {
+async function runCases(
+	ids: string[],
+	target: string,
+	fault: string | null,
+	model: string | null,
+): Promise<void> {
 	const p = profile(target);
 	for (const id of ids) {
-		const state = newAttempt(id, p, fault);
+		const state = newAttempt(id, p, fault, model);
 		try {
 			await runAttempt(state, p);
 		} catch (error) {
@@ -91,13 +98,13 @@ switch (command) {
 		}
 		const { manifest } = loadCase("delivery-greeting");
 		for (const fault of manifest.faultMatrix ?? ["none"])
-			await runCases(["delivery-greeting"], values.target!, fault);
+			await runCases(["delivery-greeting"], values.target!, fault, null);
 		break;
 	}
 	case "run": {
 		const ids = values.suite ? SUITES[values.suite] : values.case ? [values.case] : undefined;
 		if (!ids) throw new Error("pass --case or --suite");
-		await runCases(ids, values.target!, values.fault ?? null);
+		await runCases(ids, values.target!, values.fault ?? null, values.model ?? null);
 		break;
 	}
 	case "resume": {
