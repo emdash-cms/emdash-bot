@@ -1,0 +1,21 @@
+evals/controller/attempt.ts
+  s_4c97aa8e7b616f::t_f8d78e327a46cd 63-71
+evals/controller/types.ts
+  s_4c97aa8e7b616f::t_416b4f669a73f0 69-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a33439919e791839125ede14dcade15edcccbf3c",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
