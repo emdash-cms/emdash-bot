@@ -116,6 +116,9 @@ describe("deterministic status", () => {
 			publications: [],
 		});
 		expect(report.status).toBe("working");
+		// A case created ahead of admission, as an operator fixture is.
+		const unadmitted = computeStatus({ ...base, state: undefined, authorStarted: false });
+		expect(unadmitted.status).toBe("working");
 	});
 
 	it("keeps the plan checklist and the status reasons as separate lists", () => {

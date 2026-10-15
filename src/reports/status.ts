@@ -124,7 +124,8 @@ export function computeStatus(input: StatusInput): StatusReport {
 			"a maintainer can apply the intake label to assign it anyway",
 		);
 	if (input.authorBusy) return report("working", ["the author is working"], "wait for the author");
-	if (!input.authorStarted && input.state === "active" && !input.handoff)
+	// Includes a case created ahead of admission (an operator fixture before intake).
+	if (!input.authorStarted && !input.handoff)
 		return report("working", ["the author is starting"], "wait for the author");
 	if (input.handoff) return report("needs-human", [input.handoff.reason], input.handoff.nextAction);
 	if (!candidate)
