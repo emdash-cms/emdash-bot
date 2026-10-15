@@ -111,7 +111,11 @@ export function grade(
 		}
 		const steps: GradeResult["steps"] = [];
 		for (const command of grader.setup) {
-			const step = run(work, command, home);
+			let step = run(work, command, home);
+			// EmDash's lockfile installs several workerd versions whose install scripts
+			// occasionally race; one retry clears it and says nothing about the candidate.
+			if (step.exitCode !== 0 && command.startsWith("pnpm install"))
+				step = run(work, command, home);
 			steps.push({ command, ...step });
 			if (step.exitCode !== 0)
 				return { commit: source.commit, grader: grader.status, steps, passed: false };
