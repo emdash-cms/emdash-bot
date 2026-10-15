@@ -1,0 +1,31 @@
+evals/bin/evals.ts
+  s_4c97aa8e7b616f::t_35368a147971e3 8,34,49-54,57,101,107
+evals/controller/attempt.ts
+  s_4c97aa8e7b616f::t_afb9c5cc5204d2 50-55,61,106,115-116
+evals/controller/types.ts
+  s_4c97aa8e7b616f::t_e276e8f3c8b3f9 82-83
+profiles/staging.json
+  s_4c97aa8e7b616f::t_7aa3a9e7b5b145 31-32
+src/config.ts
+  s_4c97aa8e7b616f::t_71009886a7a574 16-17
+src/github/webhook.ts
+  s_4c97aa8e7b616f::t_ea2babf302c182 5,216-218
+test/unit/webhook.test.ts
+  s_4c97aa8e7b616f::t_d5f6ac72c31473 17-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7864b1041960c067b179ac8ae14558960d97f356",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
