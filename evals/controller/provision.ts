@@ -106,7 +106,8 @@ export async function resetRepo(
 	);
 	for (const ref of Array.isArray(refs.data) ? refs.data : []) {
 		if (ref.ref !== "refs/heads/main")
-			await gh("DELETE", `/repos/${fullName}/git/${ref.ref}`, undefined, [422]);
+			// 404: closing a pull request can delete its branch first (Dependabot does).
+			await gh("DELETE", `/repos/${fullName}/git/${ref.ref}`, undefined, [404, 422]);
 	}
 	const work = mkdtempSync(join(tmpdir(), "eval-fixture-"));
 	try {
