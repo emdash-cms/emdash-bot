@@ -5,7 +5,7 @@
 	"tests": ["packages/core/tests/integration/redirects/slug-change-redirect-dialect.test.ts"],
 	"setup": ["pnpm install --frozen-lockfile", "pnpm build"],
 	"commands": [
-		"pnpm --filter emdash exec vitest run --config vitest.integration.config.ts tests/integration/redirects/slug-change-redirect-dialect.test.ts"
+		"pnpm --filter emdash exec vitest run tests/integration/redirects/slug-change-redirect-dialect.test.ts"
 	],
 	"expectedOriginalFailure": "The reference tests fail on the starting commit for the reported behaviour. Confirm with `pnpm evals validate --case 4074` before scoring.",
 	"note": "Reference tests come from the historical PR head and are never shown to the author. Accept correct alternative implementations; do not grade similarity to the reference diff."

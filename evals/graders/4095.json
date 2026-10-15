@@ -8,7 +8,7 @@
 	],
 	"setup": ["pnpm install --frozen-lockfile", "pnpm build"],
 	"commands": [
-		"pnpm --filter emdash exec vitest run --config vitest.integration.config.ts tests/integration/plugins/storage-indexes.test.ts tests/integration/runtime/plugin-storage-index-readiness.test.ts"
+		"pnpm --filter emdash exec vitest run tests/integration/plugins/storage-indexes.test.ts tests/integration/runtime/plugin-storage-index-readiness.test.ts"
 	],
 	"expectedOriginalFailure": "The reference tests fail on the starting commit for the reported behaviour. Confirm with `pnpm evals validate --case 4095` before scoring.",
 	"note": "Reference tests come from the historical PR head and are never shown to the author. Accept correct alternative implementations; do not grade similarity to the reference diff."
