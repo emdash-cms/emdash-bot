@@ -1075,7 +1075,8 @@ export class CaseDO extends DurableObject<Env> {
 				});
 				this.store.log("ownership.assigned", {
 					generation: this.store.generation(),
-					by: event.actor,
+					by: auto ? null : event.actor,
+					...(auto ? { autoIntake: true, opener: event.actor } : {}),
 				});
 				await this.#prepareCase().catch((error: unknown) =>
 					this.store.log("case.prepare-failed", { error: errorMessage(error) }),
