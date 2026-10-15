@@ -1,0 +1,23 @@
+evals/graders/4024.json
+  s_4c97aa8e7b616f::t_38dc31f9cd0b1a 11
+evals/graders/4074.json
+  s_4c97aa8e7b616f::t_c2ef5367099182 8
+evals/graders/4095.json
+  s_4c97aa8e7b616f::t_48b63e686b3372 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "cf3ff934815f7085c23d4a828e32719015606df0",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
