@@ -846,6 +846,7 @@ export class CaseDO extends DurableObject<Env> {
 			const marker = `<!-- emdash-bot:reply key=${intent.key} -->`;
 			const body = `${intent.body.trim()}\n\n${marker}`;
 			let postedId: number | undefined;
+			let threaded = !!intent.inReplyTo;
 			if (intent.inReplyTo) {
 				const path = github.repoPath(`/pulls/${target}/comments?per_page=100`);
 				const find = async () =>
@@ -860,8 +861,12 @@ export class CaseDO extends DurableObject<Env> {
 						{ body },
 					);
 					postedId = created.status === 201 && created.data.id ? created.data.id : await find();
+					// Not a review comment (an ordinary comment cannot be threaded):
+					// answer it in the conversation instead, linking to what it answers.
+					if (!postedId && created.status === 404) threaded = false;
 				}
-			} else {
+			}
+			if (!postedId && !threaded) {
 				const path = github.repoPath(`/issues/${target}/comments?per_page=100`);
 				const find = async () =>
 					(await github.request<Array<{ id: number; body: string }>>("GET", path)).find((c) =>
@@ -872,7 +877,11 @@ export class CaseDO extends DurableObject<Env> {
 					const created = await github.raw<{ id?: number }>(
 						"POST",
 						path.replace("?per_page=100", ""),
-						{ body },
+						{
+							body: intent.inReplyTo
+								? `> In reply to https://github.com/${identity.repo}/issues/${target}#issuecomment-${intent.inReplyTo}\n\n${body}`
+								: body,
+						},
 					);
 					postedId = created.status === 201 && created.data.id ? created.data.id : await find();
 				}
@@ -1716,6 +1725,10 @@ export class CaseDO extends DurableObject<Env> {
 		} catch (error) {
 			this.store.log("observe.failed", { error: errorMessage(error) });
 		}
+		if (
+			(this.store.getMeta<ReplyIntent[]>("replyIntents") ?? []).some((i) => i.status === "pending")
+		)
+			await this.#schedule("replies", Date.now());
 		const report = await this.status();
 		const last = this.store.getMeta<string>("lastStatus");
 		if (last !== report.status) {

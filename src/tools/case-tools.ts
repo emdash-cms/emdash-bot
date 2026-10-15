@@ -274,7 +274,12 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			"Post on GitHub. With commentId, the reply joins that review comment's thread. With onIssue, it is a comment on the original issue (progress for the reporter, questions, asking them to confirm a fix). Otherwise it is a comment on the pull request (or the issue before a pull request exists). Trusted code posts it once.",
 		parameters: Type.Object({
 			body: Type.String({ description: "Markdown. Be concise and specific." }),
-			commentId: Type.Optional(Type.Number({ description: "The review comment to reply to" })),
+			commentId: Type.Optional(
+				Type.Number({
+					description:
+						"An inline review comment (one on a line of code) to reply to in its thread. Omit it for ordinary conversation comments; just reply without it.",
+				}),
+			),
 			onIssue: Type.Optional(
 				Type.Boolean({ description: "Comment on the original issue instead of the pull request" }),
 			),

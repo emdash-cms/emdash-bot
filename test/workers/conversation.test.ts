@@ -41,7 +41,11 @@ const script = {
 			steps: [
 				{
 					tool: "reply",
-					args: { body: "The issue asks for 'Hello, Ada!', so the exclamation stays." },
+					// commentId names an ordinary comment, which GitHub cannot thread.
+					args: {
+						body: "The issue asks for 'Hello, Ada!', so the exclamation stays.",
+						commentId: 800,
+					},
 				},
 			],
 		},
@@ -104,6 +108,7 @@ describe("conversation", () => {
 			(c) => c.issue === pr && c.body.includes("so the exclamation stays"),
 		);
 		expect(answer?.body).toContain("emdash-bot:reply");
+		expect(answer?.body).toContain("#issuecomment-800");
 
 		// An inline review comment: the author replies in its thread, once, even if the response is lost.
 		bot.github.reviewComments.push({

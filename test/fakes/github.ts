@@ -349,6 +349,9 @@ export class FakeGitHub {
 			);
 		}
 		if (method === "POST" && (match = rest.match(/^\/pulls\/(\d+)\/comments\/(\d+)\/replies$/))) {
+			// Like GitHub, only an inline review comment can be replied to in a thread.
+			if (!this.reviewComments.some((c) => c.id === Number(match![2])))
+				return this.#json({ message: "Not Found" }, 404);
 			const reply = {
 				reviewId: 0,
 				id: this.#nextId++,
