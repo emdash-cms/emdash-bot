@@ -62,6 +62,19 @@ describe("issue delivery", () => {
 	});
 });
 
+describe("AI disclosure", () => {
+	it("names the case's primary model, not the configured default", async () => {
+		bot = await startBot({ authorModel: "scripted:configured-default" });
+		const caseId = issueCaseId(97);
+		await bot.ops(`cases/${caseId}/fixture`, { body: { model: "scripted:author" } });
+		await bot.webhook("issues", assignIssue({ issueId: 97, number: 97, script: fixScript() }));
+		await bot.waitFor("published", async () => bot!.github.pulls[0]);
+		const body = bot.github.pulls[0]!.body;
+		expect(body).toContain("model/tool: scripted:author via the EmDash bot");
+		expect(body).not.toContain("configured-default");
+	});
+});
+
 describe("operator dry run", () => {
 	it("seals a candidate at a pinned commit without any GitHub write", async () => {
 		bot = await startBot();

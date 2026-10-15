@@ -1653,7 +1653,10 @@ export class CaseDO extends DurableObject<Env> {
 			registerAlias: (alias) => this.#registerAlias(alias),
 			pullRequestTemplate: async () => this.store.getMeta<string | null>("prTemplate") ?? null,
 			assignedBy: this.store.getMeta<string>("assignedBy") ?? null,
-			model: this.config.authorModel,
+			// The primary model that ran this case, for the AI disclosure.
+			model:
+				(faultsEnabled(this.config) ? this.store.getMeta<string>("fixtureModel") : null) ??
+				this.config.authorModel,
 			sealIntegration: (parent, base, patch, tree) =>
 				this.#sealIntegration(parent, base, patch, tree),
 		};
