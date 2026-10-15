@@ -74,6 +74,8 @@ export interface BotConfig {
 	readonly reviewers: readonly string[];
 	/** `provider:id` of the author model. */
 	readonly authorModel: string;
+	/** Optional helper model for the author's `delegate` tool, `provider:id`. */
+	readonly childModel: string | null;
 	readonly thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	readonly gatewayId?: string;
 	readonly budgets: Budgets;
@@ -137,6 +139,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		maintainers: raw.maintainers ?? [],
 		reviewers: raw.reviewers ?? [],
 		authorModel: raw.authorModel,
+		childModel: raw.childModel ?? null,
 		thinkingLevel: raw.thinkingLevel,
 		gatewayId: raw.gatewayId,
 		budgets: { ...DEFAULT_BUDGETS, ...raw.budgets },

@@ -81,6 +81,8 @@ export interface AttemptState {
 	readonly fault: string | null;
 	/** Writer model for this attempt, overriding the case and the bot default. */
 	readonly model?: string | null;
+	/** Helper model for the author's delegate tool in this attempt. */
+	readonly childModel?: string | null;
 	stage: Stage;
 	repo?: { fullName: string; id: number };
 	issueNumber?: number;

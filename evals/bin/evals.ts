@@ -6,6 +6,7 @@
 //   pnpm evals run --case 4074 --target pi-staging [--fault after-candidate-sealed]
 //   pnpm evals run --suite initial-six --target pi-staging
 //   pnpm evals run --case 4141 --model cloudflare:@cf/deepseek-ai/deepseek-v4-flash-0731
+//   pnpm evals run --case 4141 --model cloudflare-ai-gateway:gpt-6.1-sol --child-model cloudflare-ai-gateway:gpt-5.6-luna
 //   pnpm evals resume --attempt <attempt-id>
 //   pnpm evals validate --case 4141
 //   pnpm evals grade-patch --case 4141 --patch candidate.patch   (grade a dry-run artifact)
@@ -32,6 +33,7 @@ const { positionals, values } = parseArgs({
 		suite: { type: "string" },
 		fault: { type: "string" },
 		model: { type: "string" },
+		"child-model": { type: "string" },
 		attempt: { type: "string" },
 		patch: { type: "string" },
 	},
@@ -51,10 +53,11 @@ async function runCases(
 	target: string,
 	fault: string | null,
 	model: string | null,
+	childModel: string | null = null,
 ): Promise<void> {
 	const p = profile(target);
 	for (const id of ids) {
-		const state = newAttempt(id, p, fault, model);
+		const state = newAttempt(id, p, fault, model, childModel);
 		try {
 			await runAttempt(state, p);
 		} catch (error) {
@@ -104,7 +107,13 @@ switch (command) {
 	case "run": {
 		const ids = values.suite ? SUITES[values.suite] : values.case ? [values.case] : undefined;
 		if (!ids) throw new Error("pass --case or --suite");
-		await runCases(ids, values.target!, values.fault ?? null, values.model ?? null);
+		await runCases(
+			ids,
+			values.target!,
+			values.fault ?? null,
+			values.model ?? null,
+			values["child-model"] ?? null,
+		);
 		break;
 	}
 	case "resume": {

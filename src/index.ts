@@ -275,7 +275,9 @@ async function operator(
 			return json(await rpc(stub.collectGarbage(body.graceMs)));
 		}
 		if (request.method === "POST" && action === "fixture") {
-			return json(await stub.setFixture((await request.json()) as { model?: string }));
+			return json(
+				await stub.setFixture((await request.json()) as { model?: string; childModel?: string }),
+			);
 		}
 		if (request.method === "POST" && action === "faults") {
 			const body = (await request.json()) as { boundary: string; attempt?: string };

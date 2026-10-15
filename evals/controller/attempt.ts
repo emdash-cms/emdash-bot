@@ -52,6 +52,7 @@ export function newAttempt(
 	profile: Profile,
 	fault: string | null,
 	model: string | null = null,
+	childModel: string | null = null,
 ): AttemptState {
 	const state: AttemptState = {
 		attemptId: `${caseId}-${fault ?? "none"}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 6)}`,
@@ -59,6 +60,7 @@ export function newAttempt(
 		profile: profile.name,
 		fault,
 		model,
+		childModel,
 		stage: "created",
 		history: [],
 	};
@@ -104,6 +106,7 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 			lockDigest: createHash("sha256").update(readFileSync("pnpm-lock.yaml")).digest("hex"),
 			imageDigest: process.env.SANDBOX_IMAGE_DIGEST ?? null,
 			requestedModel: state.model ?? manifest.fixtureModel ?? bot.authorModel,
+			childModel: state.childModel ?? null,
 			promptHash: bot.promptHash,
 			skillHash: bot.skillHash,
 			budgets: { bot: bot.budgets, case: manifest.budget },
@@ -113,7 +116,11 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 		};
 		// Fixture overrides and faults enter through the authenticated operator path before intake.
 		const model = state.model ?? manifest.fixtureModel;
-		if (model) await ops(profile, `/ops/cases/${state.botCaseId}/fixture`, { model });
+		if (model || state.childModel)
+			await ops(profile, `/ops/cases/${state.botCaseId}/fixture`, {
+				...(model ? { model } : {}),
+				...(state.childModel ? { childModel: state.childModel } : {}),
+			});
 		const faults = [
 			...(manifest.faults ?? []),
 			...(state.fault && state.fault !== "none" ? [state.fault] : []),

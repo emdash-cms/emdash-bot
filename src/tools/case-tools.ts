@@ -4,6 +4,7 @@
 
 import { Type } from "@earendil-works/pi-ai";
 import {
+	configure,
 	defineExtension,
 	defineTool,
 	GenerationTask,
@@ -66,6 +67,8 @@ export interface CaseRuntime {
 	caseRecord(): string;
 	/** The live part of the case: candidate, publication, checks and budgets. */
 	caseState(): string;
+	/** The helper model for `delegate`, or null when helpers are off. */
+	childModel(): { readonly provider: string; readonly modelId: string } | null;
 	focusedChecks(): Readonly<Record<string, string>>;
 	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately. */
 	recordUsage(tokens: number, cacheRead: number): void;
@@ -159,6 +162,10 @@ Rules you cannot change:
 - If you cannot proceed correctly (missing information, intended behaviour, a blocker), reply asking for what you need, or call handoff when only a maintainer can unblock you.
 - Keep a short plan with update_work_plan and update it as you go; it is the progress comment people watch, on the issue until your pull request opens and on the pull request after. Use reply for actual conversation: questions, disagreements, and, when the work is ready for human review, asking the reporter on the issue to try the fix and confirm it works. When they confirm, call record_reporter_confirmation. Do not post noise.
 - If a time or token budget is exhausted, other tools are refused but submit_candidate, reply and handoff remain available.`;
+
+const HELPER_INSTRUCTIONS = `You are a helper to the EmDash bot's author, not the author. Do exactly the task in the message, in the shared checkout, and stop. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Report back concisely: what you found or changed (paths and line numbers), what you ran and its result, and anything that surprised you. Quote only the lines that matter, never whole logs.`;
+
+const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit.`;
 
 export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 	const read = guarded(runtime, createReadTool(), "safe");
@@ -371,6 +378,59 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		execute: async () => textResult(`${runtime.caseRecord()}\n\n${runtime.caseState()}`),
 	});
 
+	const readOnlyTools = [read, bash, search, listFiles, runCheck, caseStatus];
+	const delegate = defineTool({
+		name: "delegate",
+		description:
+			"Hand a self-contained task to a cheaper helper model and get its report back: investigating code, running builds and tests and summarising failures, reading CI logs, or making a precisely specified change. The helper shares the checkout and sees nothing of this conversation, so say exactly what to do and what to report. With edits, it may change files; review what it changed before you submit. It cannot publish, reply or plan.",
+		parameters: Type.Object({
+			task: Type.String({
+				description:
+					"A complete brief: goal, relevant paths, constraints, and the report you want back",
+			}),
+			edits: Type.Optional(
+				Type.Boolean({ description: "Allow the helper to write and edit files" }),
+			),
+		}),
+		// A rerun after a restart finds the same child and the same submission.
+		replay: "safe",
+		execute: async (args, api, context) => {
+			const model = runtime.childModel();
+			if (!model) throw new Error("no helper model is configured for this case");
+			const child = await api.commit(async (tx) => {
+				const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
+				if (existing !== undefined) return existing.id;
+				const created = await tx.createConversation({
+					ownership: { kind: "task", taskId: api.taskId },
+				});
+				await configure(tx, created.id, {
+					model,
+					tools: args.edits ? [...readOnlyTools, write, edit] : readOnlyTools,
+					instructions: HELPER_INSTRUCTIONS,
+				});
+				return created.id;
+			}, context);
+			await api.details({ conversationId: child }, context);
+			const conversation = await api.conversation(child, context);
+			if (!conversation) throw new Error("the helper conversation is missing");
+			const settled = await (
+				await conversation.submit(
+					{ type: "input", content: args.task, requestId: `delegate:${api.taskId}` },
+					context,
+				)
+			).wait(context);
+			if (settled.status !== "done" || !settled.answer)
+				return textResult(`The helper did not finish: ${settled.reason ?? settled.status}`, true);
+			const answer = await api.commit((tx) => tx.entry(settled.answer!), context);
+			const text = (answer?.model ?? [])
+				.flatMap((m) => (m.role === "assistant" ? m.content : []))
+				.flatMap((part) => (part.type === "text" ? [part.text] : []))
+				.join("\n")
+				.trim();
+			return textResult(text || "(the helper returned no text)");
+		},
+	});
+
 	return defineExtension({
 		name: "emdash-case",
 		tools: [
@@ -388,10 +448,17 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			workPlan,
 			decline,
 			caseStatus,
+			delegate,
 		],
 		sections: [
 			section("method", () => AUTHOR_METHOD, { tag: false }),
 			section("case", () => runtime.caseRecord()),
+			// Only for a parent with a helper model; helpers themselves are not offered delegate.
+			section("helpers", (input) =>
+				runtime.childModel() && input.agent.tools.some((t) => t.name === "delegate")
+					? HELPERS_SECTION
+					: undefined,
+			),
 			section("focused_checks", () => {
 				const checks = Object.entries(runtime.focusedChecks());
 				return checks.length === 0

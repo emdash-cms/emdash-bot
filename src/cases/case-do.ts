@@ -410,6 +410,14 @@ export class CaseDO extends DurableObject<Env> {
 			},
 			caseRecord: () => (this.store.identity() ? this.#caseRecord() : ""),
 			caseState: () => (this.store.identity() ? this.#caseState() : ""),
+			childModel: () => {
+				const ref =
+					(faultsEnabled(this.config) ? this.store.getMeta<string>("fixtureChildModel") : null) ??
+					this.config.childModel;
+				if (!ref) return null;
+				const parsed = parseModelRef(ref);
+				return { provider: parsed.provider, modelId: parsed.id };
+			},
 			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
 			decline: (opId, reason, message) => this.#decline(opId, reason, message),
 			updateWorkPlan: async (input) => {
@@ -2078,9 +2086,13 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	/** Staging only: fixture overrides recorded by the authenticated eval controller. */
-	async setFixture(fixture: { model?: string }): Promise<{ accepted: boolean }> {
+	async setFixture(fixture: {
+		model?: string;
+		childModel?: string;
+	}): Promise<{ accepted: boolean }> {
 		if (!faultsEnabled(this.config)) return { accepted: false };
 		if (fixture.model) this.store.setMeta("fixtureModel", fixture.model);
+		if (fixture.childModel) this.store.setMeta("fixtureChildModel", fixture.childModel);
 		this.store.log("fixture.set", fixture);
 		return { accepted: true };
 	}
