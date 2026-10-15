@@ -1,0 +1,53 @@
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_a2f2cc14b282b6 24-27,47,148-149,154,212,242-275,376-393,419,421,424-427,431,702,708-818,821-825,954-966,971-976,978,981,992,1005-1013,1016,1019,1021-1022,1024-1025,1029,1031,1033,1036,1042,1045,1060-1065,1071,1078,1087-1098,1102-1104,1106,1108-1125,1128,1174-1178,1181-1184,1219-1221,1225-1265,1278,1280,1282-1284,1286-1287,1289-1291,1293-1298,1301-1307,1311,1356-1360,1364-1365,1368-1370,1375-1377,1379-1383,1385,1389,1432-1435,1437-1444,1471-1503,1507-1509,1593,1617-1622,1624-1628,1631-1636,1646,1648-1651,1653-1660,1662,1665,1672-1676,1678,1704
+src/cases/types.ts
+  s_4c97aa8e7b616f::t_4011d9c0738a2b 177-178,181-193
+src/config.ts
+  s_4c97aa8e7b616f::t_dc58bf5029a84d 24,92
+src/github/publisher.ts
+  s_4c97aa8e7b616f::t_93c5523048371e 233
+src/github/review.ts
+  s_4c97aa8e7b616f::t_47da6ae509d0b8 16-17,37-38,46-47,70,113,116,125-136
+src/github/webhook.ts
+  s_4c97aa8e7b616f::t_ef315a0a2f4ac4 48-49,235,301-310,312,314,321,332-333,335,337-350
+src/reports/render.ts
+  s_4c97aa8e7b616f::t_c6f9ebdde8d7fc 6,27-38,41,43,52-53,110-114
+src/reports/status.ts
+  s_4c97aa8e7b616f::t_1cdf19bae5ac2f 1-2,13,44-45,80-86,98,104-105,121-125,160,162-166,169-170,172-174,176,179,202
+src/reports/work-plan.ts
+  s_4c97aa8e7b616f::t_7aa4cbaf4b8556 1-86
+src/runtime/scripted-author.ts
+  s_4c97aa8e7b616f::t_6684c0134721a1 43-55,59-64,66-68
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_34e001ed73ff5d 22-23,50-62,128,132-133,136,138,140-143,241,255-285,287,289-302,306,308,315,318,333-335,340
+test/harness.ts
+  s_4c97aa8e7b616f::t_f184897362a987 245-259
+test/recovery/lifecycle.test.ts
+  s_4c97aa8e7b616f::t_2d2b09fe755717 11-12,71,75,95,108,110-111,129,159,170,184,188,190,200-201
+test/unit/checks-review.test.ts
+  s_4c97aa8e7b616f::t_f9253a384013be 145
+test/unit/status.test.ts
+  s_4c97aa8e7b616f::t_2ea22594848654 31,56-70
+test/unit/webhook.test.ts
+  s_4c97aa8e7b616f::t_69a17c4023459b 53-54,59-60
+test/workers/delivery.test.ts
+  s_4c97aa8e7b616f::t_2664d3d97b52bb 21,41
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_864e1beaf4a426 13,43,159,166,185-187,224,228,251-252,383,454-461
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "cfa7d60c99b7d40cfd13b51975db5871e47384e1",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
