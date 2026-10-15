@@ -1,0 +1,21 @@
+Dockerfile
+  s_4c97aa8e7b616f::t_8d6fbd53027dbb 20-22
+skills/emdash-author/SKILL.md
+  s_4c97aa8e7b616f::t_f84ed92887cb87 23-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "57e0bfacabfac1adbb97fb3c8a32f38421fe91ba",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
