@@ -1103,6 +1103,8 @@ export class CaseDO extends DurableObject<Env> {
 						: `pull request #${identity.prNumber}`;
 				if (auto) {
 					const verdict = await this.#triage(payload);
+					// A maintainer assigned it while triage ran; their assignment already reached the author.
+					if (this.store.getMeta<string | null>("assignedBy")) return null;
 					this.store.setMeta("triage", verdict);
 					this.store.log("triage", {
 						decision: verdict.decision,
@@ -1707,6 +1709,7 @@ export class CaseDO extends DurableObject<Env> {
 		return computeStatus({
 			state: this.store.state(),
 			authorBusy: this.store.state() === "active" && (await this.#authorBusy()),
+			authorStarted: (this.store.getMeta<number>("runs") ?? 0) > 0,
 			handoff: this.store.getMeta<Handoff | null>("handoff") ?? undefined,
 			candidates: this.store.candidates(),
 			publications: this.store.publications(),

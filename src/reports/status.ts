@@ -15,6 +15,8 @@ import { str } from "../util.ts";
 export interface StatusInput {
 	readonly state: CaseState | undefined;
 	readonly authorBusy: boolean;
+	/** Whether the author has run at all in this case. */
+	readonly authorStarted: boolean;
 	readonly handoff: { reason: string; nextAction: string; at: number } | undefined;
 	readonly candidates: readonly Candidate[];
 	readonly publications: readonly Publication[];
@@ -122,6 +124,8 @@ export function computeStatus(input: StatusInput): StatusReport {
 			"a maintainer can apply the intake label to assign it anyway",
 		);
 	if (input.authorBusy) return report("working", ["the author is working"], "wait for the author");
+	if (!input.authorStarted && input.state === "active" && !input.handoff)
+		return report("working", ["the author is starting"], "wait for the author");
 	if (input.handoff) return report("needs-human", [input.handoff.reason], input.handoff.nextAction);
 	if (!candidate)
 		return report(

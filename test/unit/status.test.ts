@@ -17,6 +17,7 @@ const check = (name: string, sha: string, outcome: string, classification: strin
 const base: StatusInput = {
 	state: "active",
 	authorBusy: false,
+	authorStarted: true,
 	handoff: undefined,
 	candidates: [candidate],
 	publications: [publication],
@@ -105,6 +106,16 @@ describe("deterministic status", () => {
 		expect(body).toContain("Waiting for a reply");
 		expect(body).not.toContain("| Candidate |");
 		expect(body).not.toContain("Required checks");
+	});
+
+	it("is starting, not waiting for a reply, before the author has run", () => {
+		const report = computeStatus({
+			...base,
+			authorStarted: false,
+			candidates: [],
+			publications: [],
+		});
+		expect(report.status).toBe("working");
 	});
 
 	it("keeps the plan checklist and the status reasons as separate lists", () => {
