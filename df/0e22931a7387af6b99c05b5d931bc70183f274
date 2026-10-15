@@ -1,0 +1,27 @@
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_e27f7352474d37 24,752-773,869,905,912-925,1151
+src/github/review.ts
+  s_4c97aa8e7b616f::t_6f5dc57c1b2779 39-46,52,90-117
+test/fakes/github.ts
+  s_4c97aa8e7b616f::t_4f9619b21bb826 46-52,337-339
+test/unit/checks-review.test.ts
+  s_4c97aa8e7b616f::t_561176485542ce 136-158
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_e57ee657e703e0 435-463
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "df0e22931a7387af6b99c05b5d931bc70183f274",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
