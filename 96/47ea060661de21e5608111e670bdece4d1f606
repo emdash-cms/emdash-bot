@@ -1,0 +1,25 @@
+evals/controller/attempt.ts
+  s_4c97aa8e7b616f::t_aa3786a465896c 11,183,185
+evals/controller/github.ts
+  s_4c97aa8e7b616f::t_a82164dd4b473c 35-49
+evals/controller/grade.ts
+  s_4c97aa8e7b616f::t_88ddddccef41e1 9,73,84
+evals/controller/provision.ts
+  s_4c97aa8e7b616f::t_b6b7cc907a6f2c 9,35,140,164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "9647ea060661de21e5608111e670bdece4d1f606",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
