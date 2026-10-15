@@ -197,7 +197,10 @@ export function normalize(
 	const repo = payload.repository;
 	if (!repo?.id || !repo.full_name) return { skip: "payload has no repository" };
 	const sender = payload.sender?.login ?? "";
-	if (same(sender, config.botLogin) && eventName !== "pull_request")
+	// The bot's own comments and reviews must never become instructions. Check
+	// runs and pull request events name the bot as sender when it pushed the
+	// commit, and still carry evidence the case needs.
+	if (same(sender, config.botLogin) && eventName !== "pull_request" && eventName !== "check_run")
 		return { skip: "event from the bot itself" };
 	const maintainer = isMaintainer(
 		config,

@@ -103,3 +103,30 @@ describe("intake label", () => {
 		expect(labeled("labeled", "emdash-bot", "drive-by")).toHaveProperty("skip");
 	});
 });
+
+describe("bot-originated events", () => {
+	it("keeps check runs for commits the bot pushed but ignores the bot's own comments", () => {
+		const run = normalize(config, "check_run", {
+			action: "completed",
+			repository,
+			sender: { login: "emdash-bot-pi[bot]" },
+			check_run: {
+				id: 1,
+				name: "test",
+				head_sha: "abc",
+				conclusion: "success",
+				check_suite: { head_branch: "emdash-bot/issue-1" },
+				pull_requests: [{ number: 2 }],
+			},
+		});
+		expect(run).toMatchObject({ kind: "check" });
+		const comment = normalize(config, "issue_comment", {
+			action: "created",
+			repository,
+			sender: { login: "emdash-bot-pi[bot]" },
+			issue: { number: 2 },
+			comment: { id: 1, body: "@emdash-bot-pi status" },
+		});
+		expect(comment).toHaveProperty("skip");
+	});
+});
