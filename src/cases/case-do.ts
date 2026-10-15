@@ -1499,12 +1499,14 @@ export class CaseDO extends DurableObject<Env> {
 		const failure = await this.#failedTurn();
 		if (failure) {
 			this.store.log("author.failed", { error: failure.message });
-			await this.#stopAuthor();
+			// Record the handoff first so the status never reads as idle in between.
+			// Withdraw only the stranded input: the sandbox and its preparation are still good.
 			await this.#handoff(
 				`model-error:${failure.at}`,
 				`the model call failed: ${failure.message}`,
 				"a new comment or operator resume retries",
 			);
+			await this.harness.abort().catch(() => false);
 		}
 		if (await this.#authorBusy()) {
 			const started = this.store.getMeta<number>("runStartedAt");
