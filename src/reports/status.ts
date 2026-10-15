@@ -125,9 +125,9 @@ export function computeStatus(input: StatusInput): StatusReport {
 	if (input.handoff) return report("needs-human", [input.handoff.reason], input.handoff.nextAction);
 	if (!candidate)
 		return report(
-			"working",
-			["no candidate has been submitted yet"],
-			"comment on the issue to direct the author",
+			"waiting-for-reply",
+			["the author is idle and has not submitted a change"],
+			"the reporter or a maintainer can reply on the issue",
 		);
 	if (!publication || publication.state === "intent" || publication.state === "commit-created") {
 		return report("working", ["the saved candidate is being published"], "wait for publication");

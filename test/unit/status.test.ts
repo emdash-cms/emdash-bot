@@ -97,6 +97,16 @@ describe("deterministic status", () => {
 		expect(body).toContain("[x] This PR includes AI-generated code or text — model/tool: m");
 		expect(body).toContain("emdash-bot:case=1-issue-2");
 	});
+	it("waits for a reply, without change evidence, when the author is idle with no candidate", () => {
+		const identity = { caseId: "1-issue-2", issueNumber: 7, kind: "issue" } as never;
+		const report = computeStatus({ ...base, candidates: [], publications: [], observedHead: null });
+		expect(report.status).toBe("waiting-for-reply");
+		const body = renderStatus(identity, report);
+		expect(body).toContain("Waiting for a reply");
+		expect(body).not.toContain("| Candidate |");
+		expect(body).not.toContain("Required checks");
+	});
+
 	it("keeps the plan checklist and the status reasons as separate lists", () => {
 		const identity = { caseId: "1-issue-2", issueNumber: 7, kind: "issue" } as never;
 		const plan = {

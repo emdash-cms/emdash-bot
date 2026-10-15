@@ -21,6 +21,7 @@ export type CaseState = "active" | "cancelled" | "declined" | "terminal";
 
 export type CaseStatus =
 	| "working"
+	| "waiting-for-reply"
 	| "candidate-published"
 	| "waiting-for-checks"
 	| "changes-required"

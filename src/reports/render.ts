@@ -15,6 +15,7 @@ export function prMarker(caseId: string): string {
 
 const LABEL: Record<StatusReport["status"], string> = {
 	working: "Working",
+	"waiting-for-reply": "Waiting for a reply",
 	"candidate-published": "Candidate published",
 	"waiting-for-checks": "Waiting for checks",
 	"changes-required": "Changes required",
@@ -84,21 +85,26 @@ export function renderStatus(
 		...report.reasons.map((r) => `- ${r}`),
 		"",
 		`Next action: ${report.nextAction}.`,
-		"",
-		"| | |",
-		"| --- | --- |",
-		`| Candidate | ${report.candidate ? `\`${report.candidate.id}\` (tree \`${report.candidate.sourceTreeHash.slice(0, 12)}\`)` : "none"} |`,
-		`| Published head | ${report.head ? `\`${report.head.slice(0, 12)}\`` : "not published"} |`,
-		`| Reviewer's latest review of head | ${report.review ? `${report.review.state.toLowerCase()}${report.review.actionable ? `, ${report.review.actionable} item(s)` : ""}` : "none"} |`,
-		`| Reporter confirmation | ${extras.reporterConfirmed ? "confirmed" : "not yet"} |`,
-		`| Human approval | required before merge |`,
 	];
-	if (report.requiredChecks.length > 0) {
-		lines.push("", "Required checks on the current head:", "");
-		for (const check of report.requiredChecks)
-			lines.push(
-				`- \`${check.name}\`: ${check.state}${check.classification && check.classification !== "success" ? ` (${check.classification})` : ""}`,
-			);
+	// Evidence about a change only once there is one.
+	if (report.candidate || report.head) {
+		lines.push(
+			"",
+			"| | |",
+			"| --- | --- |",
+			`| Candidate | ${report.candidate ? `\`${report.candidate.id}\` (tree \`${report.candidate.sourceTreeHash.slice(0, 12)}\`)` : "none"} |`,
+			`| Published head | ${report.head ? `\`${report.head.slice(0, 12)}\`` : "not published"} |`,
+			`| Reviewer's latest review of head | ${report.review ? `${report.review.state.toLowerCase()}${report.review.actionable ? `, ${report.review.actionable} item(s)` : ""}` : "none"} |`,
+			`| Reporter confirmation | ${extras.reporterConfirmed ? "confirmed" : "not yet"} |`,
+			`| Human approval | required before merge |`,
+		);
+		if (report.requiredChecks.length > 0) {
+			lines.push("", "Required checks on the current head:", "");
+			for (const check of report.requiredChecks)
+				lines.push(
+					`- \`${check.name}\`: ${check.state}${check.classification && check.classification !== "success" ? ` (${check.classification})` : ""}`,
+				);
+		}
 	}
 	lines.push(
 		"",
