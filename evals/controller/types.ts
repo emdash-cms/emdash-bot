@@ -66,6 +66,8 @@ export type Stage =
 export type Outcome =
 	| "ready-for-human"
 	| "needs-human"
+	| "waiting-for-reply"
+	| "declined"
 	| "changes-required"
 	| "waiting"
 	| "cancelled"

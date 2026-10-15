@@ -60,7 +60,15 @@ export function newAttempt(caseId: string, profile: Profile, fault: string | nul
 	return state;
 }
 
-const SETTLED = new Set(["ready-for-human", "needs-human", "cancelled", "terminal"]);
+// The author is done until a human acts: ready, blocked, asking, declined or stopped.
+const SETTLED = new Set([
+	"ready-for-human",
+	"needs-human",
+	"waiting-for-reply",
+	"declined",
+	"cancelled",
+	"terminal",
+]);
 
 export async function runAttempt(state: AttemptState, profile: Profile): Promise<AttemptState> {
 	const { manifest, grader, digest } = loadCase(state.caseId);
