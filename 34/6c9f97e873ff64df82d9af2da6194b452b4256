@@ -1,0 +1,27 @@
+IMPLEMENTATION_PLAN.md
+  s_4c97aa8e7b616f::t_e7fa3e2ff1611e 510
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_3fdd9600c2ef14 88-96,172-173,178,1305-1348
+src/config.ts
+  s_4c97aa8e7b616f::t_be1d3cb561faef 95-96,106-108,144
+test/harness.ts
+  s_4c97aa8e7b616f::t_c7e35b77abfe83 70
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_b1dea264671699 266-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "346c9f97e873ff64df82d9af2da6194b452b4256",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
