@@ -1314,7 +1314,12 @@ export class CaseDO extends DurableObject<Env> {
 		});
 		// Clear administrative and infrastructure noise, stale runs and successes
 		// are evidence only. Anything that may need the author goes to it.
-		if (!["code", "unknown"].includes(classification.classification) || p.headSha !== head)
+		// A skipped check is never a code failure; it stays in the status evidence only.
+		if (
+			!["code", "unknown"].includes(classification.classification) ||
+			p.headSha !== head ||
+			outcomeOf(p.conclusion) === "skipped"
+		)
 			return null;
 		// Batch: a CI run fails many checks at once, and each must not start its own author run.
 		const failures = this.store.getMeta<CheckFailure[]>("checkFailures") ?? [];

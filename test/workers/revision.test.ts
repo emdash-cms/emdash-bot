@@ -202,7 +202,7 @@ describe("review repair and asynchronous CI", () => {
 		).toBe(true);
 	});
 
-	it("does not request code repair for administrative, infrastructure or stale checks", async () => {
+	it("does not request code repair for administrative, infrastructure, stale or skipped checks", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(32);
 		const branch = "emdash-bot/issue-32";
@@ -229,6 +229,8 @@ describe("review repair and asynchronous CI", () => {
 			"Error: HTTP 502 Bad Gateway while downloading dependencies",
 		);
 		await checkRun(bot, pr, branch, bot.baseCommit, "test", "failure", "assertion failed");
+		// A workflow skipped on this head is evidence only, never a message to the author.
+		await checkRun(bot, pr, branch, head, "Build", "skipped", "");
 		const status = await statusIs(bot, caseId, "needs-human");
 		expect(status.reasons.join(" ")).toContain("infrastructure");
 		const record = await bot.inspect(caseId);
@@ -236,6 +238,10 @@ describe("review repair and asynchronous CI", () => {
 			.filter((v: any) => v.kind === "workflow")
 			.map((v: any) => v.classification);
 		expect(classes).toEqual(expect.arrayContaining(["administrative", "infrastructure", "stale"]));
+		// Past the check settle period: nothing was batched up for the author.
+		await new Promise((r) => setTimeout(r, 1500));
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		expect(JSON.stringify(evidence.transcript)).not.toContain("## Checks failed");
 		expect(authorRuns(record)).toHaveLength(1);
 		expect(record.candidates).toHaveLength(1);
 	});
