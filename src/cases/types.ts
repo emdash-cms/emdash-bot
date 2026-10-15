@@ -17,7 +17,7 @@ export interface CaseIdentity {
 	readonly defaultBranch: string;
 }
 
-export type CaseState = "active" | "cancelled" | "terminal";
+export type CaseState = "active" | "cancelled" | "declined" | "terminal";
 
 export type CaseStatus =
 	| "working"
@@ -27,6 +27,7 @@ export type CaseStatus =
 	| "ready-for-human"
 	| "needs-human"
 	| "cancelled"
+	| "declined"
 	| "terminal";
 
 export interface CaseEvent {

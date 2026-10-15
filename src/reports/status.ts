@@ -115,6 +115,12 @@ export function computeStatus(input: StatusInput): StatusReport {
 	if (input.state === "cancelled") return report("cancelled", ["the case was unassigned"], "none");
 	if (input.state === "terminal")
 		return report("terminal", ["the pull request or issue was closed"], "none");
+	if (input.state === "declined")
+		return report(
+			"declined",
+			[input.handoff?.reason ?? "the author declined this issue"],
+			"a maintainer can apply the intake label to assign it anyway",
+		);
 	if (input.authorBusy) return report("working", ["the author is working"], "wait for the author");
 	if (input.handoff) return report("needs-human", [input.handoff.reason], input.handoff.nextAction);
 	if (!candidate)

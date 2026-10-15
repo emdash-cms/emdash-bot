@@ -211,6 +211,40 @@ export function normalize(
 	);
 	const intake = intakeAction(config, payload);
 
+	if (eventName === "issues" && payload.action === "opened" && config.autoIntake) {
+		const issue = payload.issue;
+		if (!issue?.id || !issue.number) return { skip: "issue payload incomplete" };
+		if (sender.endsWith("[bot]"))
+			return { skip: "issues opened by bots are not taken on automatically" };
+		// Repository policy admits the issue; the opener gains no maintainer authority.
+		return {
+			kind: "assigned",
+			actor: sender,
+			provenance: "auto-intake",
+			route: {
+				create: {
+					caseId: caseIdFor(repo.id, "issue", issue.id),
+					repoId: repo.id,
+					repo: repo.full_name,
+					kind: "issue",
+					issueId: issue.id,
+					issueNumber: issue.number,
+					branch: botBranch(issue.number),
+					ownsBranch: true,
+					defaultBranch: repo.default_branch ?? "main",
+				},
+			},
+			payload: {
+				number: issue.number,
+				title: issue.title ?? "",
+				body: issue.body ?? "",
+				url: issue.html_url ?? "",
+				reporter: issue.user?.login ?? sender,
+				autoIntake: true,
+			},
+		};
+	}
+
 	if (eventName === "issues" && intake) {
 		if (intake === "not-for-bot") return { skip: "assignment or label is not for the bot" };
 		if (!maintainer) return { skip: `assignment by ${sender} without maintainer authority` };

@@ -21,6 +21,7 @@ const LABEL: Record<StatusReport["status"], string> = {
 	"ready-for-human": "Ready for human review",
 	"needs-human": "Needs a human",
 	cancelled: "Cancelled",
+	declined: "Declined",
 	terminal: "Closed",
 };
 

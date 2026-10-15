@@ -47,6 +47,8 @@ export interface BotConfig {
 	 */
 	readonly assignee: string;
 	readonly intakeLabel: string;
+	/** Also admit every newly opened issue; the author decides whether to take it on. */
+	readonly autoIntake: boolean;
 	readonly repositories: readonly RepositoryConfig[];
 	/**
 	 * Staging only: also admit repositories whose `owner/name` matches this
@@ -108,6 +110,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		botLogin: raw.botLogin,
 		assignee: raw.assignee ?? raw.botLogin,
 		intakeLabel: raw.intakeLabel ?? "emdash-bot",
+		autoIntake: raw.autoIntake ?? false,
 		repositories: raw.repositories ?? [],
 		repositoryPattern: profile === "production" ? undefined : raw.repositoryPattern,
 		defaultRepository: raw.defaultRepository,

@@ -56,6 +56,8 @@ export interface CaseRuntime {
 	): Promise<string>;
 	/** Record the reporter's confirmation that the fix works, citing their comment. */
 	recordReporterConfirmation(commentId: number): string;
+	/** Decline an automatically admitted issue, optionally explaining why on the issue. */
+	decline(opId: string, reason: string, message: string | undefined): Promise<void>;
 	/** Replace the work plan shown in the progress comment. */
 	updateWorkPlan(input: { summary: string; steps: readonly WorkPlanStep[] }): Promise<string>;
 	/** The authoritative case record, rendered for the author. */
@@ -124,6 +126,16 @@ function guarded<T extends ToolRegistration>(
 		},
 	};
 }
+
+/** Tools that stay available when a budget is exhausted: they finish or communicate, they do not work. */
+const TERMINAL_TOOLS = new Set([
+	"submit_candidate",
+	"handoff",
+	"reply",
+	"update_work_plan",
+	"decline",
+	"record_reporter_confirmation",
+]);
 
 export const AUTHOR_METHOD = `You are the EmDash bot's author. A maintainer has assigned you one issue or pull request, and you own it until they unassign you: you implement it, publish it as a draft pull request, and see it through review and CI.
 
@@ -309,6 +321,36 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		},
 	});
 
+	const decline = defineTool({
+		name: "decline",
+		description:
+			"Decline an issue you should not work on: a feature request or design question, intended behaviour, a duplicate, not reproducible, out of scope, or malicious or spam. Give a short, kind message for the reporter unless the report is malicious. This ends the case; a maintainer can still assign it. If the report only lacks information, reply asking for it instead.",
+		parameters: Type.Object({
+			reason: Type.Union([
+				Type.Literal("feature-request"),
+				Type.Literal("intended-behaviour"),
+				Type.Literal("duplicate"),
+				Type.Literal("not-reproducible"),
+				Type.Literal("out-of-scope"),
+				Type.Literal("malicious"),
+			]),
+			message: Type.Optional(
+				Type.String({ description: "Posted on the issue. Omit for malicious reports." }),
+			),
+		}),
+		replay: "unsafe",
+		execute: async (args, api) => {
+			const blocked = runtime.guard(true);
+			if (blocked) throw new Error(blocked);
+			await runtime.decline(
+				`tool:${api.taskId}`,
+				args.reason,
+				args.reason === "malicious" ? undefined : args.message,
+			);
+			return { ...textResult("Declined."), control: { terminate: true } } as ToolExecutionResult;
+		},
+	});
+
 	const caseStatus = defineTool({
 		name: "case_status",
 		description:
@@ -333,6 +375,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			reply,
 			reporterConfirmed,
 			workPlan,
+			decline,
 			caseStatus,
 		],
 		sections: [
@@ -349,9 +392,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		hooks: [
 			hook(ToolTask, {
 				beforeTool: (call) => {
-					const blocked = runtime.guard(
-						call.name === "submit_candidate" || call.name === "handoff",
-					);
+					const blocked = runtime.guard(TERMINAL_TOOLS.has(call.name));
 					return blocked ? { block: blocked } : undefined;
 				},
 			}),

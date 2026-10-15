@@ -380,6 +380,7 @@ export class CaseDO extends DurableObject<Env> {
 			},
 			caseRecord: () => (this.store.identity() ? this.#caseRecord() : ""),
 			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
+			decline: (opId, reason, message) => this.#decline(opId, reason, message),
 			updateWorkPlan: async (input) => {
 				const plan = updateWorkPlan(
 					this.store.getMeta<WorkPlan>("workPlan") ?? null,
@@ -748,6 +749,24 @@ export class CaseDO extends DurableObject<Env> {
 		return `Recorded the reporter's confirmation (comment ${commentId}).`;
 	}
 
+	/** The author declines the issue: optionally say why on it, then stop working the case. */
+	async #decline(opId: string, reason: string, message: string | undefined): Promise<void> {
+		if (message?.trim()) this.#queueReply(`${opId}:message`, undefined, true, message);
+		const handoff: Handoff = {
+			reason: `declined: ${reason}`,
+			nextAction: "a maintainer can apply the intake label to assign it anyway",
+			at: Date.now(),
+		};
+		this.store.transaction(() => {
+			this.store.setMeta("state", "declined");
+			this.store.setMeta("handoff", handoff);
+			this.store.putOperation(opId, "decline", this.store.generation(), "completed", { reason });
+		});
+		this.store.log("case.declined", { reason, publicMessage: !!message?.trim() });
+		await this.#schedule("replies", Date.now(), {}, "replies");
+		await this.#schedule("report", Date.now());
+	}
+
 	async #repliesJob(): Promise<LifecycleJobOutcome | void> {
 		const intents = this.store.getMeta<ReplyIntent[]>("replyIntents") ?? [];
 		const pending = intents.filter((i) => i.status === "pending");
@@ -978,7 +997,17 @@ export class CaseDO extends DurableObject<Env> {
 		const from = `${event.actor} (${event.provenance})`;
 		switch (event.kind) {
 			case "assigned": {
-				if (this.store.state() === "active") return null;
+				const auto = payload.autoIntake === true;
+				if (this.store.state() === "active") {
+					// A maintainer explicitly taking on an automatically admitted issue.
+					if (!auto && this.store.getMeta<boolean>("autoIntake")) {
+						this.store.setMeta("autoIntake", false);
+						this.store.setMeta("assignedBy", event.actor);
+						this.store.log("ownership.confirmed-by-maintainer", { by: event.actor });
+						return `## Assigned by a maintainer\nFrom: ${from}\n\nA maintainer has explicitly assigned this issue to you. Work on it unless you cannot do so correctly.`;
+					}
+					return null;
+				}
 				this.store.transaction(() => {
 					if (!this.store.identity()) {
 						this.store.setMeta("identity", delivery.identity);
@@ -994,6 +1023,7 @@ export class CaseDO extends DurableObject<Env> {
 					this.store.setMeta("generation", this.store.generation() + 1);
 					this.store.setMeta("state", "active");
 					this.store.setMeta("assignedBy", event.actor);
+					this.store.setMeta("autoIntake", auto);
 					// The case time budget runs per ownership generation.
 					this.store.setMeta("assignedAt", Date.now());
 					this.store.setMeta("handoff", null);
@@ -1010,6 +1040,9 @@ export class CaseDO extends DurableObject<Env> {
 					identity.kind === "issue"
 						? `issue #${identity.issueNumber}`
 						: `pull request #${identity.prNumber}`;
+				if (auto) {
+					return `## New issue\nFrom: ${from}\n\n${event.actor} opened ${what}; its text is in the case record. No maintainer has assigned it. Decide whether to take it on. Work on it when it is a real bug or small, clear task with a bounded fix you can verify. If it only lacks information you need, reply on the issue asking for it. Otherwise call decline: feature requests and design questions, intended behaviour, duplicates, reports you cannot reproduce, anything out of scope, and malicious or spam reports (decline those without a message). Nothing is posted on the issue until you plan, reply or submit.`;
+				}
 				return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}. Its text is in the case record. ${identity.kind === "issue" ? "Implement it and submit a candidate." : "Take over this pull request: bring it to a correct, reviewable state and submit a candidate."}`;
 			}
 			case "operator-round":
@@ -1625,7 +1658,15 @@ export class CaseDO extends DurableObject<Env> {
 		const identity = this.#identity();
 		const pr = this.store.getMeta<number>("pr") ?? identity.prNumber;
 		const target = pr ?? identity.issueNumber;
-		if (target && !this.#dryRun()) {
+		// Quiet until engaged: an automatically admitted or declined issue gets no
+		// progress comment until the author has a plan or a candidate.
+		const engaged =
+			!!this.store.getMeta("statusComment") ||
+			(this.store.state() !== "declined" &&
+				(!this.store.getMeta<boolean>("autoIntake") ||
+					!!this.store.getMeta("workPlan") ||
+					!!this.store.latestCandidate()));
+		if (target && engaged && !this.#dryRun()) {
 			try {
 				await this.#fault("report-failure");
 				const body = renderStatus(identity, report, {
