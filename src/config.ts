@@ -15,6 +15,8 @@ export interface RepositoryConfig {
 	readonly prepare?: string;
 	/** Overrides the global `autoIntake` for this repository. */
 	readonly autoIntake?: boolean;
+	/** Overrides the check names required for readiness in this repository. */
+	readonly requiredChecks?: readonly string[];
 }
 
 export interface Budgets {

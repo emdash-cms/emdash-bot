@@ -10,6 +10,7 @@ import { Lifecycle, type LifecycleJobContext, type LifecycleJobOutcome } from "a
 import authorSkill from "../../skills/emdash-author/SKILL.md?raw";
 import {
 	type BotConfig,
+	type CheckPolicy,
 	faultsEnabled,
 	parseModelRef,
 	readConfig,
@@ -453,6 +454,12 @@ export class CaseDO extends DurableObject<Env> {
 					.join("\n\n---\n\n");
 			},
 		};
+	}
+
+	/** The check policy, with this repository's required checks when it sets them. */
+	#checkPolicy(): CheckPolicy {
+		const required = this.store.identity() ? this.#repoConfig()?.requiredChecks : undefined;
+		return required ? { ...this.config.checks, required } : this.config.checks;
 	}
 
 	#guard(terminal = false): string | undefined {
@@ -1279,7 +1286,7 @@ export class CaseDO extends DurableObject<Env> {
 		};
 		const head = this.#currentHead();
 		const classification = classifyCheck(
-			this.config.checks,
+			this.#checkPolicy(),
 			{ name: p.name, headSha: p.headSha, conclusion: p.conclusion, output: p.output },
 			head,
 		);
@@ -1809,7 +1816,7 @@ export class CaseDO extends DurableObject<Env> {
 			}
 			if (known && known.completedAt) continue;
 			const classification = classifyCheck(
-				this.config.checks,
+				this.#checkPolicy(),
 				{
 					name: run.name,
 					headSha: run.head_sha,
@@ -1856,7 +1863,7 @@ export class CaseDO extends DurableObject<Env> {
 			reviews: this.store.reviews(),
 			observedHead: this.store.getMeta<string>("observedHead") ?? null,
 			mergeability: this.store.getMeta("mergeability"),
-			policy: this.config.checks,
+			policy: this.#checkPolicy(),
 		});
 	}
 

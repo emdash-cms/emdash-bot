@@ -8,9 +8,11 @@ import {
 	BOT,
 	FIX_GREETING,
 	REPO,
+	REPO_ID,
 	REVIEWER,
 	assignIssue,
 	authorRuns,
+	fixScript,
 	issueCaseId,
 	startBot,
 } from "../harness.ts";
@@ -244,6 +246,23 @@ describe("review repair and asynchronous CI", () => {
 		expect(JSON.stringify(evidence.transcript)).not.toContain("## Checks failed");
 		expect(authorRuns(record)).toHaveLength(1);
 		expect(record.candidates).toHaveLength(1);
+	});
+
+	it("reaches readiness on an approved head when the repository requires no checks", async () => {
+		bot = await startBot({
+			repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }],
+		});
+		const caseId = issueCaseId(36);
+		await bot.webhook("issues", assignIssue({ issueId: 36, number: 36, script: fixScript() }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, "emdash-bot/issue-36")!;
+		await bot.webhook(
+			"pull_request_review",
+			review(pr, head, { version: 1, reviewedCommit: head, findings: [] }, "APPROVED"),
+		);
+		const ready = await statusIs(bot, caseId, "ready-for-human");
+		expect(ready.requiredChecks).toEqual([]);
 	});
 
 	it("lists failing check run ids, and the author reads a job log with ci_log", async () => {
