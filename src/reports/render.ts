@@ -73,7 +73,7 @@ export function renderPullRequestBody(input: PullRequestBodyInput): string {
 	let body: string;
 	if (input.template) {
 		body = input.template
-			.replace(/^Closes #\s*$/m, closes)
+			.replace(/^Closes #[ \t]*$/m, closes)
 			.replace(/(## What does this PR do\?\s*\n(?:\s*<!--[\s\S]*?-->\s*\n)?)/, `$1\n${summary}\n\n`)
 			.replace(
 				/- \[ \] A Maintainer approved this specific change before I opened the PR/,

@@ -83,7 +83,7 @@ describe("deterministic status", () => {
 			model: "m",
 			assignedBy: "maint",
 		});
-		expect(body).toContain("Closes #7");
+		expect(body).toContain("Closes #7\n\n- [x]");
 		expect(body).toContain("[x] This PR includes AI-generated code or text — model/tool: m");
 		expect(body).toContain("emdash-bot:case=1-issue-2");
 	});
