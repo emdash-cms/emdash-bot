@@ -82,8 +82,8 @@ function checkRun(
 	name: string,
 	conclusion: string,
 	summary = "",
+	id = Math.floor(Math.random() * 1e9),
 ) {
-	const id = Math.floor(Math.random() * 1e9);
 	bot.github.checkRuns.push({
 		id,
 		name,
@@ -244,6 +244,44 @@ describe("review repair and asynchronous CI", () => {
 		expect(JSON.stringify(evidence.transcript)).not.toContain("## Checks failed");
 		expect(authorRuns(record)).toHaveLength(1);
 		expect(record.candidates).toHaveLength(1);
+	});
+
+	it("lists failing check run ids, and the author reads a job log with ci_log", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(35);
+		const branch = "emdash-bot/issue-35";
+		const script = {
+			rounds: [
+				twoRoundScript.rounds[0],
+				{
+					steps: [
+						{ tool: "ci_log", args: { checkRunId: 4242, lines: 20 } },
+						{ tool: "write", args: REVISED },
+						{ tool: "submit_candidate", args: { title: "fix: greeting", summary: "Repair." } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 35, number: 35, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, branch)!;
+		const noise = Array.from({ length: 40 }, (_, i) => `install step ${i}`);
+		bot.github.jobLogs.set(
+			4242,
+			[...noise, "FAIL test.js", "AssertionError: expected greeting"].join("\n"),
+		);
+		await checkRun(bot, pr, branch, head, "Backend Tests", "failure", "", 4242);
+		await publishedCount(bot, caseId, 2);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const transcript = JSON.stringify(evidence.transcript);
+		expect(transcript).toContain("Check run: 4242");
+		const logResult = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.find((m: any) => m.role === "toolResult" && m.toolName === "ci_log");
+		expect(JSON.stringify(logResult.content)).toContain("AssertionError: expected greeting");
+		expect(JSON.stringify(logResult.content)).toContain("[last 20 of 42 lines]");
+		expect(JSON.stringify(logResult.content)).not.toContain("install step 0\\n");
 	});
 
 	it("sends code failures on the current head to the author, which repairs them", async () => {

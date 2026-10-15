@@ -87,6 +87,7 @@ interface Handoff {
 
 interface CheckFailure {
 	readonly head: string;
+	readonly checkRunId: number;
 	readonly name: string;
 	readonly url: string;
 	readonly classification: string;
@@ -410,6 +411,7 @@ export class CaseDO extends DurableObject<Env> {
 			},
 			caseRecord: () => (this.store.identity() ? this.#caseRecord() : ""),
 			caseState: () => (this.store.identity() ? this.#caseState() : ""),
+			ciLog: (checkRunId, lines) => this.#ciLog(checkRunId, lines),
 			childModel: () => {
 				const ref =
 					(faultsEnabled(this.config) ? this.store.getMeta<string>("fixtureChildModel") : null) ??
@@ -1325,6 +1327,7 @@ export class CaseDO extends DurableObject<Env> {
 		const failures = this.store.getMeta<CheckFailure[]>("checkFailures") ?? [];
 		failures.push({
 			head: p.headSha,
+			checkRunId: p.checkRunId,
 			name: p.name,
 			url: p.url,
 			classification: `${classification.classification} (${classification.reason})`,
@@ -1334,6 +1337,23 @@ export class CaseDO extends DurableObject<Env> {
 		this.store.setMeta("checkFailures", failures);
 		void this.#schedule("checks", Date.now() + this.config.checkSettleMs);
 		return null;
+	}
+
+	/** The tail of a CI job's log, for a check run this case has seen. */
+	async #ciLog(checkRunId: number, lines = 200): Promise<string> {
+		if (!this.store.verification(`check:${checkRunId}`))
+			throw new Error(`check run ${checkRunId} is not one of this case's checks`);
+		const log = await this.#github().jobLog(checkRunId);
+		if (log === null)
+			return `No log is available for check run ${checkRunId} (expired, or not a GitHub Actions job).`;
+		const all = log
+			// oxlint-disable-next-line no-control-regex -- ANSI colour codes
+			.replace(/\x1b\[[0-9;]*m/g, "")
+			.replace(/\r/g, "")
+			.split("\n");
+		const count = Math.max(20, Math.min(lines, 1000));
+		this.store.log("ci.log", { checkRunId, lines: Math.min(count, all.length) });
+		return `${all.length > count ? `[last ${count} of ${all.length} lines]\n` : ""}${all.slice(-count).join("\n")}`;
 	}
 
 	/** Send the failing checks on the current head as one message once CI has gone quiet. */
@@ -1358,12 +1378,12 @@ export class CaseDO extends DurableObject<Env> {
 		const body = failures
 			.map(
 				(f) =>
-					`### ${f.name}${f.url ? `\nLink: ${f.url}` : ""}\nClassification: ${f.classification}\n\n${f.output.slice(0, per) || "(no output)"}`,
+					`### ${f.name}\nCheck run: ${f.checkRunId}${f.url ? `\nLink: ${f.url}` : ""}\nClassification: ${f.classification}\n\n${f.output.slice(0, per) || "(no output in the check run; read its log with ci_log)"}`,
 			)
 			.join("\n\n");
 		await this.#submitToAuthor(
 			`checks:${head}:${(await sha256Hex(failures.map((f) => f.name).join("\n"))).slice(0, 16)}`,
-			`## Checks failed on ${head!.slice(0, 12)}\nFrom: CI (github:check_run)\n\n${failures.length} check(s) failed on the current head. Judge which are about your change and which are environment or flaky; you can say so in a reply.\n\n${body}`,
+			`## Checks failed on ${head!.slice(0, 12)}\nFrom: CI (github:check_run)\n\n${failures.length} check(s) failed on the current head. Judge which are about your change and which are environment or flaky; you can say so in a reply. Read the tail of any check's log with ci_log and its check run id.\n\n${body}`,
 		);
 	}
 

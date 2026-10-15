@@ -66,6 +66,32 @@ export class GitHubClient {
 		);
 	}
 
+	/**
+	 * A GitHub Actions job's log as text (a check run's id is its job id). The
+	 * API answers with a redirect to short-lived storage, fetched without the token.
+	 */
+	async jobLog(jobId: number): Promise<string | null> {
+		const token = await this.token();
+		const response = await fetch(`${this.baseUrl}${this.repoPath(`/actions/jobs/${jobId}/logs`)}`, {
+			headers: {
+				...(token ? { authorization: `Bearer ${token}` } : {}),
+				accept: "application/vnd.github+json",
+				"user-agent": "emdash-bot-pi",
+				"x-github-api-version": "2022-11-28",
+			},
+			redirect: "manual",
+			signal: AbortSignal.timeout(30_000),
+		});
+		const location = response.headers.get("location");
+		if (response.status >= 300 && response.status < 400 && location) {
+			const log = await fetch(location, { signal: AbortSignal.timeout(60_000) });
+			return log.ok ? log.text() : null;
+		}
+		if (response.status === 404 || response.status === 410) return null;
+		if (!response.ok) throw new GitHubError(response.status, "job log", await response.text());
+		return response.text();
+	}
+
 	repoPath(suffix: string): string {
 		return `/repos/${this.repo}${suffix}`;
 	}

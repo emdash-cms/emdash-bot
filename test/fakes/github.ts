@@ -35,6 +35,8 @@ export class FakeGitHub {
 	pulls: FakePull[] = [];
 	comments: Array<{ id: number; issue: number; body: string; user: string }> = [];
 	checkRuns: FakeCheckRun[] = [];
+	/** Actions job logs by job (check run) id. */
+	jobLogs = new Map<number, string>();
 	/** Check runs the bot created itself. */
 	statusChecks: FakeCheckRun[] = [];
 	reviews: Array<{
@@ -379,6 +381,12 @@ export class FakeGitHub {
 					.filter((c) => c.head_sha === match![1])
 					.map((c) => ({ ...c, html_url: "", app: { slug: "github-actions" } })),
 			});
+		}
+		if (method === "GET" && (match = rest.match(/^\/actions\/jobs\/(\d+)\/logs$/))) {
+			const log = this.jobLogs.get(Number(match[1]));
+			return log === undefined
+				? this.#json({ message: "Not Found" }, 404)
+				: new Response(log, { headers: { "content-type": "text/plain" } });
 		}
 		if (method === "POST" && rest === "/check-runs") {
 			const run: FakeCheckRun = {
