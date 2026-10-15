@@ -36,11 +36,20 @@ export interface ParsedReview {
 
 const BLOCK = /```emdash-review-findings\s*\n([\s\S]*?)\n```/;
 
+/** An inline comment that belongs to the review. */
+export interface ReviewComment {
+	readonly id: number;
+	readonly path: string | null;
+	readonly line: number | null;
+	readonly body: string;
+}
+
 export function parseReview(
 	body: string,
 	reviewId: number | string,
 	commitId: string,
 	state: string,
+	comments: readonly ReviewComment[] = [],
 ): ParsedReview {
 	const match = BLOCK.exec(body);
 	if (match) {
@@ -78,23 +87,32 @@ export function parseReview(
 			// Fall through: an unreadable block is treated like an unstructured review.
 		}
 	}
-	const actionable = state.toUpperCase() !== "APPROVED" && body.trim() !== "";
-	return {
-		structured: false,
-		reviewedCommit: commitId,
-		findings: actionable
-			? [
-					{
-						id: `review-${reviewId}`,
-						severity: "unspecified",
-						path: null,
-						line: null,
-						title: "Reviewer feedback without a findings block",
-						body,
-						actionable: true,
-					},
-				]
-			: [],
-		dispositions: [],
-	};
+	// Without a block, the review body and each inline comment are findings,
+	// so no reviewer feedback is dropped.
+	const approved = state.toUpperCase() === "APPROVED";
+	const findings: ReviewFinding[] = [];
+	if (!approved && body.trim() !== "") {
+		findings.push({
+			id: `review-${reviewId}`,
+			severity: "unspecified",
+			path: null,
+			line: null,
+			title: "Reviewer feedback without a findings block",
+			body,
+			actionable: true,
+		});
+	}
+	for (const comment of comments) {
+		if (comment.body.trim() === "") continue;
+		findings.push({
+			id: `review-${reviewId}-c${comment.id}`,
+			severity: "unspecified",
+			path: comment.path,
+			line: comment.line,
+			title: `Inline comment${comment.path ? ` on ${comment.path}${comment.line ? `:${comment.line}` : ""}` : ""}`,
+			body: comment.body,
+			actionable: !approved,
+		});
+	}
+	return { structured: false, reviewedCommit: commitId, findings, dispositions: [] };
 }

@@ -21,7 +21,7 @@ import { writeToken } from "../github/auth.ts";
 import { classifyCheck, outcomeOf } from "../github/checks.ts";
 import { GitHubClient } from "../github/client.ts";
 import { type PublishContext, publish, readArtifact } from "../github/publisher.ts";
-import { parseReview } from "../github/review.ts";
+import { type ReviewComment, parseReview } from "../github/review.ts";
 import { renderStatus, statusMarker } from "../reports/render.ts";
 import { type StatusReport, computeStatus, outstandingFindings } from "../reports/status.ts";
 import { setupModels } from "../runtime/models.ts";
@@ -749,6 +749,28 @@ export class CaseDO extends DurableObject<Env> {
 		);
 	}
 
+	/** The inline comments of one review on the case's pull request. */
+	async #reviewComments(reviewId: number): Promise<ReviewComment[]> {
+		const pr = this.store.getMeta<number>("pr") ?? this.#identity().prNumber;
+		if (!pr) return [];
+		const github = this.#github();
+		const comments = await github.request<
+			Array<{
+				id: number;
+				path?: string;
+				line?: number | null;
+				original_line?: number | null;
+				body?: string;
+			}>
+		>("GET", github.repoPath(`/pulls/${pr}/reviews/${reviewId}/comments?per_page=100`));
+		return comments.map((c) => ({
+			id: c.id,
+			path: c.path ?? null,
+			line: c.line ?? c.original_line ?? null,
+			body: c.body ?? "",
+		}));
+	}
+
 	async #registerAlias(alias: string): Promise<void> {
 		const identity = this.#identity();
 		await repositories(this.env)
@@ -844,7 +866,7 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.setMeta("handoff", null);
 				return this.store.state() === "active";
 			case "review":
-				return this.#applyReview(event);
+				return await this.#applyReview(event);
 			case "check":
 				return this.#applyCheck(event);
 			case "head-changed":
@@ -880,14 +902,27 @@ export class CaseDO extends DurableObject<Env> {
 		);
 	}
 
-	#applyReview(event: CaseEvent): boolean {
+	async #applyReview(event: CaseEvent): Promise<boolean> {
 		const payload = event.payload as {
 			reviewId: number;
 			body: string;
 			commitId: string;
 			state: string;
 		};
-		const parsed = parseReview(payload.body, payload.reviewId, payload.commitId, payload.state);
+		const comments = await this.#reviewComments(payload.reviewId).catch((error: unknown) => {
+			this.store.log("review.comments-unavailable", {
+				review: payload.reviewId,
+				error: errorMessage(error),
+			});
+			return [];
+		});
+		const parsed = parseReview(
+			payload.body,
+			payload.reviewId,
+			payload.commitId,
+			payload.state,
+			comments,
+		);
 		const fresh = this.store.putReview({
 			reviewId: String(payload.reviewId),
 			reviewer: event.actor,
@@ -1113,7 +1148,7 @@ export class CaseDO extends DurableObject<Env> {
 			});
 			if (!inserted) continue;
 			const event = this.store.events().at(-1)!;
-			this.#applyReview(event);
+			await this.#applyReview(event);
 			this.store.markConsumed([event.seq], 0);
 		}
 	}

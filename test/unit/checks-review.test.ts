@@ -133,3 +133,26 @@ describe("reviewer severity mapping", () => {
 		]);
 	});
 });
+
+describe("inline review comments", () => {
+	it("turns each inline comment of an unstructured review into a located finding", () => {
+		const parsed = parseReview("", 9, "c", "COMMENTED", [
+			{ id: 4, path: "greet.js", line: 1, body: "The exclamation is a bit eager" },
+		]);
+		expect(parsed.findings).toEqual([
+			{
+				id: "review-9-c4",
+				severity: "unspecified",
+				path: "greet.js",
+				line: 1,
+				title: "Inline comment on greet.js:1",
+				body: "The exclamation is a bit eager",
+				actionable: true,
+			},
+		]);
+		expect(
+			parseReview("", 9, "c", "APPROVED", [{ id: 4, path: "a", line: 1, body: "nit" }]).findings[0]
+				?.actionable,
+		).toBe(false);
+	});
+});

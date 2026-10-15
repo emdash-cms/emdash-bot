@@ -43,6 +43,13 @@ export class FakeGitHub {
 		commit_id: string;
 		state: string;
 	}> = [];
+	reviewComments: Array<{
+		reviewId: number;
+		id: number;
+		path: string;
+		line: number;
+		body: string;
+	}> = [];
 	requests: Array<{ method: string; path: string }> = [];
 	commitsCreated: string[] = [];
 	#faults: Array<{ method: string; pattern: RegExp; mode: Mode }> = [];
@@ -326,6 +333,9 @@ export class FakeGitHub {
 				mergeable: true,
 				merged: false,
 			});
+		}
+		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/reviews\/(\d+)\/comments$/))) {
+			return this.#json(this.reviewComments.filter((c) => c.reviewId === Number(match![2])));
 		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/reviews$/))) {
 			return this.#json(this.reviews.filter((r) => r.pr === Number(match![1])));

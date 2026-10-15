@@ -432,3 +432,32 @@ describe("adopted pull request revision", () => {
 		expect(record.candidates[0].expectedBranchHead).toBe(candidate);
 	});
 });
+
+describe("inline-only reviews", () => {
+	it("starts repair for a COMMENTED review whose feedback is only inline", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(38);
+		await bot.webhook("issues", assignIssue({ issueId: 38, number: 38, script: twoRoundScript }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, "emdash-bot/issue-38")!;
+		bot.github.reviewComments.push({
+			reviewId: 777,
+			id: 55,
+			path: "greet.js",
+			line: 1,
+			body: "Handle a missing name.",
+		});
+		await bot.webhook("pull_request_review", {
+			action: "submitted",
+			sender: { login: REVIEWER },
+			pull_request: { id: 9038, number: pr },
+			review: { id: 777, user: { login: REVIEWER }, commit_id: head, state: "COMMENTED", body: "" },
+		});
+		const second = await publishedCount(bot, caseId, 2);
+		const finding = second.findings.find((f: any) => f.id === "review-777-c55");
+		expect(finding).toMatchObject({ path: "greet.js", line: 1, actionable: true });
+		const status = await bot.ops(`cases/${caseId}/status`);
+		expect(status.status).not.toBe("ready-for-human");
+	});
+});
