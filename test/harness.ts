@@ -197,6 +197,7 @@ export function assignIssue(options: {
 	script?: unknown;
 	body?: string;
 	sender?: string;
+	reporter?: string;
 }) {
 	const body =
 		options.body ??
@@ -211,6 +212,7 @@ export function assignIssue(options: {
 			title: "Greeting lacks punctuation",
 			body,
 			html_url: `https://github.com/${REPO}/issues/${options.number}`,
+			user: { login: options.reporter ?? "reporter" },
 		},
 	};
 }

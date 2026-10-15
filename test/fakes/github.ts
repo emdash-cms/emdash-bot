@@ -49,6 +49,7 @@ export class FakeGitHub {
 		path: string;
 		line: number;
 		body: string;
+		inReplyTo?: number;
 	}> = [];
 	requests: Array<{ method: string; path: string }> = [];
 	commitsCreated: string[] = [];
@@ -334,8 +335,35 @@ export class FakeGitHub {
 				merged: false,
 			});
 		}
+		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/comments$/))) {
+			return this.#json(
+				this.reviewComments.map((c) => ({
+					id: c.id,
+					body: c.body,
+					path: c.path,
+					line: c.line,
+					in_reply_to_id: c.inReplyTo ?? null,
+				})),
+			);
+		}
+		if (method === "POST" && (match = rest.match(/^\/pulls\/(\d+)\/comments\/(\d+)\/replies$/))) {
+			const reply = {
+				reviewId: 0,
+				id: this.#nextId++,
+				path: "",
+				line: 0,
+				body: String(body!.body),
+				inReplyTo: Number(match[2]),
+			};
+			this.reviewComments.push(reply);
+			return this.#json({ id: reply.id, in_reply_to_id: reply.inReplyTo }, 201);
+		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/reviews\/(\d+)\/comments$/))) {
-			return this.#json(this.reviewComments.filter((c) => c.reviewId === Number(match![2])));
+			return this.#json(
+				this.reviewComments
+					.filter((c) => c.reviewId === Number(match![2]))
+					.map((c) => ({ ...c, in_reply_to_id: c.inReplyTo ?? null })),
+			);
 		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/reviews$/))) {
 			return this.#json(this.reviews.filter((r) => r.pr === Number(match![1])));
