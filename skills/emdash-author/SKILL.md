@@ -21,7 +21,7 @@ Use this when implementing an EmDash issue or repairing an EmDash pull request.
 - Build declaration output for packages your test imports before trusting a test result; stale `dist` output is not evidence.
 - Broad checks (full test suite, lint, typecheck, format) run in CI on the published commit. Run focused checks here.
 - `pnpm lint:json` won't run in the sandbox; use `pnpm lint:quick`.
-- Admin tests run in Chromium (Vitest browser mode), which the sandbox provides. Run them with the package's own config; a hand-written Node config does not prove anything about them.
+- Run admin tests with the package's own config; Chromium is available.
 
 ## Finishing
 
