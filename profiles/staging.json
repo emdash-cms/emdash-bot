@@ -30,5 +30,6 @@
 		},
 		"prepare": "if [ -f pnpm-lock.yaml ]; then corepack enable >/dev/null 2>&1 || true; pnpm install --frozen-lockfile; fi"
 	},
-	"autoIntake": true
+	"autoIntake": true,
+	"autoIntakeMaintainers": true
 }

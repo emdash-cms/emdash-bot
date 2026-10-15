@@ -25,6 +25,41 @@ const LABEL: Record<StatusReport["status"], string> = {
 	terminal: "Closed",
 };
 
+/** The name of the bot's own check run on the pull request head. */
+export const STATUS_CHECK_NAME = "EmDash bot";
+
+export interface StatusCheck {
+	readonly status: "in_progress" | "completed";
+	readonly conclusion?: "success" | "neutral" | "cancelled";
+	readonly title: string;
+	readonly summary: string;
+}
+
+/**
+ * The status as a check run, so "working" shows beside CI. It never fails:
+ * readiness comes from required checks and review, not from this check.
+ */
+export function renderStatusCheck(report: StatusReport): StatusCheck {
+	const summary = [
+		...report.reasons.map((r) => `- ${r}`),
+		"",
+		`Next action: ${report.nextAction}.`,
+	].join("\n");
+	const title = LABEL[report.status];
+	switch (report.status) {
+		case "working":
+		case "candidate-published":
+		case "waiting-for-checks":
+			return { status: "in_progress", title, summary };
+		case "ready-for-human":
+			return { status: "completed", conclusion: "success", title, summary };
+		case "cancelled":
+			return { status: "completed", conclusion: "cancelled", title, summary };
+		default:
+			return { status: "completed", conclusion: "neutral", title, summary };
+	}
+}
+
 export interface CommentExtras {
 	readonly plan?: WorkPlan | null;
 	readonly prNumber?: number | null;
@@ -41,7 +76,11 @@ export function renderStatus(
 		statusMarker(identity.caseId),
 		`### EmDash bot: ${LABEL[report.status]}`,
 		"",
-		...(extras.plan ? [...renderWorkPlan(extras.plan), ""] : []),
+		// The heading keeps the checklist and the reasons as two separate lists;
+		// adjacent lists merge into one loose list that renders as paragraphs.
+		...(extras.plan ? ["**Plan**", "", ...renderWorkPlan(extras.plan), ""] : []),
+		"**Status**",
+		"",
 		...report.reasons.map((r) => `- ${r}`),
 		"",
 		`Next action: ${report.nextAction}.`,

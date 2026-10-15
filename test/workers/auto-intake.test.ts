@@ -232,6 +232,20 @@ describe("auto-intake", () => {
 		expect(record.generation).toBe(2);
 	});
 
+	it("leaves issues opened by maintainers alone unless configured otherwise", async () => {
+		bot = await startBot({ autoIntake: true });
+		const skipped: any = await (
+			await bot.webhook("issues", opened(90, 90, fixScript(), "maintainer"))
+		).json();
+		expect(skipped.skipped).toContain("maintainers");
+		await bot.dispose();
+		bot = await startBot({ autoIntake: true, autoIntakeMaintainers: true });
+		const admitted: any = await (
+			await bot.webhook("issues", opened(91, 91, fixScript(), "maintainer"))
+		).json();
+		expect(admitted.skipped).toBeFalsy();
+	});
+
 	it("ignores newly opened issues when auto-intake is off", async () => {
 		bot = await startBot();
 		const response: any = await (await bot.webhook("issues", opened(85, 85, fixScript()))).json();

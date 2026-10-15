@@ -185,6 +185,21 @@ describe("review repair and asynchronous CI", () => {
 		expect(record.reviews.at(-1)).toMatchObject({ commit: head2, state: "APPROVED" });
 		// Assignment, the COMMENTED review and the approval each reached the author.
 		expect(authorRuns(record)).toHaveLength(3);
+		// The bot's own check run tracks the status on each head and never reaches the author.
+		const check = await bot.waitFor("status check succeeds", async () =>
+			bot!.github.statusChecks.find(
+				(c) => c.head_sha === head2 && c.status === "completed" && c.conclusion === "success",
+			),
+		);
+		expect(check).toMatchObject({
+			name: "EmDash bot",
+			output: { title: "Ready for human review" },
+		});
+		expect(
+			bot.github.statusChecks
+				.filter((c) => c.head_sha === head1)
+				.every((c) => c.status === "completed" && c.conclusion === "neutral"),
+		).toBe(true);
 	});
 
 	it("does not request code repair for administrative, infrastructure or stale checks", async () => {

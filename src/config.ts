@@ -49,6 +49,8 @@ export interface BotConfig {
 	readonly intakeLabel: string;
 	/** Also admit every newly opened issue; the author decides whether to take it on. */
 	readonly autoIntake: boolean;
+	/** Whether auto-intake also takes issues maintainers open. Off in production; staging tests use it. */
+	readonly autoIntakeMaintainers: boolean;
 	/** Thresholds for Clef triage of automatically admitted issues. */
 	readonly triage: {
 		readonly takeOn: number;
@@ -118,6 +120,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		assignee: raw.assignee ?? raw.botLogin,
 		intakeLabel: raw.intakeLabel ?? "emdash-bot",
 		autoIntake: raw.autoIntake ?? false,
+		autoIntakeMaintainers: raw.autoIntakeMaintainers ?? false,
 		triage: { takeOn: 0.6, decline: 0.6, spam: 0.5, actionable: 0.5, ...raw.triage },
 		repositories: raw.repositories ?? [],
 		repositoryPattern: profile === "production" ? undefined : raw.repositoryPattern,

@@ -35,6 +35,8 @@ export class FakeGitHub {
 	pulls: FakePull[] = [];
 	comments: Array<{ id: number; issue: number; body: string; user: string }> = [];
 	checkRuns: FakeCheckRun[] = [];
+	/** Check runs the bot created itself. */
+	statusChecks: FakeCheckRun[] = [];
 	reviews: Array<{
 		pr: number;
 		id: number;
@@ -370,10 +372,32 @@ export class FakeGitHub {
 		}
 		if (method === "GET" && (match = rest.match(/^\/commits\/([0-9a-f]+)\/check-runs$/))) {
 			return this.#json({
-				check_runs: this.checkRuns
+				check_runs: [...this.checkRuns, ...this.statusChecks]
 					.filter((c) => c.head_sha === match![1])
 					.map((c) => ({ ...c, html_url: "", app: { slug: "github-actions" } })),
 			});
+		}
+		if (method === "POST" && rest === "/check-runs") {
+			const run: FakeCheckRun = {
+				id: this.#nextId++,
+				name: String(body!.name),
+				head_sha: String(body!.head_sha),
+				status: String(body!.status),
+				conclusion: (body!.conclusion as string | undefined) ?? null,
+				output: { title: null, summary: null, text: null, ...(body!.output as object) },
+			};
+			this.statusChecks.push(run);
+			return this.#json(run, 201);
+		}
+		if (method === "PATCH" && (match = rest.match(/^\/check-runs\/(\d+)$/))) {
+			const run = this.statusChecks.find((c) => c.id === Number(match![1]));
+			if (!run) return this.#json({ message: "Not Found" }, 404);
+			Object.assign(run, {
+				...(body!.status ? { status: body!.status } : {}),
+				...(body!.conclusion ? { conclusion: body!.conclusion } : {}),
+				...(body!.output ? { output: { ...run.output, ...(body!.output as object) } } : {}),
+			});
+			return this.#json(run);
 		}
 		if (method === "GET" && (match = rest.match(/^\/contents\/(.+)$/))) {
 			const content = this.show(

@@ -6,6 +6,7 @@ import type { BotConfig } from "../config.ts";
 import type { CaseIdentity } from "../cases/types.ts";
 
 import { constantTimeEqual } from "../util.ts";
+import { STATUS_CHECK_NAME } from "../reports/render.ts";
 
 const encoder = new TextEncoder();
 
@@ -217,6 +218,10 @@ export function normalize(
 		if (!issue?.id || !issue.number) return { skip: "issue payload incomplete" };
 		if (sender.endsWith("[bot]"))
 			return { skip: "issues opened by bots are not taken on automatically" };
+		const openerIsMaintainer = isMaintainer(config, sender, issue.author_association) !== null;
+		// Maintainers assign the bot explicitly when they want it on their own issues.
+		if (openerIsMaintainer && !config.autoIntakeMaintainers)
+			return { skip: "issues opened by maintainers are not taken on automatically" };
 		// Repository policy admits the issue; the opener gains no maintainer authority.
 		return {
 			kind: "assigned",
@@ -242,7 +247,7 @@ export function normalize(
 				url: issue.html_url ?? "",
 				reporter: issue.user?.login ?? sender,
 				autoIntake: true,
-				openerIsMaintainer: isMaintainer(config, sender, issue.author_association) !== null,
+				openerIsMaintainer,
 			},
 		};
 	}
@@ -404,6 +409,7 @@ export function normalize(
 	if (eventName === "check_run" && payload.action === "completed") {
 		const run = payload.check_run;
 		if (!run?.id || !run.head_sha) return { skip: "check run payload incomplete" };
+		if (run.name === STATUS_CHECK_NAME) return { skip: "the bot's own status check" };
 		const aliases = [
 			...(run.pull_requests ?? []).flatMap((p) => (p.number ? [`number:${p.number}`] : [])),
 			...(run.check_suite?.head_branch ? [`branch:${run.check_suite.head_branch}`] : []),

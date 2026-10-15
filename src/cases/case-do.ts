@@ -22,7 +22,13 @@ import { classifyCheck, outcomeOf } from "../github/checks.ts";
 import { GitHubClient } from "../github/client.ts";
 import { type PublishContext, publish, readArtifact } from "../github/publisher.ts";
 import { type ReviewComment, actionableCount, parseReview } from "../github/review.ts";
-import { renderMovedToPullRequest, renderStatus, statusMarker } from "../reports/render.ts";
+import {
+	STATUS_CHECK_NAME,
+	renderMovedToPullRequest,
+	renderStatus,
+	renderStatusCheck,
+	statusMarker,
+} from "../reports/render.ts";
 import { type WorkPlan, updateWorkPlan } from "../reports/work-plan.ts";
 import { type StatusReport, computeStatus } from "../reports/status.ts";
 import { setupModels } from "../runtime/models.ts";
@@ -1355,6 +1361,7 @@ export class CaseDO extends DurableObject<Env> {
 		});
 		this.store.log("author.submit", { key, accepted: receipt.accepted, run: runs });
 		await this.#schedule("reconcile", Date.now() + this.config.reconcileMs);
+		await this.#schedule("report", Date.now());
 	}
 
 	#caseRecord(): string {
@@ -1622,6 +1629,7 @@ export class CaseDO extends DurableObject<Env> {
 			}>;
 		}>("GET", github.repoPath(`/commits/${data.head.sha}/check-runs?per_page=100`));
 		for (const run of runs.check_runs) {
+			if (run.name === STATUS_CHECK_NAME) continue;
 			const id = `check:${run.id}`;
 			const known = this.store.verification(id);
 			if (run.status !== "completed") {
@@ -1739,8 +1747,57 @@ export class CaseDO extends DurableObject<Env> {
 				return { rescheduleAt: Date.now() + 60_000 };
 			}
 		}
+		if (pr && report.head && !this.#dryRun()) {
+			try {
+				await this.#upsertStatusCheck(report);
+			} catch (error) {
+				// Optional: an installation without checks:write still gets the comment.
+				this.store.log("status-check.failed", { error: errorMessage(error) });
+			}
+		}
 		if (report.status === "waiting-for-checks" || report.status === "candidate-published")
 			return { rescheduleAt: Date.now() + Math.max(this.config.reconcileMs, 120_000) };
+	}
+
+	/** One check run per head; a completed run is updated, or replaced if work resumes. */
+	async #upsertStatusCheck(report: StatusReport): Promise<void> {
+		const head = report.head!;
+		const check = renderStatusCheck(report);
+		const hash = await sha256Hex(JSON.stringify(check));
+		const stored = this.store.getMeta<{
+			id: number;
+			head: string;
+			hash: string;
+			completed: boolean;
+		}>("statusCheck");
+		if (stored?.head === head && stored.hash === hash) return;
+		const github = this.#github();
+		if (stored && stored.head !== head && !stored.completed) {
+			await github.request("PATCH", github.repoPath(`/check-runs/${stored.id}`), {
+				status: "completed",
+				conclusion: "neutral",
+				output: { title: "Superseded", summary: `Superseded by ${head.slice(0, 12)}.` },
+			});
+		}
+		const fields = {
+			status: check.status,
+			...(check.conclusion ? { conclusion: check.conclusion } : {}),
+			output: { title: check.title, summary: check.summary },
+		};
+		let id =
+			stored?.head === head && (!stored.completed || check.status === "completed")
+				? stored.id
+				: undefined;
+		if (id) await github.request("PATCH", github.repoPath(`/check-runs/${id}`), fields);
+		else
+			id = (
+				await github.request<{ id: number }>("POST", github.repoPath("/check-runs"), {
+					name: STATUS_CHECK_NAME,
+					head_sha: head,
+					...fields,
+				})
+			).id;
+		this.store.setMeta("statusCheck", { id, head, hash, completed: check.status === "completed" });
 	}
 
 	async #upsertStatusComment(target: number, body: string): Promise<void> {

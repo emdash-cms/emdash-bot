@@ -97,6 +97,21 @@ describe("deterministic status", () => {
 		expect(body).toContain("[x] This PR includes AI-generated code or text — model/tool: m");
 		expect(body).toContain("emdash-bot:case=1-issue-2");
 	});
+	it("keeps the plan checklist and the status reasons as separate lists", () => {
+		const identity = { caseId: "1-issue-2", issueNumber: 7, kind: "issue" } as never;
+		const plan = {
+			summary: "Fix it.",
+			steps: [{ id: "fix", title: "Fix", status: "completed" as const }],
+			updatedAt: 0,
+		};
+		const lines = renderStatus(identity, computeStatus(base), { plan }).split("\n");
+		const lastStep = lines.findIndex((l) => l.includes("Fix") && l.startsWith("- ["));
+		const firstReason = lines.findIndex((l, i) => i > lastStep && l.startsWith("- "));
+		// A non-list line between them stops GitHub merging them into one loose list.
+		expect(lines.slice(lastStep + 1, firstReason).some((l) => l.trim() && !l.startsWith("-"))).toBe(
+			true,
+		);
+	});
 });
 
 describe("pull request body for automatically admitted issues", () => {
