@@ -1,6 +1,6 @@
 {
 	"profile": "staging",
-	"botLogin": "emdash-cms-bot[bot]",
+	"botLogin": "emdash-autofix-staging[bot]",
 	"repositories": [
 		{
 			"id": 1419114614,
