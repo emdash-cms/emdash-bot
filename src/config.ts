@@ -104,6 +104,12 @@ export interface BotConfig {
 	readonly deliveryRetryMs: number;
 	/** Failed forwarding attempts after which a case is reported unavailable. */
 	readonly unavailableAfterAttempts: number;
+	/** How long deliveries are kept for inspection and deduplication: unrouted ones (CI noise) and the rest. */
+	readonly deliveryRetention: {
+		readonly unroutedMs: number;
+		readonly routedMs: number;
+		readonly pruneEveryMs: number;
+	};
 	/** Author and committer of published commits. */
 	readonly commitAuthor: { readonly name: string; readonly email: string };
 }
@@ -155,6 +161,12 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		checkSettleMs: raw.checkSettleMs ?? 60_000,
 		deliveryRetryMs: raw.deliveryRetryMs ?? 15_000,
 		unavailableAfterAttempts: raw.unavailableAfterAttempts ?? 12,
+		deliveryRetention: {
+			unroutedMs: 24 * 60 * 60_000,
+			routedMs: 30 * 24 * 60 * 60_000,
+			pruneEveryMs: 60 * 60_000,
+			...raw.deliveryRetention,
+		},
 		maxActiveAuthors: raw.maxActiveAuthors ?? 1,
 		modelRetry: { maxRetries: 8, baseDelayMs: 5_000, maxAgentDelayMs: 120_000, ...raw.modelRetry },
 		commitAuthor: raw.commitAuthor ?? {
