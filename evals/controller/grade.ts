@@ -22,6 +22,32 @@ function pick(names: readonly string[]): Record<string, string> {
 	);
 }
 
+/**
+ * The environment candidate code runs in: no credentials, a throwaway HOME, and
+ * only trust settings and shared caches passed through.
+ */
+export function graderEnv(home: string): Record<string, string> {
+	return {
+		PATH: process.env.PATH ?? "",
+		HOME: home,
+		CI: "1",
+		// Shared browser cache outside the throwaway HOME, so browsers download once.
+		PLAYWRIGHT_BROWSERS_PATH:
+			process.env.PLAYWRIGHT_BROWSERS_PATH ??
+			join(homedir(), process.platform === "darwin" ? "Library/Caches" : ".cache", "ms-playwright"),
+		// A store of its own, with copied files: packages that patch their own files on
+		// install (workerd swaps in its binary) cannot corrupt a shared, hard-linked store.
+		npm_config_store_dir: join(
+			homedir(),
+			process.platform === "darwin" ? "Library/Caches" : ".cache",
+			"emdash-bot-grader-store",
+		),
+		npm_config_package_import_method: "copy",
+		// Trust settings only (for TLS-inspecting networks such as WARP); never credentials.
+		...pick(["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR"]),
+	};
+}
+
 function run(
 	cwd: string,
 	command: string,
@@ -30,29 +56,7 @@ function run(
 	const started = Date.now();
 	const result = spawnSync("bash", ["-c", command], {
 		cwd,
-		env: {
-			PATH: process.env.PATH ?? "",
-			HOME: home,
-			CI: "1",
-			// Shared browser cache outside the throwaway HOME, so browsers download once.
-			PLAYWRIGHT_BROWSERS_PATH:
-				process.env.PLAYWRIGHT_BROWSERS_PATH ??
-				join(
-					homedir(),
-					process.platform === "darwin" ? "Library/Caches" : ".cache",
-					"ms-playwright",
-				),
-			// A store of its own, with copied files: packages that patch their own files on
-			// install (workerd swaps in its binary) cannot corrupt a shared, hard-linked store.
-			npm_config_store_dir: join(
-				homedir(),
-				process.platform === "darwin" ? "Library/Caches" : ".cache",
-				"emdash-bot-grader-store",
-			),
-			npm_config_package_import_method: "copy",
-			// Trust settings only (for TLS-inspecting networks such as WARP); never credentials.
-			...pick(["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR"]),
-		},
+		env: graderEnv(home),
 		encoding: "utf8",
 		maxBuffer: 256 * 1024 * 1024,
 		timeout: 45 * 60_000,
@@ -110,16 +114,8 @@ export function grade(
 			git(["checkout", "FETCH_HEAD", "--", ...grader.tests]);
 		}
 		const steps: GradeResult["steps"] = [];
-		for (const command of grader.setup) {
-			let step = run(work, command, home);
-			// EmDash's lockfile installs several workerd versions whose install scripts
-			// occasionally race; one retry clears it and says nothing about the candidate.
-			if (step.exitCode !== 0 && command.startsWith("pnpm install"))
-				step = run(work, command, home);
-			steps.push({ command, ...step });
-			if (step.exitCode !== 0)
-				return { commit: source.commit, grader: grader.status, steps, passed: false };
-		}
+		if (!runSetup(grader.setup, (command) => run(work, command, home), steps))
+			return { commit: source.commit, grader: grader.status, steps, passed: false };
 		for (const command of grader.commands) steps.push({ command, ...run(work, command, home) });
 		return {
 			commit: source.commit,
@@ -148,4 +144,25 @@ export function graderIsValid(
 	reference: GradeResult,
 ): boolean {
 	return passedSetup(grader, starting) && !starting.passed && reference.passed;
+}
+
+type Step = GradeResult["steps"][number];
+
+/**
+ * Run setup commands in order, recording each, until one fails. EmDash's lockfile
+ * installs several workerd versions whose install scripts occasionally race, so a
+ * failed `pnpm install` is retried once; that says nothing about the candidate.
+ */
+export function runSetup(
+	commands: readonly string[],
+	run: (command: string) => Omit<Step, "command">,
+	steps: Step[],
+): boolean {
+	for (const command of commands) {
+		let step = run(command);
+		if (step.exitCode !== 0 && command.startsWith("pnpm install")) step = run(command);
+		steps.push({ command, ...step });
+		if (step.exitCode !== 0) return false;
+	}
+	return true;
 }

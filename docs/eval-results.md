@@ -1,6 +1,6 @@
 # Evaluation results, 15–16 October 2026
 
-Runs on the staging Worker `emdash-bot-pi` against private single-commit snapshots of EmDash (`emdash-cms/emdash-bot-pi-eval-<case>`). Nothing touched `emdash-cms/emdash`. Each case was reviewed by the configured reviewer (an operator acting as `ascorbic`) to the same standard, then its final head was graded with the validated private grader (the historical fix's tests, never shown to the author).
+Runs on the staging Worker `emdash-bot-pi` against private single-commit snapshots of EmDash (`emdash-cms/emdash-bot-pi-eval-<case>`). Nothing touched `emdash-cms/emdash`. Each case was reviewed by the configured reviewer (an operator acting as `ascorbic`) to the same standard (comments and requested changes; approvals given with the operator's permission were later dismissed where GitHub allows it, which it does not on closed PRs), then its final head was graded with the validated private grader (the historical fix's tests, never shown to the author).
 
 Costs are recorded by pi-ai from each response's usage and its price catalog. They are not AI Gateway billing (the gateway's logs are in another account). Anthropic charges 5x for requests over 100K prompt tokens, which pi-ai may not model, so Haiku's real cost on long cases is likely higher than recorded. Runs before the prompt-cache fix (`d84585b`) paid uncached rates and are not comparable.
 

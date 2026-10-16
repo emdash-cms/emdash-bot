@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { sanitize } from "../../evals/controller/provision.ts";
 import { loadCase } from "../../evals/controller/attempt.ts";
-import { graderIsValid, passedSetup } from "../../evals/controller/grade.ts";
+import { graderEnv, graderIsValid, passedSetup, runSetup } from "../../evals/controller/grade.ts";
 
 describe("evaluation fixtures", () => {
 	it("never links fixture text back to upstream issues", () => {
@@ -45,5 +45,47 @@ describe("grader validation", () => {
 
 	it("rejects a reference that fails", () => {
 		expect(graderIsValid(grader, result([0, 0, 1]), result([0, 0, 1]))).toBe(false);
+	});
+});
+
+describe("grader setup", () => {
+	const runner = (codes: Record<string, number[]>) => {
+		const calls: string[] = [];
+		return {
+			calls,
+			run: (command: string) => {
+				calls.push(command);
+				return { exitCode: codes[command]!.shift() ?? 0, durationMs: 0, tail: "" };
+			},
+		};
+	};
+
+	it("retries a failed install once and continues", () => {
+		const r = runner({ "pnpm install --frozen-lockfile": [1, 0], "pnpm build": [0] });
+		const steps: any[] = [];
+		expect(runSetup(["pnpm install --frozen-lockfile", "pnpm build"], r.run, steps)).toBe(true);
+		expect(r.calls).toEqual([
+			"pnpm install --frozen-lockfile",
+			"pnpm install --frozen-lockfile",
+			"pnpm build",
+		]);
+		expect(steps.map((s) => s.exitCode)).toEqual([0, 0]);
+	});
+
+	it("does not retry other setup steps, and stops at a failure", () => {
+		const r = runner({ "pnpm build": [1], "playwright install": [0] });
+		const steps: any[] = [];
+		expect(runSetup(["pnpm build", "playwright install"], r.run, steps)).toBe(false);
+		expect(r.calls).toEqual(["pnpm build"]);
+	});
+});
+
+describe("grader environment", () => {
+	it("installs into its own copied store and passes no credentials", () => {
+		const env = graderEnv("/tmp/home");
+		expect(env.npm_config_store_dir).toContain("emdash-bot-grader-store");
+		expect(env.npm_config_package_import_method).toBe("copy");
+		expect(env.HOME).toBe("/tmp/home");
+		expect(Object.keys(env).some((k) => /TOKEN|SECRET|KEY/i.test(k))).toBe(false);
 	});
 });
