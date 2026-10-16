@@ -1,0 +1,23 @@
+src/cases/repository-do.ts
+  s_4c97aa8e7b616f::t_4747f6ff883838 26-28,89,245-267
+src/config.ts
+  s_4c97aa8e7b616f::t_e800b3b03d8913 107-112,164-169
+test/workers/delivery.test.ts
+  s_4c97aa8e7b616f::t_e7525c88913c00 8,111-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e3a3e6d56941537a45ec0e83ae548b868279ba29",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
