@@ -14,7 +14,7 @@ This is the EmDash bot repository, created from `ascorbic/worker-template`. Read
 
 ## Deployment setup
 
-The EmDash CMS Cloudflare account is the default for this Worker; do not pass an account. `cloudflare.config.ts` configures only the staging Worker `emdash-bot-pi`. Never deploy to the production Worker `emdash-bot` from here. `pnpm run deploy:staging` deploys with secrets from the ignored `.env.staging`. Production deploys (slice 6) should use Workers Builds with the build command empty and deploy command `pnpm run deploy`. Never target `emdash-cms/emdash` from staging or evals, and never reference its issues from fixtures.
+The EmDash CMS Cloudflare account is the default for this Worker; do not pass an account. `cloudflare.config.ts` builds the staging Worker `emdash-bot-pi` by default, and the production Worker `emdash-autofix` only with `EMDASH_BOT_PROFILE=production`. `emdash-bot` is the previous bot's live Worker: never build, deploy or retire it from here. `pnpm run deploy:staging` deploys staging with secrets from the ignored `.env.staging`; `pnpm run deploy:production` deploys `emdash-autofix` with `.env.production`, and only on explicit operator instruction. Ongoing production deploys should use Workers Builds with `EMDASH_BOT_PROFILE=production`. Never target `emdash-cms/emdash` from staging or evals, and never reference its issues from fixtures.
 
 ## Repository Structure
 

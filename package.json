@@ -17,6 +17,7 @@
 		"check": "vp check",
 		"fix": "vp check --fix",
 		"deploy:staging": "vp build && cf deploy --prebuilt --secrets-file .env.staging",
+		"deploy:production": "EMDASH_BOT_PROFILE=production vp build && cf deploy --prebuilt --secrets-file .env.production",
 		"ops": "node --experimental-strip-types scripts/ops.ts",
 		"evals": "node --experimental-strip-types evals/bin/evals.ts"
 	},
