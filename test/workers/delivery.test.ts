@@ -5,6 +5,7 @@ import {
 	type Bot,
 	FIX_GREETING,
 	REPO,
+	REPO_ID,
 	assignIssue,
 	fixScript,
 	issueCaseId,
@@ -105,5 +106,30 @@ describe("operator dry run", () => {
 			{ headers: { authorization: "Bearer test-operator-token" } },
 		);
 		expect(await patch.text()).toContain('+module.exports = (name) => "Hello, " + name + "!";');
+	});
+});
+
+describe("delivery retention", () => {
+	it("prunes old unrouted deliveries and keeps the newest", async () => {
+		bot = await startBot({ deliveryRetention: { unroutedMs: 0, pruneEveryMs: 0 } });
+		const checkRun = (id: number) => ({
+			action: "completed",
+			sender: { login: "github-actions[bot]" },
+			check_run: {
+				id,
+				name: "CI",
+				head_sha: "0".repeat(40),
+				status: "completed",
+				conclusion: "success",
+				pull_requests: [{ number: 999 }],
+				check_suite: { head_branch: "someone-else" },
+			},
+		});
+		await bot.webhook("check_run", checkRun(1), "unrouted-1");
+		await new Promise((r) => setTimeout(r, 20));
+		await bot.webhook("check_run", checkRun(2), "unrouted-2");
+		const deliveries: any[] = await bot.ops(`repositories/${REPO_ID}/deliveries`);
+		expect(deliveries.map((d) => d.delivery_id)).toEqual(["unrouted-2"]);
+		expect(deliveries[0].status).toBe("unrouted");
 	});
 });

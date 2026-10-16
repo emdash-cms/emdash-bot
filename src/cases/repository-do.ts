@@ -24,6 +24,9 @@ export class RepositoryDO extends DurableObject<Env> {
 			`CREATE TABLE IF NOT EXISTS deliveries (delivery_id TEXT PRIMARY KEY, event TEXT NOT NULL, delivery TEXT NOT NULL, case_id TEXT, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT, received_at INTEGER NOT NULL, forwarded_at INTEGER)`,
 		);
 		ctx.storage.sql.exec(
+			`CREATE INDEX IF NOT EXISTS deliveries_by_status_age ON deliveries (status, received_at)`,
+		);
+		ctx.storage.sql.exec(
 			`CREATE TABLE IF NOT EXISTS author_slots (case_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)`,
 		);
 		ctx.storage.sql.exec(
@@ -83,6 +86,7 @@ export class RepositoryDO extends DurableObject<Env> {
 		repo?: string,
 	): Promise<AdmitResult> {
 		if (repo) await this.ctx.storage.put("repo", repo);
+		await this.#pruneDeliveries();
 		const existing = this.ctx.storage.sql
 			.exec(`SELECT case_id, status FROM deliveries WHERE delivery_id = ?`, deliveryId)
 			.toArray()[0];
@@ -236,6 +240,29 @@ export class RepositoryDO extends DurableObject<Env> {
 				if (alarm === null) await this.ctx.storage.setAlarm(Date.now() + config.deliveryRetryMs);
 			}
 		}
+	}
+
+	/**
+	 * Drop old deliveries, at most once per `pruneEveryMs`. Unrouted ones (mostly CI check
+	 * runs for pull requests the bot does not own) are kept a day; the rest a
+	 * month, which covers GitHub redelivery. Pending deliveries are never dropped.
+	 */
+	async #pruneDeliveries(): Promise<void> {
+		const now = Date.now();
+		const { unroutedMs, routedMs, pruneEveryMs } = this.#config().deliveryRetention;
+		const last = (await this.ctx.storage.get<number>("lastPrune")) ?? 0;
+		if (now - last < pruneEveryMs) return;
+		await this.ctx.storage.put("lastPrune", now);
+		const unrouted = this.ctx.storage.sql.exec(
+			`DELETE FROM deliveries WHERE status = 'unrouted' AND received_at < ?`,
+			now - unroutedMs,
+		).rowsWritten;
+		const routed = this.ctx.storage.sql.exec(
+			`DELETE FROM deliveries WHERE status IN ('forwarded', 'rejected', 'failed') AND received_at < ?`,
+			now - routedMs,
+		).rowsWritten;
+		if (unrouted + routed > 0)
+			console.log(JSON.stringify({ event: "deliveries.pruned", unrouted, routed }));
 	}
 
 	async unavailableCases(): Promise<Array<Record<string, unknown>>> {
