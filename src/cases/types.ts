@@ -70,6 +70,8 @@ export interface Candidate {
 	readonly checkpointId: string;
 	readonly title: string;
 	readonly summary: string;
+	/** The pull request description the author wrote from the repository's template. */
+	readonly description?: string;
 	readonly origin: "author" | "integration";
 	readonly createdAt: number;
 }

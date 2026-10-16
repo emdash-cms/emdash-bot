@@ -220,6 +220,7 @@ async function ensurePullRequest(
 		identity: ctx.identity,
 		template: await ctx.pullRequestTemplate(),
 		summary: candidate.summary,
+		...(candidate.description ? { description: candidate.description } : {}),
 		model: ctx.model,
 		assignedBy: ctx.assignedBy,
 	});

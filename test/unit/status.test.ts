@@ -159,3 +159,51 @@ describe("pull request body for automatically admitted issues", () => {
 		expect(body).not.toContain("assigned this issue to the EmDash bot");
 	});
 });
+
+describe("pull request body from the author's description", () => {
+	const identity = { caseId: "1-issue-2", issueNumber: 7, kind: "issue" } as never;
+	const description = [
+		"## What does this PR do?",
+		"",
+		"Fixes the thing.",
+		"",
+		"## Your connection to this change",
+		"",
+		"- [x] A Maintainer approved this specific change before I opened the PR",
+		"",
+		"## AI assistance disclosure",
+		"",
+		"- [x] This PR includes AI-generated code or text — model/tool: ChatGPT (OpenAI API)",
+		"- [x] This PR includes AI-generated code or text — model/tool: something else",
+	].join("\n");
+
+	it("keeps the author's sections and enforces the disclosure, link and approval box", () => {
+		const body = renderPullRequestBody({
+			identity,
+			template: "## What does this PR do?\n",
+			summary: "unused",
+			description,
+			model: "cloudflare-ai-gateway:gpt-6.1-sol",
+			assignedBy: "maint",
+		});
+		expect(body).toContain("Fixes the thing.");
+		expect(body).not.toContain("ChatGPT");
+		expect(body.match(/This PR includes AI-generated/g)).toHaveLength(1);
+		expect(body).toContain("model/tool: cloudflare-ai-gateway:gpt-6.1-sol via the EmDash bot");
+		expect(body).toContain("Closes #7");
+		expect(body).toContain("- [x] A Maintainer approved");
+	});
+
+	it("unticks the maintainer box when no maintainer assigned the issue", () => {
+		const body = renderPullRequestBody({
+			identity,
+			template: null,
+			summary: "unused",
+			description,
+			model: "m",
+			assignedBy: null,
+		});
+		expect(body).toContain("- [ ] A Maintainer approved");
+		expect(body).toContain("took this issue on automatically");
+	});
+});

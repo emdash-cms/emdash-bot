@@ -120,8 +120,18 @@ export const TRIAGE_TAKE_ON = {
  * answers to return; otherwise the issue is a clear, small bug.
  */
 async function triageFake(request: Request): Promise<Response> {
-	const { state } = (await request.json()) as { state: { issue: { body: string } } };
-	const block = /```triage-answers\s*\n([\s\S]*?)\n```/.exec(state.issue.body);
+	const { state } = (await request.json()) as {
+		state: { issue?: { body: string }; review?: string; inlineComments?: string[] };
+	};
+	// Review classification: a review is actionable unless it says it needs nothing.
+	if (state.review !== undefined) {
+		const text = [state.review, ...(state.inlineComments ?? [])].join("\n");
+		return Response.json({
+			actionable: { noul: /no further changes|looks good/i.test(text) ? 0.05 : 0.9 },
+		});
+	}
+	if (!state.issue) return Response.json({});
+	const block = /```triage-answers\s*\n([\s\S]*?)\n```/.exec(state.issue!.body);
 	return Response.json(block ? JSON.parse(block[1]!) : TRIAGE_TAKE_ON);
 }
 

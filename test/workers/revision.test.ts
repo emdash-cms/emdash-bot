@@ -265,6 +265,44 @@ describe("review repair and asynchronous CI", () => {
 		expect(ready.requiredChecks).toEqual([]);
 	});
 
+	it("ignores a commented review that asks for nothing, keeping the approval and the author asleep", async () => {
+		bot = await startBot({
+			repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }],
+		});
+		const caseId = issueCaseId(37);
+		await bot.webhook("issues", assignIssue({ issueId: 37, number: 37, script: fixScript() }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, "emdash-bot/issue-37")!;
+		await bot.webhook(
+			"pull_request_review",
+			review(pr, head, { version: 1, reviewedCommit: head, findings: [] }, "APPROVED"),
+		);
+		await statusIs(bot, caseId, "ready-for-human");
+		const before = authorRuns(await bot.inspect(caseId)).length;
+		await bot.webhook("pull_request_review", {
+			action: "submitted",
+			sender: { login: REVIEWER },
+			pull_request: { id: 9000 + pr, number: pr },
+			review: {
+				id: 3737,
+				user: { login: REVIEWER },
+				commit_id: head,
+				state: "COMMENTED",
+				body: "Looks good, no further changes needed.",
+			},
+		});
+		await bot.waitFor("review ignored", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.some((e: any) => e.type === "review.nothing-asked") ? r : null;
+		});
+		await new Promise((r) => setTimeout(r, 1000));
+		const status = await bot.ops(`cases/${caseId}/status`);
+		expect(status.status).toBe("ready-for-human");
+		expect(status.review.state).toBe("APPROVED");
+		expect(authorRuns(await bot.inspect(caseId))).toHaveLength(before);
+	});
+
 	it("lists failing check run ids, and the author reads a job log with ci_log", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(35);

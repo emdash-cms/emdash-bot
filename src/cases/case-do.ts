@@ -37,6 +37,8 @@ import {
 	type TriageVerdict,
 	decide,
 	declineMessage,
+	reviewActionProbability,
+	reviewActionRequest,
 	runClef,
 	triageRequest,
 } from "../runtime/triage.ts";
@@ -403,7 +405,8 @@ export class CaseDO extends DurableObject<Env> {
 			search: (pattern, path, glob) => this.#search(pattern, path, glob),
 			listFiles: (path) => this.#listFiles(path),
 			runCheck: (opId, name, args) => this.#runCheck(opId, name, args),
-			submitCandidate: (opId, title, summary) => this.#submitCandidate(opId, title, summary),
+			submitCandidate: (opId, title, summary, description) =>
+				this.#submitCandidate(opId, title, summary, description),
 			handoff: (opId, reason, nextAction) => this.#handoff(opId, reason, nextAction),
 			reply: async (opId, inReplyTo, onIssue, body) => {
 				const intent = this.#queueReply(opId, inReplyTo, onIssue, body);
@@ -632,7 +635,12 @@ export class CaseDO extends DurableObject<Env> {
 		});
 	}
 
-	async #submitCandidate(opId: string, title: string, summary: string): Promise<Candidate> {
+	async #submitCandidate(
+		opId: string,
+		title: string,
+		summary: string,
+		description?: string,
+	): Promise<Candidate> {
 		const receipt = this.store.operation(opId);
 		if (receipt?.status === "completed")
 			return this.store.candidate((receipt.result as { candidateId: string }).candidateId)!;
@@ -664,6 +672,7 @@ export class CaseDO extends DurableObject<Env> {
 				checkpointId: checkpoint.id,
 				title: title.slice(0, 200),
 				summary: summary.slice(0, 20_000),
+				...(description?.trim() ? { description: description.slice(0, 60_000) } : {}),
 				origin: "author",
 				createdAt: Date.now(),
 			};
@@ -813,6 +822,28 @@ export class CaseDO extends DurableObject<Env> {
 		this.store.log("case.declined", { reason, publicMessage: !!message?.trim() });
 		await this.#schedule("replies", Date.now(), {}, "replies");
 		await this.#schedule("report", Date.now());
+	}
+
+	/** Whether a commented review needs the author. Fails open: if in doubt, it does. */
+	async #reviewNeedsAuthor(body: string, comments: readonly string[]): Promise<boolean> {
+		if (!body.trim() && comments.every((c) => !c.trim())) return false;
+		const request = reviewActionRequest(body, comments);
+		try {
+			const fake = (this.env as { TRIAGE_FAKE?: Fetcher }).TRIAGE_FAKE;
+			const answers = fake
+				? await (
+						await fake.fetch("https://triage/classify", {
+							method: "POST",
+							body: JSON.stringify(request),
+						})
+					).json<Record<string, never>>()
+				: await runClef(this.env.AI, request, this.config.gatewayId);
+			const p = reviewActionProbability(answers);
+			return p === null || p >= 0.5;
+		} catch (error) {
+			this.store.log("review.classify-failed", { error: errorMessage(error) });
+			return true;
+		}
 	}
 
 	/** Ask Clef whether an unassigned issue is in scope. Fails closed. */
@@ -1235,6 +1266,20 @@ export class CaseDO extends DurableObject<Env> {
 			comments,
 		);
 		const configured = event.kind === "review";
+		// A commented review that asks for nothing (praise, "ok, makes sense",
+		// "no further changes") is ignored: it neither wakes the author nor
+		// replaces the reviewer's latest review for readiness.
+		const nothingAsked =
+			payload.state.toUpperCase() === "COMMENTED" &&
+			!parsed.structured &&
+			!(await this.#reviewNeedsAuthor(
+				payload.body,
+				comments.map((c) => c.body),
+			));
+		if (nothingAsked) {
+			this.store.log("review.nothing-asked", { review: payload.reviewId, by: event.actor });
+			return null;
+		}
 		if (configured) {
 			const fresh = this.store.putReview({
 				reviewId: String(payload.reviewId),
@@ -1495,6 +1540,13 @@ export class CaseDO extends DurableObject<Env> {
 			...this.store.requirements().map((r) => `${r.body}`),
 			"",
 			"Call case_status for the live candidate, publication, checks and budgets.",
+			...(this.store.getMeta<string | null>("prTemplate")
+				? [
+						"",
+						"Pull request template (fill it in as the description when you submit a candidate):",
+						this.store.getMeta<string>("prTemplate")!,
+					]
+				: []),
 		];
 		return lines.join("\n");
 	}

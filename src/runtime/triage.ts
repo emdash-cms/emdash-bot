@@ -177,7 +177,7 @@ export function declineMessage(verdict: TriageVerdict): string {
 /** Call Clef through the Workers AI binding. */
 export async function runClef(
 	ai: Ai,
-	request: ReturnType<typeof triageRequest>,
+	request: object,
 	gateway: string | undefined,
 ): Promise<ClefAnswers> {
 	const result = (await (
@@ -187,4 +187,32 @@ export async function runClef(
 		result?: { answers?: ClefAnswers };
 	};
 	return result.answers ?? result.result?.answers ?? {};
+}
+
+/**
+ * Asks whether a commented review needs anything from the author. A comment such
+ * as "looks good" or "ok, makes sense" does not, and must not wake the author or
+ * hold up readiness.
+ */
+export function reviewActionRequest(body: string, comments: readonly string[]) {
+	return {
+		model: "clef",
+		state: {
+			review: body.slice(0, 8000),
+			inlineComments: comments.map((c) => c.slice(0, 2000)).slice(0, 20),
+		},
+		questions: {
+			actionable: {
+				type: "noul",
+				instructions:
+					"Does this pull request review ask the author to change something, raise a problem with the change, or ask a question that needs an answer? Acknowledgements, praise and statements that nothing more is needed are not.",
+			},
+		},
+	};
+}
+
+/** The probability that a review needs the author, or null when the answer is unusable. */
+export function reviewActionProbability(answers: { actionable?: unknown }): number | null {
+	const p = probability(answers.actionable);
+	return Number.isNaN(p) ? null : p;
 }

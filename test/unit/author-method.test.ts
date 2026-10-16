@@ -11,6 +11,12 @@ describe("author method", () => {
 		);
 	});
 
+	it("lets the author decide whether nits are worth fixing in this pull request", () => {
+		expect(AUTHOR_METHOD).toContain(
+			"For nits and optional suggestions, decide whether they are worth fixing in this pull request.",
+		);
+	});
+
 	it("fixes the reported problem, not a different one", () => {
 		expect(AUTHOR_METHOD).toContain("Fix the problem that was reported, not a different one.");
 	});

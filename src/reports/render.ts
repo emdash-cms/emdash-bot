@@ -121,19 +121,50 @@ export interface PullRequestBodyInput {
 	readonly identity: CaseIdentity;
 	readonly template: string | null;
 	readonly summary: string;
+	/** The author's filled-in template; trusted fields are enforced over it. */
+	readonly description?: string;
 	readonly model: string;
 	readonly assignedBy: string | null;
 }
 
 /** Fill the target repository's pull request template accurately. */
+const DISCLOSURE = /^- \[[ xX]\] This PR includes AI-generated code or text.*$/gm;
+const MAINTAINER_BOX =
+	/^- \[[ xX]\] A Maintainer approved this specific change before I opened the PR.*$/gm;
+
 export function renderPullRequestBody(input: PullRequestBodyInput): string {
 	const closes = input.identity.issueNumber ? `Closes #${input.identity.issueNumber}` : "";
 	const origin = input.assignedBy
 		? `A Maintainer (@${input.assignedBy}) assigned this ${input.identity.kind === "issue" ? "issue" : "pull request"} to the EmDash bot.`
 		: "The EmDash bot took this issue on automatically when it was opened; no maintainer has assigned it yet.";
-	const summary = `${input.summary.trim()}\n\n${origin}`;
+	const disclosure = `- [x] This PR includes AI-generated code or text — model/tool: ${input.model} via the EmDash bot (Pi Durable)`;
 	let body: string;
-	if (input.template) {
+	if (input.description?.trim()) {
+		// The author filled in the template. Enforce what trusted code vouches for:
+		// one disclosure naming the real model, the maintainer box, and the issue link.
+		let seen = false;
+		body = input.description
+			.trim()
+			.replace(DISCLOSURE, () => {
+				if (seen) return "";
+				seen = true;
+				return disclosure;
+			})
+			.replace(MAINTAINER_BOX, () =>
+				input.assignedBy
+					? "- [x] A Maintainer approved this specific change before I opened the PR"
+					: "- [ ] A Maintainer approved this specific change before I opened the PR",
+			)
+			.replace(/\n{3,}/g, "\n\n");
+		if (!seen) body += `\n\n## AI assistance disclosure\n\n${disclosure}`;
+		if (
+			closes &&
+			!new RegExp(`\\b(?:Closes|Fixes|Resolves) #${input.identity.issueNumber}\\b`, "i").test(body)
+		)
+			body += `\n\n${closes}`;
+		body += `\n\n${origin}`;
+	} else if (input.template) {
+		const summary = `${input.summary.trim()}\n\n${origin}`;
 		body = input.template
 			.replace(/^Closes #[ \t]*$/m, closes)
 			.replace(/(## What does this PR do\?\s*\n(?:\s*<!--[\s\S]*?-->\s*\n)?)/, `$1\n${summary}\n\n`)
@@ -146,7 +177,7 @@ export function renderPullRequestBody(input: PullRequestBodyInput): string {
 			)
 			.replace(
 				/- \[ \] This PR includes AI-generated code or text — model\/tool: (<!--[^>]*-->)?/,
-				`- [x] This PR includes AI-generated code or text — model/tool: ${input.model} via the EmDash bot (Pi Durable)`,
+				disclosure,
 			)
 			.replace(
 				/(## Screenshots \/ test output\s*\n(?:\s*<!--[\s\S]*?-->\s*\n)?)/,
@@ -154,7 +185,7 @@ export function renderPullRequestBody(input: PullRequestBodyInput): string {
 			);
 	} else {
 		body = [
-			summary,
+			`${input.summary.trim()}\n\n${origin}`,
 			"",
 			closes,
 			"",
