@@ -10,12 +10,13 @@ import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 
 // The profile is chosen at build time. Without EMDASH_BOT_PROFILE this always
 // builds staging (`emdash-bot-pi`); only Workers Builds for the production
-// Worker sets EMDASH_BOT_PROFILE=production, which builds `emdash-bot`.
+// Worker sets EMDASH_BOT_PROFILE=production, which builds `emdash-autofix`.
+// (`emdash-bot` is the previous bot's Worker; never build or deploy that name.)
 const profileName = process.env.EMDASH_BOT_PROFILE || "staging";
 if (profileName !== "staging" && profileName !== "production")
 	throw new Error(`EMDASH_BOT_PROFILE must be staging or production, not ${profileName}`);
 const profile = profileName === "production" ? production : staging;
-const name = profileName === "production" ? "emdash-bot" : "emdash-bot-pi";
+const name = profileName === "production" ? "emdash-autofix" : "emdash-bot-pi";
 
 // Tests (`vp build --mode test`) never start the container, so they use a
 // registry reference instead of building the image.

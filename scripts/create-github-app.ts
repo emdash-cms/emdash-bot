@@ -23,7 +23,7 @@ const PROFILES = {
 	},
 	production: {
 		name: "emdash-autofix",
-		url: "https://emdash-bot.emdash-cms.workers.dev",
+		url: "https://emdash-autofix.emdash-cms.workers.dev",
 		install: "emdash-cms/emdash",
 		deploy: "the production deploy (Workers Builds)",
 	},

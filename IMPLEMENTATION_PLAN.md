@@ -239,7 +239,7 @@ Emit deterministic case status from recorded evidence. The initial statuses are 
 
 ## Template foundation and development workflow
 
-Keep the template's single-package structure and checked-in lockfile. The package and Worker are named `emdash-bot`; `src/index.ts` is the entrypoint. Preserve the `with { type: "cf-worker" }` import attribute in `cloudflare.config.ts` so the config can infer the Worker exports and `Env` bindings.
+Keep the template's single-package structure and checked-in lockfile. The package is named `emdash-bot`; the Workers are `emdash-bot-pi` (staging) and `emdash-autofix` (production; `emdash-bot` is the previous bot's Worker); `src/index.ts` is the entrypoint. Preserve the `with { type: "cf-worker" }` import attribute in `cloudflare.config.ts` so the config can infer the Worker exports and `Env` bindings.
 
 - Declare Worker settings, Durable Object bindings/migrations, R2 buckets and Sandbox/container configuration through the supported `cf/config` schema in `cloudflare.config.ts`. Verify the relevant APIs in slice 1; do not add a parallel `wrangler.jsonc` configuration.
 - Keep compatibility date and flags in `compatibility.ts`, shared by the Worker config and `test/harness.ts`.
