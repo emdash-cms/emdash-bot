@@ -1,5 +1,6 @@
 import { bindings, defineConfig, defineContainer, exports } from "cf/config";
 import { compatibilityDate, compatibilityFlags } from "./compatibility.ts";
+import production from "./profiles/production.json" with { type: "json" };
 import staging from "./profiles/staging.json" with { type: "json" };
 import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 
@@ -7,9 +8,14 @@ import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 // binding: deploy rejects a container class whose binding names a script, and
 // `bindings.durableObject` always does.
 
-// Staging profile. The production Worker (`emdash-bot`) is a separate,
-// explicitly operated deployment and is not configured here.
-const name = "emdash-bot-pi";
+// The profile is chosen at build time. Without EMDASH_BOT_PROFILE this always
+// builds staging (`emdash-bot-pi`); only Workers Builds for the production
+// Worker sets EMDASH_BOT_PROFILE=production, which builds `emdash-bot`.
+const profileName = process.env.EMDASH_BOT_PROFILE || "staging";
+if (profileName !== "staging" && profileName !== "production")
+	throw new Error(`EMDASH_BOT_PROFILE must be staging or production, not ${profileName}`);
+const profile = profileName === "production" ? production : staging;
+const name = profileName === "production" ? "emdash-bot" : "emdash-bot-pi";
 
 // Tests (`vp build --mode test`) never start the container, so they use a
 // registry reference instead of building the image.
@@ -44,7 +50,7 @@ export default defineConfig({
 			ARTIFACTS: bindings.r2({ name: `${name}-artifacts` }),
 			AI: bindings.ai(),
 			CF_VERSION_METADATA: bindings.versionMetadata(),
-			BOT_CONFIG: bindings.json(staging),
+			BOT_CONFIG: bindings.json(profile),
 			GITHUB_WEBHOOK_SECRET: bindings.secret(),
 			OPERATOR_TOKEN: bindings.secret(),
 			// GitHub credentials are optional secrets set by the operator: either the App
