@@ -1,0 +1,41 @@
+IMPLEMENTATION_PLAN.md
+  s_4c97aa8e7b616f::t_5cc04aef40970d 512
+profiles/staging.json
+  s_4c97aa8e7b616f::t_f6b040be02b80e 15-16
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_b217af1739a110 40-41,408-409,638-643,675,827-848,1269-1282,1543-1549
+src/cases/types.ts
+  s_4c97aa8e7b616f::t_40c6e6d5ca1faf 73-74
+src/github/publisher.ts
+  s_4c97aa8e7b616f::t_2d48934c078561 223
+src/reports/render.ts
+  s_4c97aa8e7b616f::t_202b2769231ddc 124-125,131-134,140,142-167,180,188
+src/runtime/triage.ts
+  s_4c97aa8e7b616f::t_cb2acfc2b290fb 180,191-218
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_d00ac68b22f3b3 51-56,168,252-257,267
+test/harness.ts
+  s_4c97aa8e7b616f::t_19ec86b9534706 123-134
+test/unit/author-method.test.ts
+  s_4c97aa8e7b616f::t_fd7e9ee672f995 14-19
+test/unit/status.test.ts
+  s_4c97aa8e7b616f::t_0387a877c431d7 162-209
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_c75ad81d178dd3 268-305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "78ef60f7f3f664a2c8a7704373c2efe9dd74739a",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
