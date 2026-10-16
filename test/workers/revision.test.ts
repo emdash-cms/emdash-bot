@@ -265,6 +265,38 @@ describe("review repair and asynchronous CI", () => {
 		expect(ready.requiredChecks).toEqual([]);
 	});
 
+	it("labels the issue and PR awaiting the reporter when ready, with area labels from changed paths", async () => {
+		bot = await startBot({
+			repositories: [
+				{
+					id: REPO_ID,
+					fullName: REPO,
+					requiredChecks: [],
+					areaLabels: { "greet.js": "area/core" },
+				},
+			],
+		});
+		const caseId = issueCaseId(38);
+		await bot.webhook("issues", assignIssue({ issueId: 38, number: 38, script: fixScript() }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, "emdash-bot/issue-38")!;
+		await bot.webhook(
+			"pull_request_review",
+			review(pr, head, { version: 1, reviewedCommit: head, findings: [] }, "APPROVED"),
+		);
+		await statusIs(bot, caseId, "ready-for-human");
+		await bot.waitFor("labels", async () => {
+			const issue = bot!.github.labels.get(38);
+			const pull = bot!.github.labels.get(pr);
+			return (
+				issue?.has("triage/awaiting-reporter") &&
+				pull?.has("triage/awaiting-reporter") &&
+				pull.has("area/core")
+			);
+		});
+	});
+
 	it("ignores a commented review that asks for nothing, keeping the approval and the author asleep", async () => {
 		bot = await startBot({
 			repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }],

@@ -31,7 +31,20 @@
 		},
 		"prepare": "if [ -f pnpm-lock.yaml ]; then corepack enable >/dev/null 2>&1 || true; for i in 1 2 3 4; do corepack install && break; sleep 5; done; pnpm install --frozen-lockfile; fi",
 		"autoIntake": false,
-		"requiredChecks": []
+		"requiredChecks": [],
+		"areaLabels": {
+			"packages/core/": "area/core",
+			"packages/admin/": "area/admin",
+			"packages/auth": "area/auth",
+			"packages/cloudflare/": "area/cloudflare",
+			"packages/plugin": "area/plugins",
+			"packages/registry-cli/": "area/cli",
+			"packages/plugin-cli/": "area/cli",
+			"packages/create-emdash/": "area/cli",
+			"templates/": "area/templates",
+			"docs/": "area/docs",
+			".github/": "area/ci"
+		}
 	},
 	"autoIntake": true,
 	"autoIntakeMaintainers": true

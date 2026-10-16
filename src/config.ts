@@ -17,6 +17,8 @@ export interface RepositoryConfig {
 	readonly autoIntake?: boolean;
 	/** Overrides the check names required for readiness in this repository. */
 	readonly requiredChecks?: readonly string[];
+	/** Labels applied for changed paths, by path prefix (e.g. `packages/core/` -> `area/core`). */
+	readonly areaLabels?: Readonly<Record<string, string>>;
 }
 
 export interface Budgets {

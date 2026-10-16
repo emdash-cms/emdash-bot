@@ -35,6 +35,8 @@ export class FakeGitHub {
 	pulls: FakePull[] = [];
 	comments: Array<{ id: number; issue: number; body: string; user: string }> = [];
 	checkRuns: FakeCheckRun[] = [];
+	/** Labels by issue or PR number. */
+	labels = new Map<number, Set<string>>();
 	/** Actions job logs by job (check run) id. */
 	jobLogs = new Map<number, string>();
 	/** Check runs the bot created itself. */
@@ -381,6 +383,28 @@ export class FakeGitHub {
 					.filter((c) => c.head_sha === match![1])
 					.map((c) => ({ ...c, html_url: "", app: { slug: "github-actions" } })),
 			});
+		}
+		if (method === "POST" && (match = rest.match(/^\/issues\/(\d+)\/labels$/))) {
+			const set = this.labels.get(Number(match[1])) ?? new Set<string>();
+			for (const label of (body!.labels as string[]) ?? []) set.add(label);
+			this.labels.set(Number(match[1]), set);
+			return this.#json([...set].map((name) => ({ name })));
+		}
+		if (method === "DELETE" && (match = rest.match(/^\/issues\/(\d+)\/labels\/(.+)$/))) {
+			const set = this.labels.get(Number(match[1]));
+			const name = decodeURIComponent(match[2]!);
+			if (!set?.delete(name)) return this.#json({ message: "Label does not exist" }, 404);
+			return this.#json([...set].map((label) => ({ name: label })));
+		}
+		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/files$/))) {
+			const pull = this.pulls.find((p) => p.number === Number(match![1]));
+			if (!pull) return this.#json({ message: "Not Found" }, 404);
+			const head = this.head(repo, pull.head)!;
+			const base = this.head(repo, pull.base)!;
+			const names = this.git(repo, ["diff", "--name-only", `${base}...${head}`])
+				.split("\n")
+				.filter(Boolean);
+			return this.#json(names.map((filename) => ({ filename })));
 		}
 		if (method === "GET" && (match = rest.match(/^\/actions\/jobs\/(\d+)\/logs$/))) {
 			const log = this.jobLogs.get(Number(match[1]));

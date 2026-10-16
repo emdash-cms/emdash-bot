@@ -163,6 +163,9 @@ describe("auto-intake", () => {
 		expect(bot.github.comments.filter((c) => c.issue === 86)[0]!.body).toContain("feature request");
 		expect(authorRuns(record)).toHaveLength(0);
 		expect(bot.github.pulls).toHaveLength(0);
+		await bot.waitFor("skipped label", async () =>
+			bot!.github.labels.get(86)?.has("triage/skipped"),
+		);
 	});
 
 	it("declines likely spam silently at triage", async () => {

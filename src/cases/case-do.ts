@@ -98,6 +98,14 @@ interface CheckFailure {
 	readonly firstAt: number;
 }
 
+const STATUS_LABELS = {
+	awaitingReporter: "triage/awaiting-reporter",
+	verified: "triage/verified",
+	skipped: "triage/skipped",
+	failed: "triage/failed",
+} as const;
+const MANAGED_STATUS_LABELS = new Set<string>(Object.values(STATUS_LABELS));
+
 export class CaseDO extends DurableObject<Env> {
 	readonly config: BotConfig;
 	readonly store: CaseStore;
@@ -1969,6 +1977,14 @@ export class CaseDO extends DurableObject<Env> {
 				return { rescheduleAt: Date.now() + 60_000 };
 			}
 		}
+		// Declined issues get no progress comment but are still labelled, so people can find them.
+		if ((engaged || this.store.state() === "declined") && !this.#dryRun()) {
+			try {
+				await this.#syncLabels(report, pr ?? null);
+			} catch (error) {
+				this.store.log("labels.failed", { error: errorMessage(error) });
+			}
+		}
 		if (pr && report.head && !this.#dryRun()) {
 			try {
 				await this.#upsertStatusCheck(report);
@@ -1979,6 +1995,73 @@ export class CaseDO extends DurableObject<Env> {
 		}
 		if (report.status === "waiting-for-checks" || report.status === "candidate-published")
 			return { rescheduleAt: Date.now() + Math.max(this.config.reconcileMs, 120_000) };
+	}
+
+	/**
+	 * Labels so people can find issues and PRs to look at. A projection of recorded
+	 * evidence onto the issue and the PR; nothing reads them back.
+	 */
+	async #syncLabels(report: StatusReport, pr: number | null): Promise<void> {
+		const identity = this.#identity();
+		const status: string[] = [];
+		const handoff = this.store.getMeta<Handoff | null>("handoff");
+		if (report.status === "declined") status.push(STATUS_LABELS.skipped);
+		else if (report.status === "needs-human" && handoff?.reason.startsWith("the model call failed"))
+			status.push(STATUS_LABELS.failed);
+		if (this.store.getMeta("reporterConfirmation")) status.push(STATUS_LABELS.verified);
+		else if (report.status === "ready-for-human" && identity.kind === "issue")
+			status.push(STATUS_LABELS.awaitingReporter);
+		const areas = pr && report.head ? await this.#areaLabels(pr, report.head) : [];
+		const github = this.#github();
+		const targets = [identity.kind === "issue" ? identity.issueNumber : null, pr].filter(
+			(n): n is number => typeof n === "number",
+		);
+		const applied = this.store.getMeta<Record<string, string[]>>("labels") ?? {};
+		for (const target of new Set(targets)) {
+			const had = applied[target] ?? [];
+			const want = [...new Set([...status, ...areas])];
+			const add = want.filter((l) => !had.includes(l));
+			// Area labels stay; status labels follow the evidence.
+			const remove = had.filter((l) => MANAGED_STATUS_LABELS.has(l) && !want.includes(l));
+			if (add.length > 0)
+				await github.request("POST", github.repoPath(`/issues/${target}/labels`), { labels: add });
+			for (const label of remove)
+				await github.request(
+					"DELETE",
+					github.repoPath(`/issues/${target}/labels/${encodeURIComponent(label)}`),
+					undefined,
+					[404],
+				);
+			if (add.length > 0 || remove.length > 0) {
+				applied[target] = [...had.filter((l) => !remove.includes(l)), ...add];
+				this.store.setMeta("labels", applied);
+				this.store.log("labels.synced", { target, add, remove });
+			}
+		}
+	}
+
+	/** Area labels for the PR's changed paths, computed once per head. */
+	async #areaLabels(pr: number, head: string): Promise<string[]> {
+		const map = this.#repoConfig()?.areaLabels;
+		if (!map || Object.keys(map).length === 0) return [];
+		const cached = this.store.getMeta<{ head: string; labels: string[] }>("areaLabels");
+		if (cached?.head === head) return cached.labels;
+		const github = this.#github();
+		const files = await github.request<Array<{ filename: string }>>(
+			"GET",
+			github.repoPath(`/pulls/${pr}/files?per_page=100`),
+		);
+		const labels = [
+			...new Set(
+				files.flatMap((f) =>
+					Object.entries(map).flatMap(([prefix, label]) =>
+						f.filename.startsWith(prefix) ? [label] : [],
+					),
+				),
+			),
+		].sort();
+		this.store.setMeta("areaLabels", { head, labels });
+		return labels;
 	}
 
 	/** One check run per head; a completed run is updated, or replaced if work resumes. */

@@ -205,6 +205,7 @@ describe("model failures", () => {
 		});
 		expect(failed.handoff.reason).toContain("upstream returned nothing");
 		expect(failed.status.status).toBe("needs-human");
+		await bot.waitFor("failed label", async () => bot!.github.labels.get(17)?.has("triage/failed"));
 		await bot.waitFor("error in the progress comment", async () =>
 			bot!.github.comments.find(
 				(c) =>
@@ -224,6 +225,11 @@ describe("model failures", () => {
 		});
 		const record = await published(bot, caseId);
 		expect(record.handoff).toBeNull();
+		// The failure label goes once the retry works.
+		await bot.waitFor(
+			"failed label removed",
+			async () => !bot!.github.labels.get(17)?.has("triage/failed"),
+		);
 	});
 });
 

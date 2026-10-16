@@ -153,6 +153,13 @@ describe("conversation", () => {
 			bot.github.comments.find((c) => c.issue === 71 && c.body.includes("Thanks for confirming")),
 		).toBeTruthy();
 		expect(authorRuns(confirmed)).toHaveLength(4);
+		// Verified on both the issue and its PR, so people can find it.
+		await bot.waitFor(
+			"verified label",
+			async () =>
+				bot!.github.labels.get(71)?.has("triage/verified") &&
+				bot!.github.labels.get(pr)?.has("triage/verified"),
+		);
 	});
 
 	it("ignores comments from people who are neither maintainers, the reviewer nor the reporter", async () => {
