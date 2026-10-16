@@ -1,0 +1,35 @@
+README.md
+  s_4c97aa8e7b616f::t_872d5b2121b369 14
+profiles/staging.json
+  s_4c97aa8e7b616f::t_2fe3a54accf867 34-47
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_9565f1cc81ffac 101-108,1980-1987,2000-2066
+src/config.ts
+  s_4c97aa8e7b616f::t_0b122519ec1f97 20-21
+test/fakes/github.ts
+  s_4c97aa8e7b616f::t_21eeac594b96c8 38-39,387-408
+test/recovery/lifecycle.test.ts
+  s_4c97aa8e7b616f::t_0114e4cad815fd 208,228-232
+test/workers/auto-intake.test.ts
+  s_4c97aa8e7b616f::t_40408adba10465 166-168
+test/workers/conversation.test.ts
+  s_4c97aa8e7b616f::t_0fe9cb7898c42b 156-162
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_598737d0c02ada 268-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c76e5315e6bbcbea7e1cd511c3d31ded3b5816f4",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
