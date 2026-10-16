@@ -1,0 +1,74 @@
+{
+	"profile": "production",
+	"botLogin": "emdash-autofix[bot]",
+	"repositories": [
+		{
+			"id": 1198246700,
+			"fullName": "emdash-cms/emdash",
+			"focusedChecks": {
+				"pnpm-filter": "pnpm --filter",
+				"vitest-root": "pnpm exec vitest run"
+			},
+			"prepare": "corepack enable >/dev/null 2>&1 || true; for i in 1 2 3 4; do corepack install && break; sleep 5; done; pnpm install --frozen-lockfile",
+			"autoIntake": false,
+			"areaLabels": {
+				"packages/core/": "area/core",
+				"packages/admin/": "area/admin",
+				"packages/auth": "area/auth",
+				"packages/cloudflare/": "area/cloudflare",
+				"packages/plugin": "area/plugins",
+				"packages/registry-cli/": "area/cli",
+				"packages/plugin-cli/": "area/cli",
+				"packages/create-emdash/": "area/cli",
+				"templates/": "area/templates",
+				"docs/": "area/docs",
+				".github/": "area/ci"
+			}
+		}
+	],
+	"maintainers": ["ascorbic"],
+	"reviewers": ["emdashbot[bot]"],
+	"authorModel": "cloudflare-ai-gateway:gpt-6.1-sol",
+	"childModel": "cloudflare-ai-gateway:gpt-5.6-luna",
+	"thinkingLevel": "medium",
+	"checks": {
+		"code": [
+			"Typecheck",
+			"Tests",
+			"Smoke Tests",
+			"Smoke Isolated Install",
+			"Browser Tests",
+			"Backend Tests",
+			"Format",
+			"Package and Fixture Tests",
+			"Table E2E",
+			"Visual Regression",
+			"Measure"
+		],
+		"administrative": [
+			"CLAssistant",
+			"label",
+			"Maintain PR",
+			"Human Maintainer approval",
+			"Update human review status",
+			"Approve and re-run CI",
+			"Auto-Approve",
+			"EmDashBot review",
+			"Publish Preview",
+			"Continuous Releases"
+		],
+		"required": [
+			"Typecheck",
+			"Tests",
+			"Smoke Tests",
+			"Browser Tests",
+			"Format",
+			"CLAssistant",
+			"Measure"
+		]
+	},
+	"gatewayId": "default",
+	"intakeLabel": "autofix",
+	"autoIntake": false,
+	"autoIntakeMaintainers": false
+}
