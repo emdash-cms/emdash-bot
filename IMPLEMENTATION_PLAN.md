@@ -39,6 +39,10 @@ Recorded 14 October 2026 and revised 15 October 2026 after the first staging cas
 - **Reviewer contract.** [docs/reviewer-findings.md](docs/reviewer-findings.md) specifies the findings block the existing reviewer must add. A configured reviewer's review without a block becomes one actionable finding, so feedback is never dropped.
 - **Operator dry runs.** Staging can admit a case for a public repository at a pinned commit with publication disabled, to measure the real author before GitHub credentials exist. Dry runs are smoke checks, never evaluation scores.
 
+### Evaluation results (15–16 October)
+
+All six cases were run on Sol 6.1 with Luna helpers and on Haiku 5.5, reviewed and graded; see [docs/eval-results.md](docs/eval-results.md). Every final fix met its issue after review; Sol had stronger first passes, Haiku cost about half.
+
 ### Measurements
 
 | Measurement                                                                         | Value                                                                                                                                                                               |
