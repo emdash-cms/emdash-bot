@@ -21,6 +21,13 @@ describe("production profile", () => {
 		);
 		expect(config.authorModel).not.toMatch(/^scripted:/);
 	});
+
+	it("lets only plan-gated required lanes skip, guarded by the required Tests job", () => {
+		const skippable = Object.keys(config.checks.skippable ?? {});
+		expect(skippable).toEqual(["Smoke Tests", "Browser Tests"]);
+		for (const name of skippable) expect(config.checks.required).toContain(name);
+		expect(config.checks.required).toContain("Tests");
+	});
 });
 
 describe("staging profile", () => {
