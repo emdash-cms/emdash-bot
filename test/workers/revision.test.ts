@@ -295,6 +295,9 @@ describe("review repair and asynchronous CI", () => {
 		const evidence = await bot.ops(`cases/${caseId}/evidence`);
 		const transcript = JSON.stringify(evidence.transcript);
 		expect(transcript).toContain("Check run: 4242");
+		// CI conclusions belong in the plan; a reply only when a maintainer must act.
+		expect(transcript).toContain("Record your conclusion in the work plan");
+		expect(transcript).toContain("only when a maintainer has to act");
 		const logResult = evidence.transcript
 			.flatMap((e: any) => e.model ?? [])
 			.find((m: any) => m.role === "toolResult" && m.toolName === "ci_log");

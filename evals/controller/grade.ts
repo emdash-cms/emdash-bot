@@ -132,3 +132,20 @@ export function grade(
 		rmSync(home, { recursive: true, force: true });
 	}
 }
+
+/** Whether a grade got through every setup step and ran its commands. */
+export function passedSetup(grader: GraderManifest, result: GradeResult): boolean {
+	return (
+		result.steps.length > grader.setup.length &&
+		result.steps.slice(0, grader.setup.length).every((s) => s.exitCode === 0)
+	);
+}
+
+/** A grader is valid when the starting commit fails its tests (not its setup) and the reference passes. */
+export function graderIsValid(
+	grader: GraderManifest,
+	starting: GradeResult,
+	reference: GradeResult,
+): boolean {
+	return passedSetup(grader, starting) && !starting.passed && reference.passed;
+}

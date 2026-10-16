@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { RESULTS, load, loadCase, newAttempt, runAttempt } from "../controller/attempt.ts";
-import { grade } from "../controller/grade.ts";
+import { grade, graderIsValid, passedSetup } from "../controller/grade.ts";
 import type { Profile } from "../controller/types.ts";
 
 const SUITES: Record<string, string[]> = {
@@ -140,11 +140,8 @@ switch (command) {
 			commit: grader.referenceCommit,
 			upstream: `https://github.com/${manifest.source.repo}.git`,
 		});
-		// The starting commit must get through setup and fail its tests, not fail to install.
-		const setupOk = (r: typeof before) =>
-			r.steps.length > grader.setup.length &&
-			r.steps.slice(0, grader.setup.length).every((s) => s.exitCode === 0);
-		const valid = setupOk(before) && !before.passed && after.passed;
+		const setupOk = (r: typeof before) => passedSetup(grader, r);
+		const valid = graderIsValid(grader, before, after);
 		const out = join(RESULTS, `validate-${values.case}-${Date.now()}.json`);
 		mkdirSync(RESULTS, { recursive: true });
 		writeFileSync(out, JSON.stringify({ case: values.case, valid, before, after }, null, 2));
