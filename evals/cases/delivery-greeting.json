@@ -1,0 +1,66 @@
+{
+	"id": "delivery-greeting",
+	"kind": "delivery",
+	"behaviour": "Deterministic delivery and recovery with the scripted author on a tiny repository.",
+	"source": {
+		"template": "greeting"
+	},
+	"issue": {
+		"title": "Greeting lacks punctuation",
+		"body": "greet('Ada') should return 'Hello, Ada!'.",
+		"sourceUrl": ""
+	},
+	"fixtureModel": "scripted:author",
+	"script": {
+		"rounds": [
+			{
+				"steps": [
+					{
+						"tool": "read",
+						"args": {
+							"path": "greet.js"
+						}
+					},
+					{
+						"tool": "write",
+						"args": {
+							"path": "greet.js",
+							"content": "module.exports = (name) => \"Hello, \" + name + \"!\";\n"
+						}
+					},
+					{
+						"tool": "run_check",
+						"args": {
+							"name": "test"
+						}
+					},
+					{
+						"tool": "submit_candidate",
+						"args": {
+							"title": "fix: punctuate the greeting",
+							"summary": "Adds a comma and exclamation mark. `node test.js` passes."
+						}
+					}
+				],
+				"final": "Submitted."
+			}
+		]
+	},
+	"faultMatrix": [
+		"none",
+		"during-tool",
+		"after-checkpoint-upload",
+		"after-checkpoint-commit",
+		"after-candidate-sealed",
+		"after-commit-created",
+		"after-ref-update",
+		"after-pr-created",
+		"report-failure"
+	],
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 2,
+		"authorMinutes": 15,
+		"caseMinutes": 30
+	}
+}

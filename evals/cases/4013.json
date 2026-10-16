@@ -1,0 +1,28 @@
+{
+	"id": "4013",
+	"kind": "fix",
+	"behaviour": "Provider help with localization, extractor coverage and public export documentation.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "1dd1b37c14dcea4a37d9b7cd65b68eae5ea73414",
+		"note": "Parent of the bot's first commit on the historical PR. Fixture repositories receive a single-commit snapshot of this tree, without later history."
+	},
+	"issue": {
+		"title": "Login page shows \"Enter your handle to sign in.\" under every provider LoginForm",
+		"body": "On the admin login page, when an auth provider with a `LoginForm` is open, the help line under the card reads \"Enter your handle to sign in.\" (`packages/admin/src/components/LoginPage.tsx`: the help paragraph at the end of the page, in the `activeProvider` branch). The wording is specific to the Atmosphere provider; for an email and password form it tells people to type a handle.\n\nReproduce: register any provider whose admin entry exports `LoginForm` (for example one asking for email and password), open `/_emdash/admin/login`, click its button.\n\nPossible fix: let the provider module export an optional `loginHelp` string (or component) and fall back to a neutral line such as \"Continue with {label}.\" when it is absent.\n\nEmDash 1.1.0, `@emdash-cms/admin` 1.1.0. Checked on `main` on 2026-10-08: still there.\n\nWritten with AI assistance (Claude Code).",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/4011"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 4,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": ["CI on the published commit (EmDash workflows)", "independent review"],
+	"graded": [
+		"issue acceptance criteria",
+		"private behavioural tests",
+		"adjacent invariants",
+		"changeset/docs/localization when applicable"
+	]
+}

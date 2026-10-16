@@ -1,0 +1,35 @@
+name: Evals
+# Manually dispatched evaluation runs against the staging Worker. Agents run in
+# Cloudflare; this job coordinates, grades and uploads the result bundle.
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "evals arguments, e.g. 'run --case 4141' or 'recovery'"
+        required: true
+        default: "recovery"
+permissions:
+  contents: read
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: staging-evals
+    steps:
+      - uses: actions/checkout@v5
+      - uses: voidzero-dev/setup-vp@v1.21.1
+        with:
+          node-version: "24"
+          cache: true
+      - run: vp install
+      - name: Run evals
+        env:
+          OPERATOR_TOKEN: ${{ secrets.EMDASH_BOT_PI_OPERATOR_TOKEN }}
+          GH_TOKEN: ${{ secrets.EVAL_CONTROLLER_GH_TOKEN }}
+          COMMAND: ${{ inputs.command }}
+        run: pnpm evals $COMMAND --target pi-staging
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: evals/results/

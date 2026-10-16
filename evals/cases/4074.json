@@ -1,0 +1,42 @@
+{
+	"id": "4074",
+	"kind": "revision",
+	"behaviour": "Transactional redirect cleanup, actual publish-handler regression and interrupted revision delivery.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "9f7eb2288067d4f31f41a9f1f24514e9071930d5",
+		"note": "Parent of the bot's first commit on the historical PR. Fixture repositories receive a single-commit snapshot of this tree, without later history."
+	},
+	"issue": {
+		"title": "Slug-change redirect keeps shadowing a new entry published at the old URL",
+		"body": "### Description\n\nChanging a published entry's slug creates an automatic 301 from the old URL to the new one. If a new entry is later published at the old URL, that 301 is still there and is served before the page, so the new entry can never be reached at its own URL. An Editor cannot see or remove it, because managing redirects requires `redirects:manage` (Admin).\n\nExpected: publishing an entry whose URL is the source of an automatic slug-change redirect removes that redirect, the same way a rename already removes the redirect whose source is the new URL (`packages/core/src/database/repositories/redirect.ts:541-555`).\n\nWhere (main 58e5f648):\n- `packages/core/src/astro/middleware/redirect.ts:144` answers with the redirect before `next()`.\n- Create, update and publish in `packages/core/src/api/handlers/content.ts` do not touch redirects whose source is the entry's URL.\n\n### Steps to reproduce\n\nFailing test (test only, no fix; 3 new cases added to the existing dialect suite): https://github.com/marks-zyz/emdash/blob/repro/stale-redirect-shadows-new-entry/packages/core/tests/integration/redirects/slug-change-redirect-dialect.test.ts\n\n```\ncd packages/core && pnpm exec vitest run tests/integration/redirects/slug-change-redirect-dialect.test.ts\n```\n\nEquivalent steps on a site (the test runs them at the repository level):\n1. Publish an entry with slug `a`.\n2. Change its slug to `b` and publish (a 301 `/\u2026/a` to `/\u2026/b` is created).\n3. Delete that entry.\n4. Create a new entry with slug `a` and publish it.\n5. Open `/\u2026/a`: it redirects to `/\u2026/b` instead of showing the new entry.\n\n### Environment\n\nemdash `main` at 58e5f648 (2026-10-09), SQLite dialect in the integration suite. Not checked against the published 1.2.0 package. Related but different: #3437, #2853.\n\n### Screenshots\n\nNot applicable.\n\n### Logs / error output\n\n```\nFAIL ... > published slug-change redirects [sqlite] > removes the auto-redirect from the URL a new entry is published at\nAssertionError: expected { redirect: { \u2026(12) }, \u2026(1) } to be null\nFAIL ... > removes the auto-redirect when a new entry is created as published\nFAIL ... > removes the auto-redirect when an update publishes a new entry\nTests  3 failed | 3 passed (6)\n```\n\nFound while checking EmDash against the tests of a CMS I built earlier on Workers. AI disclosure: the test and this report were prepared with Claude Code (Claude Opus 5.5); I ran the test myself on main and reviewed the text.\n",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/4063"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 4,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": ["CI on the published commit (EmDash workflows)", "independent review"],
+	"graded": [
+		"issue acceptance criteria",
+		"private behavioural tests",
+		"adjacent invariants",
+		"changeset/docs/localization when applicable"
+	],
+	"originalCandidate": {
+		"commit": "520d837c120f012ffe517f1f057ae07b5549b32d",
+		"parent": "9f7eb2288067d4f31f41a9f1f24514e9071930d5",
+		"reviews": [
+			{
+				"id": 5474763809,
+				"state": "COMMENTED",
+				"commitId": "520d837c120f012ffe517f1f057ae07b5549b32d",
+				"body": "This is the right fix for the reported shadowing bug. It correctly scopes the cleanup to automatic slug-change redirects, reuses the existing `interpolateUrlPattern` helper so URLs match what `createAutoRedirect` stored, and adds regression coverage. The approach fits EmDash: it plugs the same gap that `createAutoRedirect` already handles for the \"new URL\" side, but for the \"old URL\" side when a different entry moves in.\n\nWhat I checked:\n- Diff and the full `content.ts` handler context.\n- `RedirectRepository.createAutoRedirect` and `interpolateUrlPattern` to confirm URL computation matches.\n- Test file to verify coverage.\n- `.changeset/README.md` for changeset style.\n- `_emdash_redirects` schema/indexes for query shape.\n\nHeadline conclusion: there are two blocking-ish issues to address before merge:\n1. `removeShadowingAutoRedirect` is executed **outside** the content transaction in all three handlers, while the existing slug-change redirect creation runs inside. If the delete fails or the handler throws after the content write commits, the content mutation is persisted but the stale redirect remains, so the new entry can still be shadowed. It should run inside `withTransaction`.\n2. `handleContentPublish` is wired for the fix but not tested; the PR claims regression tests for create, update-to-publish, and publish paths, but only create and update are covered.\n\nThe changeset wording is a minor style suggestion.\n\n<!-- emdash-review-attempt:9dedb0b0-c41a-11f1-9e45-9ff6c753f7d9 -->"
+			}
+		],
+		"note": "The incomplete candidate and the COMMENTED review that requested transactional cleanup and a publish-handler regression."
+	},
+	"faults": ["after-candidate-sealed"]
+}

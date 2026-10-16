@@ -1,0 +1,21 @@
+{
+	"id": "4141",
+	"status": "validated",
+	"referenceCommit": "e25662d2d74f940904700b68529f5d7e61420be2",
+	"tests": ["packages/admin/tests/editor/table-cell-safety.test.tsx"],
+	"setup": [
+		"pnpm install --frozen-lockfile",
+		"pnpm build",
+		"pnpm --filter @emdash-cms/admin exec playwright install chromium"
+	],
+	"commands": [
+		"pnpm --filter @emdash-cms/admin exec vitest run tests/editor/table-cell-safety.test.tsx"
+	],
+	"expectedOriginalFailure": "The reference tests fail on the starting commit for the reported behaviour. Confirm with `pnpm evals validate --case 4141` before scoring.",
+	"note": "Reference tests come from the historical PR head and are never shown to the author. Accept correct alternative implementations; do not grade similarity to the reference diff.",
+	"validation": {
+		"date": "2026-10-14",
+		"startingCommit": "3 failed / 46 passed: aligned paragraph, Google Docs centred headers, merged cell colwidth",
+		"reference": "49 passed"
+	}
+}

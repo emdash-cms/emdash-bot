@@ -1,0 +1,51 @@
+{
+	"profile": "staging",
+	"botLogin": "emdash-autofix-staging[bot]",
+	"repositories": [
+		{
+			"id": 1419114614,
+			"fullName": "emdash-cms/emdash-bot-pi-fixture",
+			"focusedChecks": {
+				"test": "node test.js"
+			}
+		}
+	],
+	"maintainers": ["ascorbic"],
+	"reviewers": ["emdashbot[bot]", "ascorbic"],
+	"authorModel": "cloudflare-ai-gateway:gpt-6.1-sol",
+	"childModel": "cloudflare-ai-gateway:gpt-5.6-luna",
+	"thinkingLevel": "medium",
+	"checks": {
+		"code": ["test"],
+		"administrative": ["PR Maintenance"],
+		"required": ["test"]
+	},
+	"gatewayId": "default",
+	"intakeLabel": "emdash-bot",
+	"repositoryPattern": "^emdash-cms/emdash-bot-pi-eval-[a-z0-9-]+$",
+	"defaultRepository": {
+		"focusedChecks": {
+			"node-test": "node test.js",
+			"pnpm-filter": "pnpm --filter",
+			"vitest-root": "pnpm exec vitest run"
+		},
+		"prepare": "if [ -f pnpm-lock.yaml ]; then corepack enable >/dev/null 2>&1 || true; for i in 1 2 3 4; do corepack install && break; sleep 5; done; pnpm install --frozen-lockfile; fi",
+		"autoIntake": false,
+		"requiredChecks": [],
+		"areaLabels": {
+			"packages/core/": "area/core",
+			"packages/admin/": "area/admin",
+			"packages/auth": "area/auth",
+			"packages/cloudflare/": "area/cloudflare",
+			"packages/plugin": "area/plugins",
+			"packages/registry-cli/": "area/cli",
+			"packages/plugin-cli/": "area/cli",
+			"packages/create-emdash/": "area/cli",
+			"templates/": "area/templates",
+			"docs/": "area/docs",
+			".github/": "area/ci"
+		}
+	},
+	"autoIntake": true,
+	"autoIntakeMaintainers": true
+}

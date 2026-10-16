@@ -1,0 +1,28 @@
+{
+	"id": "4070",
+	"kind": "fix",
+	"behaviour": "Field metadata cleanup restricted to column-add failure, preserving later-error behavior.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "9f7eb2288067d4f31f41a9f1f24514e9071930d5",
+		"note": "Parent of the bot's first commit on the historical PR. Fixture repositories receive a single-commit snapshot of this tree, without later history."
+	},
+	"issue": {
+		"title": "createField on D1 leaves an orphan field row when the column cannot be added",
+		"body": "### Description\n\nOn D1, when `createField` cannot add the column (for example the collection table is already at D1's 100-column limit), the row it inserted into `_emdash_fields` stays behind. The field is listed in the schema but has no column, and retrying after freeing a column fails with `FIELD_EXISTS`.\n\nExpected: a failed `createField` leaves no field row, so the field can be created once there is room. `createCollection` already guards against this (\"so a failure in table creation doesn't leave an orphaned row\", `packages/core/src/schema/registry.ts:563`).\n\nWhere (main 58e5f648):\n- `packages/core/src/schema/registry.ts:1323` inserts into `_emdash_fields`, then `:1350` calls `addColumn`; the catch does not remove the row.\n- `packages/core/src/database/transaction.ts`: on D1, `withTransaction` runs the callback without a transaction, so the insert is not rolled back.\n\n### Steps to reproduce\n\nFailing test (test only, no fix): https://github.com/marks-zyz/emdash/blob/repro/create-field-orphan-on-d1/packages/core/tests/workerd/create-field-column-limit-d1.test.ts\n\n```\npnpm run --filter 'emdash...' build\ncd packages/core && pnpm exec vitest run --config vitest.workerd.config.ts tests/workerd/create-field-column-limit-d1.test.ts\n```\n\nEquivalent steps on a site: on D1, add fields to one collection through the admin or the schema API until the table has 100 columns (15 system columns + 85 fields). The next `createField` fails with `too many columns`, the field still appears in the schema, and creating it again returns `FIELD_EXISTS`.\n\n### Environment\n\nemdash `main` at 58e5f648 (2026-10-09), Cloudflare adapter, D1 (miniflare in `vitest.workerd.config.ts`). Not checked against the published 1.2.0 package.\n\n### Screenshots\n\nNot applicable.\n\n### Logs / error output\n\n```\nFAIL tests/workerd/create-field-column-limit-d1.test.ts > createField at D1's column cap > leaves no field row behind when the column cannot be added\nAssertionError: expected { \u2026(18) } to be null\nFAIL tests/workerd/create-field-column-limit-d1.test.ts > createField at D1's column cap > creates the rejected field once a column is freed\nSchemaError: Field \"overflow\" already exists in collection \"full_d1\"\nTests  2 failed | 1 passed (3)\n```\n\nFound while checking EmDash against the tests of a CMS I built earlier on Workers (it had a test for this exact case). AI disclosure: the test and this report were prepared with Claude Code (Claude Opus 5.5); I ran the test myself on main and reviewed the text.\n",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/4062"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 4,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": ["CI on the published commit (EmDash workflows)", "independent review"],
+	"graded": [
+		"issue acceptance criteria",
+		"private behavioural tests",
+		"adjacent invariants",
+		"changeset/docs/localization when applicable"
+	]
+}

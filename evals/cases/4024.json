@@ -1,0 +1,28 @@
+{
+	"id": "4024",
+	"kind": "fix",
+	"behaviour": "System-table classification without substring false positives or loss of incomplete-migration tolerance.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "ab47586106b5364b8bf960a0412a91753b7f7b76",
+		"note": "Parent of the bot's first commit on the historical PR. Fixture repositories receive a single-commit snapshot of this tree, without later history."
+	},
+	"issue": {
+		"title": "Listings filtered or sorted by a custom field return empty while core migrations are pending (no such column: r.slug), reported as a \"where filter\" warning",
+		"body": "### Description\n\nOn a D1 site whose ledger was at 078 (079\u2013091 pending) running 1.1.0 code, every `getEmDashCollection()` call with a `where` or `orderBy` on a custom field returned no entries. The home page's listings were empty. The only trace was `[emdash] where filter: D1_ERROR: no such column: r.slug: SQLITE_ERROR`.\n\nThe failing query is the reference-field lookup in field-map (`LEFT JOIN _emdash_relations AS r ON r.slug = ...`). `_emdash_relations` only gets a `slug` column in `086_relations_structural`. The code tolerates the table being missing but not the column being missing, so the error reaches the loader's catch, which turns it into `{ entries: [] }` and a warning that blames the caller's filter. It clears once 086 is applied (confirmed).\n\nWhat would help: in `loadBindings`, treat a missing column like a missing table and return `[]`; in the loader's catch, do not label a missing column on a system table as a \"where filter\" problem; surface it as an error so pending migrations are visible instead of silently emptying listings.\n\n### Steps to reproduce\n\n1. D1 database migrated to `078_menu_item_translation_groups` (`_emdash_relations` without `slug`).\n2. Run 1.1.0 or 1.2.0 code against it (in `manual` mode, or while runtime init is failing on pending migrations).\n3. `getEmDashCollection(\"posts\", { orderBy: { some_custom_field: \"desc\" } })` returns empty; the console shows the warning.\n4. Apply 086; the same call returns entries.\n\n### Environment\n\n- emdash version: 1.1.0 (same code in 1.2.0: dist/field-map, dist/loader)\n- Runtime: Cloudflare Workers + D1\n\n### Screenshots\n\nn/a\n\n### Logs / error output\n\n```shell\n[emdash] where filter: D1_ERROR: no such column: r.slug: SQLITE_ERROR\n```",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/4019"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 4,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": ["CI on the published commit (EmDash workflows)", "independent review"],
+	"graded": [
+		"issue acceptance criteria",
+		"private behavioural tests",
+		"adjacent invariants",
+		"changeset/docs/localization when applicable"
+	]
+}

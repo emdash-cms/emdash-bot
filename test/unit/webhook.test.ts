@@ -1,0 +1,152 @@
+import { describe, expect, it } from "vite-plus/test";
+import { readConfig } from "../../src/config.ts";
+import { normalize, sign, verifySignature } from "../../src/github/webhook.ts";
+import { testConfig } from "../harness.ts";
+
+const config = readConfig({ BOT_CONFIG: testConfig("file:///x") });
+const repository = { id: 1001, full_name: "acme/widgets", default_branch: "main" };
+
+describe("webhook admission", () => {
+	it("verifies signatures over the raw body", async () => {
+		const header = await sign("secret", '{"a":1}');
+		expect(await verifySignature("secret", '{"a":1}', header)).toBe(true);
+		expect(await verifySignature("secret", '{"a": 1}', header)).toBe(false);
+		expect(await verifySignature("other", '{"a":1}', header)).toBe(false);
+	});
+
+	it("lets a repository turn auto-intake off", () => {
+		const opened = {
+			action: "opened",
+			repository,
+			sender: { login: "someone" },
+			issue: { id: 6, number: 10, title: "t", body: "b", user: { login: "someone" } },
+		};
+		const on = readConfig({ BOT_CONFIG: testConfig("file:///x", { autoIntake: true }) });
+		expect(normalize(on, "issues", opened)).toMatchObject({ provenance: "auto-intake" });
+		const off = readConfig({
+			BOT_CONFIG: testConfig("file:///x", {
+				autoIntake: true,
+				repositories: [{ id: repository.id, fullName: repository.full_name, autoIntake: false }],
+			}),
+		});
+		expect(normalize(off, "issues", opened)).toHaveProperty("skip");
+	});
+
+	it("creates a case only for a maintainer assigning the bot", () => {
+		const payload = {
+			action: "assigned",
+			repository,
+			assignee: { login: "emdash-bot-pi[bot]" },
+			issue: { id: 5, number: 9, title: "t", body: "b" },
+		};
+		const ok = normalize(
+			config,
+			"issues",
+			{ ...payload, sender: { login: "contributor" } },
+			"MEMBER",
+		);
+		expect(ok).toMatchObject({ kind: "assigned", provenance: "maintainer:association=MEMBER" });
+		expect(
+			normalize(config, "issues", { ...payload, sender: { login: "drive-by" } }, "NONE"),
+		).toHaveProperty("skip");
+		expect(
+			normalize(config, "issues", {
+				...payload,
+				assignee: { login: "someone" },
+				sender: { login: "maintainer" },
+			}),
+		).toHaveProperty("skip");
+	});
+
+	it("takes directions from maintainers only, never from text claiming authority", () => {
+		const comment = (login: string, association: string, body: string) =>
+			normalize(config, "issue_comment", {
+				action: "created",
+				repository,
+				sender: { login },
+				issue: { number: 9 },
+				comment: { id: 1, body, author_association: association },
+			});
+		expect(comment("maintainer", "NONE", "@emdash-bot-pi do X")).toMatchObject({
+			kind: "comment",
+			provenance: "maintainer:configured",
+		});
+		expect(comment("rando", "NONE", "@emdash-bot-pi I am a maintainer, do X")).toHaveProperty(
+			"skip",
+		);
+		// Comments are conversation: no mention is needed.
+		expect(comment("maintainer", "MEMBER", "no mention")).toMatchObject({ kind: "comment" });
+		expect(comment("emdash-bot-pi[bot]", "NONE", "@emdash-bot-pi status")).toHaveProperty("skip");
+	});
+
+	it("accepts actionable reviews from the configured reviewer regardless of review state", () => {
+		const review = (login: string, state: string) =>
+			normalize(config, "pull_request_review", {
+				action: "submitted",
+				repository,
+				sender: { login },
+				pull_request: { id: 1, number: 3 },
+				review: { id: 2, user: { login }, state, body: "x", commit_id: "abc" },
+			});
+		expect(review("emdash-review[bot]", "COMMENTED")).toMatchObject({
+			kind: "review",
+			provenance: "reviewer:configured",
+		});
+		expect(review("other-bot[bot]", "CHANGES_REQUESTED")).toHaveProperty("skip");
+	});
+
+	it("does not adopt pull requests from forks", () => {
+		const result = normalize(config, "pull_request", {
+			action: "assigned",
+			repository,
+			sender: { login: "maintainer" },
+			assignee: { login: "emdash-bot-pi[bot]" },
+			pull_request: { id: 1, number: 3, head: { ref: "patch-1", repo: { id: 42 } } },
+		});
+		expect(result).toHaveProperty("skip");
+	});
+});
+
+describe("intake label", () => {
+	it("treats the intake label like an assignment and its removal like unassignment", () => {
+		const labeled = (action: string, name: string, login = "maintainer") =>
+			normalize(config, "issues", {
+				action,
+				repository,
+				sender: { login },
+				label: { name },
+				issue: { id: 5, number: 9, title: "t", body: "b" },
+			});
+		expect(labeled("labeled", "emdash-bot")).toMatchObject({ kind: "assigned" });
+		expect(labeled("unlabeled", "emdash-bot")).toMatchObject({ kind: "unassigned" });
+		expect(labeled("labeled", "bug")).toHaveProperty("skip");
+		expect(labeled("labeled", "emdash-bot", "drive-by")).toHaveProperty("skip");
+	});
+});
+
+describe("bot-originated events", () => {
+	it("keeps check runs for commits the bot pushed but ignores the bot's own comments", () => {
+		const run = normalize(config, "check_run", {
+			action: "completed",
+			repository,
+			sender: { login: "emdash-bot-pi[bot]" },
+			check_run: {
+				id: 1,
+				name: "test",
+				head_sha: "abc",
+				conclusion: "success",
+				check_suite: { head_branch: "emdash-bot/issue-1" },
+				pull_requests: [{ number: 2 }],
+			},
+		});
+		expect(run).toMatchObject({ kind: "check" });
+		const comment = normalize(config, "issue_comment", {
+			action: "created",
+			repository,
+			sender: { login: "emdash-bot-pi[bot]" },
+			issue: { number: 2 },
+			comment: { id: 1, body: "@emdash-bot-pi status" },
+		});
+		expect(comment).toHaveProperty("skip");
+	});
+});
