@@ -1,0 +1,19 @@
+scripts/create-github-app.ts
+  s_4c97aa8e7b616f::t_39c706c24958c6 1-3,5,7-10,17-31,34,36-37,40,43-47,49,86,107-111,141-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0ca174e592d5c3dd2237d7483e456c39ec251d55",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
