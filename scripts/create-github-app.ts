@@ -1,28 +1,52 @@
-// Create the staging GitHub App with the manifest flow, then record its
-// credentials in .env.staging (ignored by git). An org admin approves the
-// App in the browser; nothing here runs unattended.
+// Create a GitHub App with the manifest flow, then record its credentials in
+// `.env.<profile>` (ignored by git). An org admin approves the App in the
+// browser; nothing here runs unattended.
 //
-//   node --experimental-strip-types scripts/create-github-app.ts [--org emdash-cms] [--name emdash-bot-pi]
+//   node --experimental-strip-types scripts/create-github-app.ts --profile staging|production [--org emdash-cms]
 //
-// Afterwards: install the App on the fixture repository, run this script with
-// --installation to record the installation ID, then `pnpm run deploy:staging`.
+// Each profile has its own App name, webhook URL and secrets file, and the
+// script refuses to overwrite a file that already records an App. Afterwards,
+// install the App, then run it again with --installation to record the
+// installation ID.
 
 import { createSign } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { parseArgs, parseEnv } from "node:util";
 
+const PROFILES = {
+	staging: {
+		name: "emdash-autofix-staging",
+		url: "https://emdash-bot-pi.emdash-cms.workers.dev",
+		install: "the fixture repository (emdash-cms/emdash-bot-pi-fixture)",
+		deploy: "pnpm run deploy:staging",
+	},
+	production: {
+		name: "emdash-autofix",
+		url: "https://emdash-bot.emdash-cms.workers.dev",
+		install: "emdash-cms/emdash",
+		deploy: "the production deploy (Workers Builds)",
+	},
+} as const;
+
 const { values } = parseArgs({
 	options: {
+		profile: { type: "string", default: "staging" },
 		org: { type: "string", default: "emdash-cms" },
-		name: { type: "string", default: "emdash-autofix" },
-		url: { type: "string", default: "https://emdash-bot-pi.emdash-cms.workers.dev" },
+		name: { type: "string" },
+		url: { type: "string" },
 		port: { type: "string", default: "8976" },
 		installation: { type: "boolean", default: false },
+		force: { type: "boolean", default: false },
 	},
 });
+if (!(values.profile! in PROFILES))
+	throw new Error(`--profile must be one of ${Object.keys(PROFILES).join(", ")}`);
+const profile = PROFILES[values.profile as keyof typeof PROFILES];
+values.name ??= profile.name;
+values.url ??= profile.url;
 
-const SECRETS = ".env.staging";
+const SECRETS = `.env.${values.profile}`;
 // .env format; multi-line values (the private key) are double-quoted with \n escapes.
 const read = (): Record<string, string> =>
 	existsSync(SECRETS) ? (parseEnv(readFileSync(SECRETS, "utf8")) as Record<string, string>) : {};
@@ -59,7 +83,7 @@ if (values.installation) {
 	const installation = installations.find((i) => i.account.login === values.org);
 	if (!installation) throw new Error(`no installation on ${values.org}; install the App first`);
 	write({ GITHUB_APP_INSTALLATION_ID: String(installation.id) });
-	console.log(`Recorded installation ${installation.id}. Next: pnpm run deploy:staging`);
+	console.log(`Recorded installation ${installation.id} in ${SECRETS}. Next: ${profile.deploy}`);
 	process.exit(0);
 }
 
@@ -79,6 +103,11 @@ const manifest = {
 	},
 	default_events: ["issues", "issue_comment", "pull_request", "pull_request_review", "check_run"],
 };
+
+if (!values.installation && read().GITHUB_APP_ID && !values.force)
+	throw new Error(
+		`${SECRETS} already records App ${read().GITHUB_APP_ID}; refusing to overwrite it (pass --force to replace it)`,
+	);
 
 const server = createServer(async (request, response) => {
 	const url = new URL(request.url ?? "/", `http://localhost:${port}`);
@@ -109,10 +138,11 @@ const server = createServer(async (request, response) => {
 		});
 		response.end(`Created ${app.slug}. Return to the terminal.`);
 		console.log(`Created App ${app.slug} (${app.id}); credentials written to ${SECRETS}.`);
-		console.log(`1. Set "botLogin": "${app.slug}[bot]" in profiles/staging.json.`);
-		console.log(`2. Install it on the fixture repository: ${app.html_url}/installations/new`);
-		console.log("3. Delete the fixture repository's own webhook so deliveries are not duplicated.");
-		console.log("4. Run this script with --installation, then pnpm run deploy:staging.");
+		console.log(`1. Set "botLogin": "${app.slug}[bot]" in profiles/${values.profile}.json.`);
+		console.log(`2. Install it on ${profile.install}: ${app.html_url}/installations/new`);
+		console.log(
+			`3. Run this script with --profile ${values.profile} --installation, then ${profile.deploy}.`,
+		);
 		server.close();
 		return;
 	}
