@@ -24,6 +24,17 @@ export interface RepositoryConfig {
 	 * parent still covers them, since the reviewer does not re-review them.
 	 */
 	readonly formatCommit?: FormatCommitRule;
+	/** Where the repository publishes a preview of a pull request, for the reporter to try. */
+	readonly preview?: PreviewConfig;
+}
+
+export interface PreviewConfig {
+	/** The check whose success on the head means the preview is up. */
+	readonly check: string;
+	/** The account whose pull request comment carries `Preview URL: <url>`. */
+	readonly commentAuthor: string;
+	/** A check whose output lists installable package builds (`npm i <url>`), if any. */
+	readonly packagesCheck?: string;
 }
 
 export interface FormatCommitRule {

@@ -12,6 +12,11 @@
 			"prepare": "corepack enable >/dev/null 2>&1 || true; for i in 1 2 3 4; do corepack install && break; sleep 5; done; pnpm install --frozen-lockfile",
 			"autoIntake": false,
 			"formatCommit": { "author": "emdashbot[bot]", "message": "style: format" },
+			"preview": {
+				"check": "Workers Builds: emdash-playground",
+				"commentAuthor": "cloudflare-workers-and-pages[bot]",
+				"packagesCheck": "Continuous Releases"
+			},
 			"areaLabels": {
 				"packages/core/": "area/core",
 				"packages/admin/": "area/admin",

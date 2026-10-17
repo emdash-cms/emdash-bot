@@ -5,9 +5,10 @@ import { describe, expect, it } from "vite-plus/test";
 import { AUTHOR_METHOD } from "../../src/tools/case-tools.ts";
 
 describe("author method", () => {
-	it("asks the reporter to confirm only after the ready-for-review message", () => {
+	it("asks the reporter to try the preview, or to confirm once ready when there is none", () => {
+		expect(AUTHOR_METHOD).toContain('once you receive the "Preview ready" message');
 		expect(AUTHOR_METHOD).toContain(
-			'once you receive the "Ready for human review" message (not before)',
+			'ask once you receive the "Ready for human review" message instead (not before)',
 		);
 	});
 

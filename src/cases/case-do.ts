@@ -1819,7 +1819,7 @@ export class CaseDO extends DurableObject<Env> {
 	 */
 	async #submitToAuthor(key: string, text: string): Promise<void> {
 		// The bot's own milestone notices do not spend the author's run budget.
-		const counted = !/^(published|ready|publication-stopped):/.test(key);
+		const counted = !/^(published|ready|preview|publication-stopped):/.test(key);
 		const slot = await this.#authorSlot("acquire");
 		if (!slot.granted) {
 			const held = this.store.getMeta<Array<{ key: string; text: string }>>("held") ?? [];
@@ -1905,6 +1905,13 @@ export class CaseDO extends DurableObject<Env> {
 		];
 		const status = this.store.getMeta<string>("lastStatus");
 		if (status) lines.push(`Last reported status: ${status}`);
+		const preview = this.store.getMeta<{ head: string; url: string; packages: string[] }>(
+			"preview",
+		);
+		if (preview)
+			lines.push(
+				`Latest preview (of ${preview.head.slice(0, 12)}): ${preview.url}${preview.packages.length ? `; package builds: ${preview.packages.join("; ")}` : ""}`,
+			);
 		const confirmation = this.store.getMeta<{ commentId: number }>("reporterConfirmation");
 		if (confirmation)
 			lines.push(`The reporter confirmed the fix in comment ${confirmation.commentId}.`);
@@ -2258,6 +2265,69 @@ export class CaseDO extends DurableObject<Env> {
 		});
 	}
 
+	/**
+	 * When the repository's preview of the bot's pull request is up, collect its
+	 * links. The first time, tell the author so it can ask the reporter to try
+	 * it; later previews only refresh the links shown in case_status.
+	 */
+	async #reportPreview(head: string | null): Promise<void> {
+		const rule = this.#repoConfig()?.preview;
+		const pr = this.store.getMeta<number>("pr");
+		if (!rule || !head || !pr || this.#identity().kind !== "issue") return;
+		if (this.store.state() !== "active" || this.store.getMeta<string>("previewSeen") === head)
+			return;
+		const up = this.store
+			.verifications()
+			.some((v) => v.name === rule.check && v.commitSha === head && v.outcome === "succeeded");
+		if (!up) return;
+		const github = this.#github();
+		const comments = await github.request<Array<{ user?: { login?: string }; body?: string }>>(
+			"GET",
+			github.repoPath(`/issues/${pr}/comments?per_page=100`),
+		);
+		const url = comments
+			.filter((c) => (c.user?.login ?? "").toLowerCase() === rule.commentAuthor.toLowerCase())
+			.map((c) => /Preview URL:\s*(https:\/\/[^\s,)]+)/i.exec(c.body ?? "")?.[1])
+			.filter(Boolean)
+			.at(-1);
+		if (!url) return;
+		const packages: string[] = [];
+		if (rule.packagesCheck) {
+			const runs = await github.request<{
+				check_runs: Array<{
+					name: string;
+					conclusion: string | null;
+					output?: { text?: string | null };
+				}>;
+			}>("GET", github.repoPath(`/commits/${head}/check-runs?per_page=100`));
+			const text = runs.check_runs.find(
+				(r) => r.name === rule.packagesCheck && r.conclusion === "success",
+			)?.output?.text;
+			for (const m of (text ?? "").matchAll(/\[Open in StackBlitz\]\((https:\/\/[^)\s]+)\)/g))
+				packages.push(`StackBlitz: ${m[1]}`);
+			for (const m of (text ?? "").matchAll(/npm i (https:\/\/\S+)/g))
+				packages.push(`npm i ${m[1]}`);
+		}
+		const first = !this.store.getMeta("preview");
+		this.store.transaction(() => {
+			this.store.setMeta("preview", { head, url, packages: packages.slice(0, 30) });
+			this.store.setMeta("previewSeen", head);
+		});
+		this.store.log("preview.ready", { head, url, packages: packages.length });
+		if (!first) return;
+		await this.#submitToAuthor(
+			`preview:${head}`,
+			`## Preview ready\nFrom: the bot (checks)\n\nA preview of pull request #${pr} at ${head.slice(0, 12)} is up:\n- Site: ${url}${
+				packages.length
+					? `\n- Package builds (name the ones your change touches):\n${packages
+							.slice(0, 30)
+							.map((p) => `  - ${p}`)
+							.join("\n")}`
+					: ""
+			}\n\nAsk the reporter on the issue to try it and confirm it fixes their problem, unless they are the maintainer who assigned you. Later previews update case_status without a message.`,
+		);
+	}
+
 	/** Tell the author, once per head, that the pull request no longer merges cleanly. */
 	async #reportMergeConflict(head: string | null): Promise<void> {
 		const merge = this.store.getMeta<{ head: string; mergeable: boolean | null }>("mergeability");
@@ -2285,6 +2355,9 @@ export class CaseDO extends DurableObject<Env> {
 			await this.#schedule("replies", Date.now());
 		const report = await this.status();
 		await this.#reportMergeConflict(report.head);
+		await this.#reportPreview(report.head).catch((error: unknown) =>
+			this.store.log("preview.failed", { error: errorMessage(error) }),
+		);
 		const last = this.store.getMeta<string>("lastStatus");
 		if (last !== report.status) {
 			this.store.setMeta("lastStatus", report.status);

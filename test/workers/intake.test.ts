@@ -259,3 +259,94 @@ describe("taking over a contributor's pull request", () => {
 		expect(bot.github.show(REPO, published, "greet.js")).toBe(RESOLVED.content.trimEnd());
 	});
 });
+
+describe("asking the reporter to try a preview", () => {
+	it("tells the author when the preview is up, with the site and package links", async () => {
+		bot = await startBot({
+			repositories: [
+				{
+					id: 1001,
+					fullName: REPO,
+					requiredChecks: [],
+					preview: {
+						check: "Preview",
+						commentAuthor: "preview-bot[bot]",
+						packagesCheck: "Packages",
+					},
+				},
+			],
+		});
+		const caseId = issueCaseId(70);
+		const script = {
+			rounds: [
+				...fixScript().rounds,
+				{ steps: [{ tool: "reply", args: { body: "Could you try the preview?", onIssue: true } }] },
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 70, number: 70, script }));
+		const record = await bot.waitFor("published", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
+		});
+		const pr = record.publications[0].prNumber;
+		const head = bot.github.head(REPO, "emdash-bot/issue-70")!;
+		bot.github.comments.push({
+			id: 990,
+			issue: pr,
+			user: "preview-bot[bot]",
+			body: "### Preview URL: https://issue-70.preview.example, https://other.example (commit abc)",
+		});
+		bot.github.checkRuns.push({
+			id: 881,
+			name: "Packages",
+			head_sha: head,
+			status: "completed",
+			conclusion: "success",
+			output: {
+				title: "ok",
+				summary: "Published",
+				text: "[Open in StackBlitz](https://stackblitz.example/t)\n```\nnpm i https://pkg.example/widgets@abc\n```",
+			},
+		});
+		bot.github.checkRuns.push({
+			id: 882,
+			name: "Preview",
+			head_sha: head,
+			status: "completed",
+			conclusion: "success",
+			output: { title: null, summary: "", text: null },
+		});
+		await bot.webhook("check_run", {
+			action: "completed",
+			sender: { login: "github-actions[bot]" },
+			check_run: {
+				id: 882,
+				name: "Preview",
+				head_sha: head,
+				status: "completed",
+				conclusion: "success",
+				output: { title: "", summary: "", text: "" },
+				app: { slug: "github-actions" },
+				check_suite: { head_branch: "emdash-bot/issue-70" },
+				pull_requests: [{ number: pr }],
+			},
+		});
+		await bot.waitFor("the author asked the reporter", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.some((e: any) => e.type === "preview.ready") && authorRuns(r).length >= 2
+				? r
+				: null;
+		});
+		const text = await transcript(bot, caseId);
+		expect(text).toContain("## Preview ready");
+		expect(text).toContain("https://issue-70.preview.example");
+		expect(text).toContain("npm i https://pkg.example/widgets@abc");
+		expect(text).toContain("StackBlitz: https://stackblitz.example/t");
+		await bot.waitFor(
+			"reply on the issue",
+			async () =>
+				bot!.github.comments.find((c) => c.issue === 70 && c.body.includes("try the preview")) ??
+				null,
+		);
+	});
+});
