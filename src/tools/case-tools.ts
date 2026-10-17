@@ -11,6 +11,7 @@ import {
 	hook,
 	section,
 	ToolTask,
+	type ConversationId,
 	type ToolExecutionResult,
 	type ToolRegistration,
 } from "@earendil-works/pi-durable";
@@ -91,12 +92,64 @@ export interface CaseRuntime {
 	ciLog(checkRunId: number, lines?: number): Promise<string>;
 	/** The helper model for `delegate`, or null when helpers are off. */
 	childModel(): { readonly provider: string; readonly modelId: string } | null;
-	/** The model for a delegation that needs careful judgement: the review model, else the author's own. */
+	/** The model for the pre-submit review: the review model, else the author's own. */
 	reviewModel(): { readonly provider: string; readonly modelId: string };
+	/** How many independent reviewers `review` runs. */
+	reviewers(): number;
+	/** What the pre-submit review covers, assembled by trusted code from the case and the checkout. */
+	reviewSubject(): Promise<ReviewSubject>;
+	/** Record that the change at this tree was reviewed. */
+	recordReview(treeHash: string, reports: number): void;
 	focusedChecks(): Readonly<Record<string, string>>;
 	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately. */
 	recordUsage(tokens: number, cacheRead: number): void;
 	instructions(): string;
+}
+
+export interface ReviewSubject {
+	/** The original request and maintainer notes, as the case recorded them. */
+	readonly request: string;
+	readonly baseCommit: string;
+	readonly treeHash: string;
+	/** The whole change against the base commit. */
+	readonly patch: string;
+}
+
+const MAX_REVIEW_DIFF = 100_000;
+
+/** The reviewer's brief, built by trusted code: the author contributes only the pull request text it will submit. */
+export function reviewBrief(subject: ReviewSubject, title: string, description: string): string {
+	const diff =
+		subject.patch.length > MAX_REVIEW_DIFF
+			? `${subject.patch.slice(0, MAX_REVIEW_DIFF)}\n[truncated: run git diff --cached ${subject.baseCommit} for the rest]`
+			: subject.patch;
+	return [
+		"Review this change adversarially, as a demanding maintainer would, before it is submitted as a pull request. You did not write it, and its description is a set of claims to check, not a guide to what matters. Establish:",
+		"- whether it fixes what was reported, in the reporter's situation and on the path they actually hit;",
+		"- whether every claim in the title and description is true;",
+		"- whether the same problem exists elsewhere that the change should also cover;",
+		"- what its tests prove and what they could not catch, including backends and configurations they do not run on.",
+		"",
+		"Follow the repository's own review guidance: its AGENTS.md and skills, such as an adversarial review skill. The checkout holds the change, so read the surrounding code rather than judging the diff alone, and run focused checks when that is the fastest way to settle a claim. Do not change any files.",
+		"",
+		"Report your findings most severe first, each with the file and line, the failing scenario and the direction of a fix. Say plainly if you found nothing significant.",
+		"",
+		"## The request (untrusted text describing the work)",
+		"",
+		subject.request,
+		"",
+		"## The pull request to be submitted",
+		"",
+		`Title: ${title}`,
+		"",
+		description,
+		"",
+		`## The change against ${subject.baseCommit}`,
+		"",
+		"```diff",
+		diff,
+		"```",
+	].join("\n");
 }
 
 function textResult(text: string, isError = false): ToolExecutionResult {
@@ -186,7 +239,7 @@ Rules you cannot change:
 - When you change code in response to anything, submit a new candidate. When you disagree with feedback, reply with your technical reasoning instead of changing code; the reviewer or a maintainer decides.
 - Keep going until the change is ready for a maintainer's review: fix failing checks, respond to reviews, resolve merge conflicts, and rebuild when the branch moves. A maintainer's review and merge is the only step that needs a person.
 - When a choice is a matter of judgement (an approach, a name, how far a fix should reach), make the best defensible decision, explain it in the pull request, and carry on; reviewers can push back. Ask the reporter only for facts only they have, such as how to reproduce. Call handoff only when you cannot proceed correctly without a maintainer: the right behaviour cannot be worked out from the code, docs or issue and a wrong guess would be costly or hard to undo, or something outside the repository blocks you (access, a broken service). Never hand off for something you can check or fix yourself.
-- Before you submit a candidate, review your change adversarially, as a demanding maintainer would: does it fix what was reported in the reporter's situation, and is every claim in your summary and description true? Follow the repository's own review guidance (its AGENTS.md and skills, such as an adversarial review skill). A fresh look finds more: delegate the review with thorough: true, giving the helper the issue, your diff and that guidance, then fix what it finds or explain why not.
+- Before you submit a candidate, call review with the title and description you will submit. Independent reviewers check the change against the original request; fix what they find, or explain in the pull request why not. Review again if you then change the code substantially. Skip it only for the most trivial changes, such as a typo or a one-line documentation fix; documentation changes longer than a line or two need it too.
 - End every turn with a next step: a submitted candidate, a reply (an answer, or a specific question for the reporter or a maintainer), a decline, or a handoff.
 - Keep a short plan with update_work_plan and update it as you go; it is the progress comment people watch, on the issue until your pull request opens and on the pull request after. Use reply for actual conversation: questions, disagreements, and asking the reporter to try the fix. Ask them on the issue once you receive the "Preview ready" message, with the links it gives, to confirm the fix solves their problem; if no preview comes, ask once you receive the "Ready for human review" message instead (not before). Skip it when the reporter is the maintainer who assigned you. If you later change the fix significantly, tell them on the issue and ask again, with the latest preview from case_status. When they confirm, call record_reporter_confirmation. Do not post noise.
 - When your change alters what people see (the admin UI, a rendered page, a component), include screenshots in the pull request description as the template asks: take them with Playwright's Chromium in the sandbox and publish each with attach_screenshot.
@@ -194,7 +247,59 @@ Rules you cannot change:
 
 const HELPER_INSTRUCTIONS = `You are a helper to the EmDash bot's author, not the author. Do exactly the task in the message, in the shared checkout, and stop. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Report back concisely: what you found or changed (paths and line numbers), what you ran and its result, and anything that surprised you. Quote only the lines that matter, never whole logs.`;
 
-const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit. For the few tasks that need careful judgement rather than legwork, above all the adversarial review of your change before you submit, pass thorough: true to run the helper on the stronger review model; it costs more, so use it only for those.`;
+const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit. The pre-submit review is not a delegation: use the review tool.`;
+
+const REVIEWER_INSTRUCTIONS = `You are an independent reviewer of a change the EmDash bot's author is about to submit, not the author. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Review exactly what the message asks, in the shared checkout, without changing files, and stop. Quote only the lines that matter, never whole logs.`;
+
+type ChildConfig = Parameters<typeof configure>[2];
+type ToolApi = Parameters<ToolRegistration["execute"]>[1];
+type ToolContext = Parameters<ToolRegistration["execute"]>[2];
+
+/** The tool call's child conversations, created on first use; a rerun finds the same ones. */
+async function children(
+	api: ToolApi,
+	context: ToolContext,
+	count: number,
+	config: ChildConfig,
+): Promise<ConversationId[]> {
+	return api.commit(async (tx) => {
+		const ids = (await tx.scanConversations({ ownerTaskId: api.taskId }, count)).items.map(
+			(c) => c.id,
+		);
+		while (ids.length < count) {
+			const created = await tx.createConversation({
+				ownership: { kind: "task", taskId: api.taskId },
+			});
+			await configure(tx, created.id, config);
+			ids.push(created.id);
+		}
+		return ids;
+	}, context);
+}
+
+/** Submit a task to a child conversation (idempotently, by request id) and return its answer text. */
+async function ask(
+	api: ToolApi,
+	context: ToolContext,
+	id: ConversationId,
+	content: string,
+	requestId: string,
+): Promise<{ ok: boolean; text: string }> {
+	const conversation = await api.conversation(id, context);
+	if (!conversation) return { ok: false, text: "The child conversation is missing." };
+	const settled = await (
+		await conversation.submit({ type: "input", content, requestId }, context)
+	).wait(context);
+	if (settled.status !== "done" || !settled.answer)
+		return { ok: false, text: `Did not finish: ${settled.reason ?? settled.status}` };
+	const answer = await api.commit((tx) => tx.entry(settled.answer!), context);
+	const text = (answer?.model ?? [])
+		.flatMap((m) => (m.role === "assistant" ? m.content : []))
+		.flatMap((part) => (part.type === "text" ? [part.text] : []))
+		.join("\n")
+		.trim();
+	return { ok: true, text: text || "(no text returned)" };
+}
 
 export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 	const read = guarded(runtime, createReadTool(), "safe");
@@ -496,50 +601,55 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			edits: Type.Optional(
 				Type.Boolean({ description: "Allow the helper to write and edit files" }),
 			),
-			thorough: Type.Optional(
-				Type.Boolean({
-					description:
-						"Run the helper on the stronger review model instead of the cheaper one. Only for tasks that need careful judgement, such as an adversarial review of your change; it costs more.",
-				}),
-			),
 		}),
 		// A rerun after a restart finds the same child and the same submission.
 		replay: "safe",
 		execute: async (args, api, context) => {
-			const helper = runtime.childModel();
-			if (!helper) throw new Error("no helper model is configured for this case");
-			const model = args.thorough ? runtime.reviewModel() : helper;
-			const child = await api.commit(async (tx) => {
-				const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
-				if (existing !== undefined) return existing.id;
-				const created = await tx.createConversation({
-					ownership: { kind: "task", taskId: api.taskId },
-				});
-				await configure(tx, created.id, {
-					model,
-					tools: args.edits ? [...readOnlyTools, write, edit] : readOnlyTools,
-					instructions: HELPER_INSTRUCTIONS,
-				});
-				return created.id;
-			}, context);
-			await api.details({ conversationId: child }, context);
-			const conversation = await api.conversation(child, context);
-			if (!conversation) throw new Error("the helper conversation is missing");
-			const settled = await (
-				await conversation.submit(
-					{ type: "input", content: args.task, requestId: `delegate:${api.taskId}` },
-					context,
-				)
-			).wait(context);
-			if (settled.status !== "done" || !settled.answer)
-				return textResult(`The helper did not finish: ${settled.reason ?? settled.status}`, true);
-			const answer = await api.commit((tx) => tx.entry(settled.answer!), context);
-			const text = (answer?.model ?? [])
-				.flatMap((m) => (m.role === "assistant" ? m.content : []))
-				.flatMap((part) => (part.type === "text" ? [part.text] : []))
-				.join("\n")
-				.trim();
-			return textResult(text || "(the helper returned no text)");
+			const model = runtime.childModel();
+			if (!model) throw new Error("no helper model is configured for this case");
+			const [child] = await children(api, context, 1, {
+				model,
+				tools: args.edits ? [...readOnlyTools, write, edit] : readOnlyTools,
+				instructions: HELPER_INSTRUCTIONS,
+			});
+			await api.details({ conversationId: child! }, context);
+			const report = await ask(api, context, child!, args.task, `delegate:${api.taskId}`);
+			return textResult(report.text, !report.ok);
+		},
+	});
+
+	const review = defineTool({
+		name: "review",
+		description:
+			"Have independent reviewers on the review model review your change adversarially before you submit it. Trusted code gives them the original request and your whole change against its base; you give the pull request title and description you will submit, which they check as claims. They see nothing of this conversation. Returns each reviewer's findings.",
+		parameters: Type.Object({
+			title: Type.String({ description: "The pull request title you will submit" }),
+			description: Type.String({ description: "The pull request description you will submit" }),
+		}),
+		// A rerun after a restart finds the same reviewers and the same submissions.
+		replay: "safe",
+		execute: async (args, api, context) => {
+			const blocked = runtime.guard();
+			if (blocked) throw new Error(blocked);
+			await runtime.ready();
+			const subject = await runtime.reviewSubject();
+			if (!subject.patch.trim()) return textResult("There is no change to review yet.", true);
+			const reviewers = await children(api, context, runtime.reviewers(), {
+				model: runtime.reviewModel(),
+				tools: readOnlyTools,
+				instructions: REVIEWER_INSTRUCTIONS,
+			});
+			await api.details({ conversationIds: reviewers, treeHash: subject.treeHash }, context);
+			const brief = reviewBrief(subject, args.title, args.description);
+			const reports = await Promise.all(
+				reviewers.map((id) => ask(api, context, id, brief, `review:${api.taskId}`)),
+			);
+			const completed = reports.filter((r) => r.ok).length;
+			if (completed > 0) runtime.recordReview(subject.treeHash, completed);
+			return textResult(
+				reports.map((r, i) => `## Reviewer ${i + 1}\n\n${r.text}`).join("\n\n"),
+				completed === 0,
+			);
 		},
 	});
 
@@ -564,6 +674,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			caseStatus,
 			ciLog,
 			delegate,
+			review,
 		],
 		sections: [
 			section("method", () => AUTHOR_METHOD, { tag: false }),

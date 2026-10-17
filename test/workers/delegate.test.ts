@@ -1,6 +1,6 @@
-// A parent author hands token-heavy work to a helper model through delegate.
-// The helper shares the checkout, cannot publish, and its report comes back
-// as the tool result.
+// A parent author hands token-heavy work to a helper model through delegate,
+// and has its change reviewed by independent reviewers through review. Both
+// share the checkout, cannot publish, and report back as the tool result.
 
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { type Bot, FIX_GREETING, assignIssue, issueCaseId, startBot } from "../harness.ts";
@@ -50,8 +50,8 @@ describe("delegate", () => {
 		expect(bot.github.pulls).toHaveLength(1);
 	});
 
-	it("runs a thorough delegation on the author's own model, not the helper", async () => {
-		// A helper model that cannot answer: only the author's model can complete the task.
+	it("reviews the change with independent reviewers before submitting", async () => {
+		// No review model configured: the reviewers run on the author's own model.
 		bot = await startBot({ childModel: "workers-ai:@cf/unavailable/helper" });
 		const caseId = issueCaseId(97);
 		const reviewer = {
@@ -66,35 +66,47 @@ describe("delegate", () => {
 			rounds: [
 				{
 					steps: [
-						{ tool: "delegate", args: { task: helperBrief(reviewer), thorough: true } },
-						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
+						{ tool: "write", args: FIX_GREETING },
+						{
+							tool: "review",
+							args: { title: "fix: punctuate", description: helperBrief(reviewer) },
+						},
+						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
 					],
 				},
 			],
 		};
 		await bot.webhook("issues", assignIssue({ issueId: 97, number: 97, script }));
-		await bot.waitFor("handoff", async () => (await bot!.inspect(caseId)).handoff);
+		await bot.waitFor("sealed", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.find((e: any) => e.type === "candidate.sealed") ?? null;
+		});
+		const record = await bot.inspect(caseId);
+		const reviewed = record.log.find((e: any) => e.type === "review.completed");
+		expect(reviewed?.data.reports).toBe(2);
+		const sealed = record.log.find((e: any) => e.type === "candidate.sealed");
+		expect(sealed.data.reviewed).toBe(true);
 		const evidence = await bot.ops(`cases/${caseId}/evidence`);
 		const results = evidence.transcript
 			.flatMap((e: any) => e.model ?? [])
-			.filter((m: any) => m.role === "toolResult" && m.toolName === "delegate");
-		expect(JSON.stringify(results)).toContain("Review: no defects found.");
+			.filter((m: any) => m.role === "toolResult" && m.toolName === "review");
+		const text = JSON.stringify(results);
+		expect(text).toContain("Reviewer 2");
+		expect(text).toContain("Review: no defects found.");
 	});
 
-	it("runs a thorough delegation on the configured review model", async () => {
-		// A review model that cannot answer: the thorough delegation fails, where the helper would not.
-		bot = await startBot({
-			childModel: "scripted:author",
-			reviewModel: "workers-ai:@cf/unavailable/review",
-		});
+	it("runs the review on the configured review model", async () => {
+		// A review model that cannot answer: the review fails, where the author's model would not.
+		bot = await startBot({ reviewModel: "workers-ai:@cf/unavailable/review" });
 		const caseId = issueCaseId(98);
 		const script = {
 			rounds: [
 				{
 					steps: [
+						{ tool: "write", args: FIX_GREETING },
 						{
-							tool: "delegate",
-							args: { task: helperBrief({ rounds: [{ steps: [] }] }), thorough: true },
+							tool: "review",
+							args: { title: "fix", description: helperBrief({ rounds: [{ steps: [] }] }) },
 						},
 						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
 					],
@@ -103,10 +115,12 @@ describe("delegate", () => {
 		};
 		await bot.webhook("issues", assignIssue({ issueId: 98, number: 98, script }));
 		await bot.waitFor("handoff", async () => (await bot!.inspect(caseId)).handoff);
+		const record = await bot.inspect(caseId);
+		expect(record.log.some((e: any) => e.type === "review.completed")).toBe(false);
 		const evidence = await bot.ops(`cases/${caseId}/evidence`);
 		const results = evidence.transcript
 			.flatMap((e: any) => e.model ?? [])
-			.filter((m: any) => m.role === "toolResult" && m.toolName === "delegate");
+			.filter((m: any) => m.role === "toolResult" && m.toolName === "review");
 		expect(JSON.stringify(results)).toMatch(/did not finish|unavailable|error/i);
 	});
 

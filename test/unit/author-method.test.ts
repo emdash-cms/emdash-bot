@@ -20,9 +20,7 @@ describe("author method", () => {
 			"make the best defensible decision, explain it in the pull request, and carry on",
 		);
 		expect(AUTHOR_METHOD).toContain("End every turn with a next step");
-		expect(AUTHOR_METHOD).toContain(
-			"Before you submit a candidate, review your change adversarially",
-		);
+		expect(AUTHOR_METHOD).toContain("Before you submit a candidate, call review");
 	});
 
 	it("lets the author decide whether nits are worth fixing in this pull request", () => {

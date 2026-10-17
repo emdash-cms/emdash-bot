@@ -39,7 +39,7 @@ interface Script {
 	}>;
 }
 
-const BLOCK = /```scripted-author\s*\n([\s\S]*?)\n```/;
+const BLOCK = /```scripted-author\s*\n([\s\S]*?)\n```/g;
 
 function messageText(message: Message): string {
 	const sections =
@@ -65,9 +65,10 @@ export function nextScriptedResponse(messages: readonly Message[]) {
 		m.role === "user" && !milestone.test(messageText(m).trimStart()) ? [i] : [],
 	);
 	let script: Script | undefined;
-	// The script may sit in a message or in the case record's system section.
+	// The script may sit in a message or in the case record's system section;
+	// the last one wins, so a reviewer's brief can carry its own after the request's.
 	for (const message of messages) {
-		const match = BLOCK.exec(messageText(message));
+		const match = [...messageText(message).matchAll(BLOCK)].at(-1);
 		if (match) script = JSON.parse(match[1]!) as Script;
 	}
 	if (!script) return fauxAssistantMessage("No scripted-author block was provided; nothing to do.");

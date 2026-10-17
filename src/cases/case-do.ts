@@ -61,6 +61,7 @@ import {
 	type CaseRuntime,
 	type DefaultBranchMerge,
 	type MutationOutcome,
+	type ReviewSubject,
 	caseExtension,
 } from "../tools/case-tools.ts";
 import { Mutex, errorMessage, sha256Hex, str, text } from "../util.ts";
@@ -510,6 +511,12 @@ export class CaseDO extends DurableObject<Env> {
 				);
 				return { provider: parsed.provider, modelId: parsed.id };
 			},
+			reviewers: () => this.config.selfReviewers,
+			reviewSubject: () => this.#reviewSubject(),
+			recordReview: (treeHash, reports) => {
+				this.store.setMeta("review", { treeHash, reports, at: Date.now() });
+				this.store.log("review.completed", { tree: treeHash, reports });
+			},
 			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
 			decline: (opId, reason, message) => this.#decline(opId, reason, message),
 			updateWorkPlan: async (input) => {
@@ -597,6 +604,27 @@ export class CaseDO extends DurableObject<Env> {
 				changed: captured.changed,
 				checkpointId: captured.checkpoint.id,
 				replayed: false,
+			};
+		});
+	}
+
+	/** The original request and the whole working tree against its base, for the pre-submit review. */
+	async #reviewSubject(): Promise<ReviewSubject> {
+		return this.#source.run(async () => {
+			const latest = this.store.latestCheckpoint();
+			if (!latest) throw new Error("the case has no source yet");
+			const captured = await captureSource(this.#authorSandbox(), latest.baseCommit);
+			const request = [
+				...this.store.requirements().map((r) => r.body),
+				...maintainerNotes(
+					this.store.getMeta<Array<MaintainerNote & { actor: string }>>("maintainerNotes"),
+				),
+			].join("\n\n");
+			return {
+				request,
+				baseCommit: latest.baseCommit,
+				treeHash: captured.treeHash,
+				patch: text(captured.patch),
 			};
 		});
 	}
@@ -824,6 +852,8 @@ export class CaseDO extends DurableObject<Env> {
 			this.store.log("candidate.sealed", {
 				candidate: sealed.id,
 				tree: sealed.sourceTreeHash,
+				reviewed:
+					this.store.getMeta<{ treeHash: string }>("review")?.treeHash === sealed.sourceTreeHash,
 				base: sealed.sourceBaseCommit,
 				expectedHead: sealed.expectedBranchHead,
 			});
@@ -2017,6 +2047,12 @@ export class CaseDO extends DurableObject<Env> {
 			lines.push(
 				`Latest preview (of ${preview.head.slice(0, 12)}): ${preview.url}${preview.packages.length ? `; package builds: ${preview.packages.join("; ")}` : ""}`,
 			);
+		const review = this.store.getMeta<{ treeHash: string; reports: number }>("review");
+		lines.push(
+			review
+				? `Last pre-submit review: tree ${review.treeHash.slice(0, 12)} (${review.reports} reviewer${review.reports === 1 ? "" : "s"}).`
+				: "Last pre-submit review: none.",
+		);
 		const confirmation = this.store.getMeta<{ commentId: number }>("reporterConfirmation");
 		if (confirmation)
 			lines.push(`The reporter confirmed the fix in comment ${confirmation.commentId}.`);
