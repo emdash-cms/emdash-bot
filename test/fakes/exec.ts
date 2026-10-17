@@ -92,8 +92,10 @@ export function createExecFake(base: string): ExecFake {
 				if (wire.stdin) child.stdin.end(Buffer.from(wire.stdin, "base64"));
 				else child.stdin.end();
 			});
-			const isGitBlob = wire.argv.includes("cat-file") || wire.argv.includes("diff");
-			const stdout = isGitBlob ? result.stdout : Buffer.from(unmap(result.stdout.toString("utf8")));
+			// Binary output (git blobs, files read with cat) passes through untouched.
+			const isBinary =
+				wire.argv.includes("cat-file") || wire.argv.includes("diff") || wire.argv[0] === "cat";
+			const stdout = isBinary ? result.stdout : Buffer.from(unmap(result.stdout.toString("utf8")));
 			return Response.json({
 				exitCode: result.exitCode,
 				stdout: stdout.toString("base64"),

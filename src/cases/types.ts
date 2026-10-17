@@ -181,6 +181,8 @@ export interface ReviewRecord {
 	/** Actionable items in the review: findings-block entries, or the body and inline comments. */
 	readonly actionable: number;
 	readonly receivedAt: number;
+	/** A maintainer's approval or change request, rather than the configured reviewer's review. */
+	readonly maintainer?: boolean;
 }
 
 /** A reply the author asked trusted code to post. */

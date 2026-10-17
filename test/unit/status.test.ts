@@ -88,6 +88,40 @@ describe("deterministic status", () => {
 		);
 	});
 
+	it("lets a maintainer's approval or change request on the head decide the review", () => {
+		const bot = {
+			reviewId: "b",
+			reviewer: "x",
+			commit: "h1",
+			state: "COMMENTED",
+			structured: true,
+			actionable: 2,
+			receivedAt: 1,
+		};
+		const approve = {
+			...bot,
+			reviewId: "m",
+			reviewer: "ascorbic",
+			state: "APPROVED",
+			structured: false,
+			actionable: 0,
+			maintainer: true,
+		};
+		expect(computeStatus({ ...base, reviews: [bot] }).status).toBe("changes-required");
+		const approved = computeStatus({ ...base, reviews: [bot, approve] });
+		expect(approved.status).toBe("ready-for-human");
+		expect(approved.reasons[0]).toContain("@ascorbic approved the current head");
+		const changes = { ...approve, reviewId: "c", state: "CHANGES_REQUESTED", actionable: 1 };
+		expect(computeStatus({ ...base, reviews: [approve, changes] })).toMatchObject({
+			status: "changes-required",
+			nextAction: "the bot will respond to @ascorbic's review",
+		});
+		// An approval of an older head does not count.
+		expect(computeStatus({ ...base, reviews: [{ ...approve, commit: "h0" }] }).status).toBe(
+			"candidate-published",
+		);
+	});
+
 	it("separates code failures from infrastructure failures", () => {
 		expect(
 			computeStatus({ ...base, verifications: [check("test", "h1", "failed", "code")] }).status,

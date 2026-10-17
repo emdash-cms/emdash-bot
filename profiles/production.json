@@ -1,5 +1,6 @@
 {
 	"profile": "production",
+	"publicUrl": "https://autofix.emdashcms.com",
 	"botLogin": "emdash-autofix[bot]",
 	"repositories": [
 		{

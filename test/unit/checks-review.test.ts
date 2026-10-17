@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { classifyCheck } from "../../src/github/checks.ts";
 import { isFormatOnlyPush, parseReview } from "../../src/github/review.ts";
 import { commitParents } from "../../src/github/publisher.ts";
+import { imageType } from "../../src/source/image.ts";
 import { egressDecision } from "../../src/execution/egress-policy.ts";
 import { nextScriptedResponse } from "../../src/runtime/scripted-author.ts";
 
@@ -199,5 +200,20 @@ describe("published commit parents", () => {
 			"head",
 			"main2",
 		]);
+	});
+});
+
+describe("screenshot image types", () => {
+	it("recognises PNG, JPEG and WebP by their bytes only", () => {
+		const bytes = (...b: number[]) => new Uint8Array(b);
+		expect(imageType(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0))).toMatchObject({
+			ext: "png",
+		});
+		expect(imageType(bytes(0xff, 0xd8, 0xff, 0xe0))).toMatchObject({ ext: "jpg" });
+		expect(
+			imageType(bytes(0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50)),
+		).toMatchObject({ ext: "webp" });
+		expect(imageType(new TextEncoder().encode("<svg xmlns=...>"))).toBeNull();
+		expect(imageType(bytes(0x47, 0x49, 0x46, 0x38))).toBeNull();
 	});
 });

@@ -386,3 +386,51 @@ describe("the public board", () => {
 		expect(html).toContain("Greeting lacks punctuation");
 	});
 });
+
+describe("screenshots", () => {
+	it("publishes a screenshot from the sandbox and serves it as an image", async () => {
+		bot = await startBot({ repositories: [{ id: 1001, fullName: REPO, requiredChecks: [] }] });
+		const caseId = issueCaseId(90);
+		// A 1x1 PNG, written outside the repository so it is not part of the change.
+		const png =
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{
+							tool: "bash",
+							args: {
+								command: `echo ${png} | base64 -d > /tmp/shot-90.png && echo '<svg/>' > /tmp/fake-90.png`,
+							},
+						},
+						{
+							tool: "attach_screenshot",
+							args: { path: "/tmp/shot-90.png", alt: "The fixed greeting" },
+						},
+						{ tool: "attach_screenshot", args: { path: "/tmp/fake-90.png", alt: "Not an image" } },
+						{ tool: "attach_screenshot", args: { path: "/etc/passwd", alt: "Outside" } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 90, number: 90, script }));
+		const record = await bot.waitFor("screenshot attached", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.some((e: any) => e.type === "author.idle") ? r : null;
+		});
+		const attached = record.log.filter((e: any) => e.type === "screenshot.attached");
+		expect(attached).toHaveLength(1);
+		const url = new URL(attached[0].data.url);
+		expect(url.pathname).toMatch(/^\/screenshots\/1001-issue-90\/[0-9a-f]{64}\.png$/);
+		const served = await bot.mf.dispatchFetch(`https://bot.test${url.pathname}`);
+		expect(served.status).toBe(200);
+		expect(served.headers.get("content-type")).toBe("image/png");
+		expect(served.headers.get("x-content-type-options")).toBe("nosniff");
+		expect((await served.arrayBuffer()).byteLength).toBeGreaterThan(60);
+		const text = await transcript(bot, caseId);
+		expect(text).toContain("is not a PNG, JPEG or WebP image");
+		expect(text).toContain("must be saved under /tmp or the workspace");
+		expect((await bot.mf.dispatchFetch("https://bot.test/screenshots/x/y.svg")).status).toBe(404);
+	});
+});

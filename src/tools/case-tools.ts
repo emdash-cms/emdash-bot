@@ -66,6 +66,8 @@ export interface CaseRuntime {
 		description?: string,
 	): Promise<Candidate>;
 	handoff(opId: string, reason: string, nextAction: string): Promise<void>;
+	/** Publish a screenshot saved in the sandbox; returns its public URL. */
+	attachScreenshot(opId: string, path: string): Promise<string>;
 	/** Merge the default branch's current head into the work, leaving conflicts to resolve. */
 	mergeDefaultBranch(opId: string): Promise<DefaultBranchMerge>;
 	/** Queue a reply for trusted code to post: under a review comment, or on the pull request. */
@@ -182,6 +184,7 @@ Rules you cannot change:
 - When you change code in response to anything, submit a new candidate. When you disagree with feedback, reply with your technical reasoning instead of changing code; the reviewer or a maintainer decides.
 - If you cannot proceed correctly (missing information, intended behaviour, a blocker), reply asking for what you need, or call handoff when only a maintainer can unblock you.
 - Keep a short plan with update_work_plan and update it as you go; it is the progress comment people watch, on the issue until your pull request opens and on the pull request after. Use reply for actual conversation: questions, disagreements, and asking the reporter to try the fix. Ask them on the issue once you receive the "Preview ready" message, with the links it gives, to confirm the fix solves their problem; if no preview comes, ask once you receive the "Ready for human review" message instead (not before). Skip it when the reporter is the maintainer who assigned you. If you later change the fix significantly, tell them on the issue and ask again, with the latest preview from case_status. When they confirm, call record_reporter_confirmation. Do not post noise.
+- When your change alters what people see (the admin UI, a rendered page, a component), include screenshots in the pull request description as the template asks: take them with Playwright's Chromium in the sandbox and publish each with attach_screenshot.
 - If a time or token budget is exhausted, other tools are refused but submit_candidate, reply and handoff remain available.`;
 
 const HELPER_INSTRUCTIONS = `You are a helper to the EmDash bot's author, not the author. Do exactly the task in the message, in the shared checkout, and stop. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Report back concisely: what you found or changed (paths and line numbers), what you ran and its result, and anything that surprised you. Quote only the lines that matter, never whole logs.`;
@@ -248,6 +251,28 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			return textResult(
 				`Check ${verification.name}: ${verification.outcome} on tree ${verification.treeHash?.slice(0, 12)}.\n${details.output ?? ""}`,
 				verification.outcome !== "succeeded",
+			);
+		},
+	});
+
+	const attachScreenshot = defineTool({
+		name: "attach_screenshot",
+		description:
+			"Publish a screenshot you saved in the sandbox (PNG, JPEG or WebP, up to 5 MB, under /tmp or the workspace) and get a public image URL for the pull request description or a reply. Take screenshots with Playwright's Chromium in the sandbox, such as the admin UI or a rendered page before and after your change. Save them outside the repository (for example in /tmp) so they are not part of your change.",
+		parameters: Type.Object({
+			path: Type.String({ description: "Path of the image file in the sandbox" }),
+			alt: Type.String({ description: "Alt text describing what the screenshot shows" }),
+		}),
+		replay: "safe",
+		execute: async (args, api) => {
+			const blocked = runtime.guard();
+			if (blocked) throw new Error(blocked);
+			runtime.workStarted();
+			await runtime.ready();
+			const url = await runtime.attachScreenshot(`tool:${api.taskId}`, args.path);
+			const alt = args.alt.replace(/["<>\n]/g, " ").trim();
+			return textResult(
+				`Published. Use it in Markdown as:\n<img alt="${alt}" src="${url}" width="800">`,
 			);
 		},
 	});
@@ -516,6 +541,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			search,
 			listFiles,
 			runCheck,
+			attachScreenshot,
 			mergeDefaultBranch,
 			submitCandidate,
 			handoff,

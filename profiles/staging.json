@@ -1,5 +1,6 @@
 {
 	"profile": "staging",
+	"publicUrl": "https://emdash-bot-pi.emdash-cms.workers.dev",
 	"botLogin": "emdash-autofix-staging[bot]",
 	"repositories": [
 		{

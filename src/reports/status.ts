@@ -47,7 +47,7 @@ export interface StatusReport {
 	readonly publication: Publication | undefined;
 	readonly head: string | null;
 	readonly requiredChecks: readonly RequiredCheck[];
-	/** The configured reviewer's latest review of the current head (or the commit it formats), if any. */
+	/** The review that decides readiness on the current head (or a commit it only formats): a maintainer's latest approval or change request, else the configured reviewer's latest review. */
 	readonly review: ReviewRecord | undefined;
 	readonly reviewedHead: boolean;
 	readonly humanApproval: "required";
@@ -111,7 +111,10 @@ export function computeStatus(input: StatusInput): StatusReport {
 		commit = input.formatParents?.[commit]
 	)
 		covered.add(commit);
-	const review = input.reviews.filter((r) => covered.has(r.commit)).at(-1);
+	const onHead = input.reviews.filter((r) => covered.has(r.commit));
+	// A maintainer's latest approval or change request on this head outranks the review bot.
+	const review =
+		onHead.filter((r) => r.maintainer).at(-1) ?? onHead.filter((r) => !r.maintainer).at(-1);
 	const base = {
 		candidate,
 		publication,
@@ -193,13 +196,19 @@ export function computeStatus(input: StatusInput): StatusReport {
 		);
 	}
 	if (review && !reviewIsClean(review)) {
-		return report(
-			"changes-required",
-			[
-				`the reviewer's latest review of the current head has ${review.actionable} item(s) of feedback`,
-			],
-			"the bot will respond to the review, and the reviewer will approve when satisfied",
-		);
+		return review.maintainer
+			? report(
+					"changes-required",
+					[`@${review.reviewer} requested changes on the current head`],
+					`the bot will respond to @${review.reviewer}'s review`,
+				)
+			: report(
+					"changes-required",
+					[
+						`the review bot's latest review of the current head has ${review.actionable} item(s) to address`,
+					],
+					"the bot will respond to the review, and the review bot will approve when satisfied",
+				);
 	}
 	const pending = checks.filter((c) => c.state === "missing" || c.state === "pending");
 	if (pending.length > 0)
@@ -211,8 +220,8 @@ export function computeStatus(input: StatusInput): StatusReport {
 	if (!review)
 		return report(
 			"candidate-published",
-			["no review of the current head by the configured reviewer yet"],
-			"the reviewer will review the current head",
+			["no review of the current head yet"],
+			"the review bot will review the current head, or a maintainer can approve it",
 		);
 	if (
 		!input.mergeability ||
@@ -234,7 +243,7 @@ export function computeStatus(input: StatusInput): StatusReport {
 	return report(
 		"ready-for-human",
 		[
-			"required checks passed, the reviewer's latest review of the current head is clean, and the head merges cleanly",
+			`required checks passed, ${review.maintainer ? `@${review.reviewer} approved the current head` : "the review bot's latest review of the current head is clean"}, and the head merges cleanly`,
 		],
 		"a maintainer will review and approve the pull request",
 	);

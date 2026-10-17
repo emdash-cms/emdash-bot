@@ -108,6 +108,8 @@ export interface BotConfig {
 	readonly budgets: Budgets;
 	readonly checks: CheckPolicy;
 	readonly githubApiUrl: string;
+	/** The Worker's public origin, for links such as published screenshots. */
+	readonly publicUrl: string;
 	readonly gitRemoteBase: string;
 	/** Maximum accepted checkpoint artifact size in bytes. */
 	readonly maxArtifactBytes: number;
@@ -178,6 +180,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		budgets: { ...DEFAULT_BUDGETS, ...raw.budgets },
 		checks: { code: [], administrative: [], required: [], ...raw.checks },
 		githubApiUrl: raw.githubApiUrl ?? "https://api.github.com",
+		publicUrl: (raw.publicUrl ?? "").replace(/\/$/, ""),
 		gitRemoteBase: raw.gitRemoteBase ?? "https://github.com",
 		maxArtifactBytes: raw.maxArtifactBytes ?? 8 * 1024 * 1024,
 		reconcileMs: raw.reconcileMs ?? 15_000,

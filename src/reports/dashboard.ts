@@ -26,7 +26,13 @@ export interface CaseSummary {
 	readonly createdAt: number;
 	readonly lastActivity: number;
 	readonly checks: { readonly passed: number; readonly total: number };
-	readonly review: string | null;
+	/** The review that decides readiness on the current head: a maintainer's, else the review bot's. */
+	readonly review: {
+		readonly by: string;
+		readonly state: string;
+		readonly maintainer: boolean;
+		readonly actionable: number;
+	} | null;
 	readonly reporterConfirmed: boolean;
 	readonly plan: ReadonlyArray<{ readonly title: string; readonly status: string }>;
 	readonly timeline: ReadonlyArray<{ readonly at: number; readonly text: string }>;
@@ -147,11 +153,18 @@ function evidence(summary: CaseSummary): string {
 		chips.push(
 			`<span class="${summary.checks.passed === summary.checks.total ? "yes" : ""}" title="Required checks passed on the current head">checks ${summary.checks.passed}/${summary.checks.total}</span>`,
 		);
-	const review = summary.review?.toLowerCase();
+	const r = summary.review;
+	const by = r ? `@${r.by.replace(/\[bot\]$/, "")}` : "";
 	chips.push(
-		review
-			? `<span class="${review === "approved" ? "yes" : review === "changes_requested" ? "bad" : ""}" title="The reviewer's latest review of the current head">${esc(review === "changes_requested" ? "changes requested" : review)}</span>`
-			: `<span class="no" title="No review of the current head yet">review –</span>`,
+		!r
+			? `<span class="no" title="No review of the current head yet">no review yet</span>`
+			: r.state.toUpperCase() === "APPROVED"
+				? `<span class="yes" title="Approved on the current head">approved by ${esc(by)}</span>`
+				: r.maintainer
+					? `<span class="bad" title="Changes requested on the current head">changes requested by ${esc(by)}</span>`
+					: r.actionable > 0
+						? `<span class="bad" title="The review bot's latest review of the current head">review bot: ${r.actionable} to address</span>`
+						: `<span class="yes" title="The review bot's latest review of the current head">review bot ✓</span>`,
 	);
 	if (summary.kind === "issue")
 		chips.push(

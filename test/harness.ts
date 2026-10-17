@@ -54,6 +54,7 @@ export function testConfig(gitRemoteBase: string, overrides: Record<string, unkn
 	return {
 		profile: "test",
 		botLogin: BOT,
+		publicUrl: "https://bot.test",
 		repositories: [
 			{
 				id: REPO_ID,

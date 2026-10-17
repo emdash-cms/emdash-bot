@@ -138,6 +138,30 @@ async function sandboxSmoke(
 	}
 }
 
+const SCREENSHOT_TYPES: Record<string, string> = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	webp: "image/webp",
+};
+
+/** A screenshot the author published with attach_screenshot, served as an image only. */
+async function screenshot(env: Env, url: URL): Promise<Response> {
+	const match = /^\/screenshots\/([A-Za-z0-9-]+)\/([0-9a-f]{64})\.(png|jpg|webp)$/.exec(
+		url.pathname,
+	);
+	if (!match) return json({ error: "not found" }, 404);
+	const object = await env.ARTIFACTS.get(`screenshots/${match[1]}/${match[2]}.${match[3]}`);
+	if (!object) return json({ error: "not found" }, 404);
+	return new Response(object.body, {
+		headers: {
+			"content-type": SCREENSHOT_TYPES[match[3]!]!,
+			"cache-control": "public, max-age=31536000, immutable",
+			"x-content-type-options": "nosniff",
+			"content-security-policy": "default-src 'none'",
+		},
+	});
+}
+
 /**
  * The public board (`/`) and its data (`/api/cases`, or `/api/cases?issue=N`
  * for the cases on one issue or pull request). Read-only, built from the rows
@@ -412,6 +436,8 @@ export default {
 			);
 		if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/api/cases"))
 			return board(request, env, ctx, url);
+		if (request.method === "GET" && url.pathname.startsWith("/screenshots/"))
+			return screenshot(env, url);
 		return json({ error: "not found" }, 404);
 	},
 } satisfies ExportedHandler<Env>;

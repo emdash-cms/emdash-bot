@@ -67,6 +67,7 @@ import { Mutex, errorMessage, sha256Hex, str, text } from "../util.ts";
 import { CaseStore } from "./store.ts";
 import { cases, repositories } from "../bindings.ts";
 import { isMaintainer } from "../github/webhook.ts";
+import { imageType } from "../source/image.ts";
 import { type CaseSummary, MILESTONES, boardGroup } from "../reports/dashboard.ts";
 import type {
 	Candidate,
@@ -93,6 +94,14 @@ interface DryRun {
 		readonly focusedChecks?: Readonly<Record<string, string>>;
 		readonly prepare?: string;
 	};
+}
+
+const MAX_SCREENSHOTS = 30;
+const MAX_SCREENSHOT_BYTES = 5 * 1_048_576;
+
+/** Review states that decide readiness when a maintainer gives them. */
+function isDecisiveReview(state: string): boolean {
+	return ["APPROVED", "CHANGES_REQUESTED"].includes(state.toUpperCase());
 }
 
 /** A maintainer's comment that assigned the bot or added direction. */
@@ -464,6 +473,7 @@ export class CaseDO extends DurableObject<Env> {
 				this.#submitCandidate(opId, title, summary, description),
 			handoff: (opId, reason, nextAction) => this.#handoff(opId, reason, nextAction),
 			mergeDefaultBranch: (opId) => this.#mergeDefaultBranch(opId),
+			attachScreenshot: (opId, path) => this.#attachScreenshot(opId, path),
 			reply: async (opId, inReplyTo, onIssue, body) => {
 				const intent = this.#queueReply(opId, inReplyTo, onIssue, body);
 				await this.#schedule("replies", Date.now(), {}, "replies");
@@ -918,6 +928,45 @@ export class CaseDO extends DurableObject<Env> {
 		this.store.setMeta("reporterConfirmation", { commentId, actor: event.actor, at: Date.now() });
 		this.store.log("reporter.confirmed", { comment: commentId, by: event.actor });
 		return `Recorded the reporter's confirmation (comment ${commentId}).`;
+	}
+
+	/**
+	 * Publish an image the author saved in its sandbox: check it really is a
+	 * PNG, JPEG or WebP within the size limit, store it in R2 under this case,
+	 * and return the public URL the Worker serves it from.
+	 */
+	async #attachScreenshot(opId: string, path: string): Promise<string> {
+		const receipt = this.store.operation(opId);
+		if (receipt?.status === "completed") return (receipt.result as { url: string }).url;
+		const absolute = path.startsWith("/") ? path : `${REPO_DIR}/${path}`;
+		if (!/^\/(tmp|workspace)\//.test(absolute) || absolute.split("/").includes(".."))
+			throw new Error("screenshots must be saved under /tmp or the workspace");
+		const attached = this.store.getMeta<string[]>("screenshots") ?? [];
+		if (attached.length >= MAX_SCREENSHOTS)
+			throw new Error(`this case already has ${MAX_SCREENSHOTS} screenshots`);
+		const result = await this.#authorSandbox().exec({ argv: ["cat", absolute], timeoutMs: 60_000 });
+		if (result.exitCode !== 0) throw new Error(`cannot read ${path}`);
+		const bytes = result.stdout;
+		if (bytes.byteLength > MAX_SCREENSHOT_BYTES)
+			throw new Error(`screenshots are limited to ${MAX_SCREENSHOT_BYTES / 1_048_576} MB`);
+		const type = imageType(bytes);
+		if (!type) throw new Error(`${path} is not a PNG, JPEG or WebP image`);
+		const digest = await sha256Hex(bytes);
+		const identity = this.#identity();
+		const file = `${digest}.${type.ext}`;
+		await this.env.ARTIFACTS.put(`screenshots/${identity.caseId}/${file}`, bytes, {
+			sha256: digest,
+			httpMetadata: { contentType: type.mime },
+		});
+		const url = `${this.config.publicUrl}/screenshots/${identity.caseId}/${file}`;
+		this.store.transaction(() => {
+			if (!attached.includes(file)) this.store.setMeta("screenshots", [...attached, file]);
+			this.store.putOperation(opId, "attach_screenshot", this.store.generation(), "completed", {
+				url,
+			});
+		});
+		this.store.log("screenshot.attached", { url, bytes: bytes.byteLength });
+		return url;
 	}
 
 	/** Record a maintainer's instructions for the case record. */
@@ -1621,6 +1670,18 @@ export class CaseDO extends DurableObject<Env> {
 				receivedAt: Date.now(),
 			});
 			if (!fresh) return null;
+		} else if (isDecisiveReview(payload.state)) {
+			// A maintainer's approval or change request is readiness evidence too.
+			this.store.putReview({
+				reviewId: String(payload.reviewId),
+				reviewer: event.actor,
+				commit: payload.commitId,
+				state: payload.state,
+				structured: false,
+				actionable: payload.state.toUpperCase() === "APPROVED" ? 0 : 1,
+				receivedAt: Date.now(),
+				maintainer: true,
+			});
 		}
 		this.store.log("review.recorded", {
 			review: payload.reviewId,
@@ -1775,7 +1836,7 @@ export class CaseDO extends DurableObject<Env> {
 	 */
 	async #syncReviews(): Promise<void> {
 		const pr = this.store.getMeta<number>("pr") ?? this.#identity().prNumber;
-		if (!pr || this.config.reviewers.length === 0) return;
+		if (!pr) return;
 		const github = this.#github();
 		const reviews = await github.request<
 			Array<{
@@ -1784,11 +1845,31 @@ export class CaseDO extends DurableObject<Env> {
 				body: string | null;
 				commit_id: string;
 				state: string;
+				author_association?: string;
 			}>
 		>("GET", github.repoPath(`/pulls/${pr}/reviews?per_page=100`));
 		for (const review of reviews) {
 			const login = review.user?.login ?? "";
-			if (!this.config.reviewers.some((r) => r.toLowerCase() === login.toLowerCase())) continue;
+			if (!this.config.reviewers.some((r) => r.toLowerCase() === login.toLowerCase())) {
+				// A maintainer's approval or change request whose webhook was missed or predates
+				// this record: evidence only; its text already reached the author, or is old.
+				if (
+					isDecisiveReview(review.state) &&
+					isMaintainer(this.config, login, review.author_association) !== null &&
+					!this.store.reviews().some((r) => r.reviewId === String(review.id))
+				)
+					this.store.putReview({
+						reviewId: String(review.id),
+						reviewer: login,
+						commit: review.commit_id,
+						state: review.state,
+						structured: false,
+						actionable: review.state.toUpperCase() === "APPROVED" ? 0 : 1,
+						receivedAt: Date.now(),
+						maintainer: true,
+					});
+				continue;
+			}
 			if (this.store.reviews().some((r) => r.reviewId === String(review.id))) continue;
 			const inserted = this.store.insertEvent({
 				deliveryId: `review-sync-${review.id}`,
@@ -2311,7 +2392,14 @@ export class CaseDO extends DurableObject<Env> {
 				passed: report.requiredChecks.filter((c) => c.state === "succeeded").length,
 				total: report.requiredChecks.length,
 			},
-			review: report.review?.state ?? null,
+			review: report.review
+				? {
+						by: report.review.reviewer,
+						state: report.review.state,
+						maintainer: report.review.maintainer === true,
+						actionable: report.review.actionable,
+					}
+				: null,
 			reporterConfirmed: !!this.store.getMeta("reporterConfirmation"),
 			plan: (this.store.getMeta<WorkPlan>("workPlan")?.steps ?? []).map((s) => ({
 				title: s.title,

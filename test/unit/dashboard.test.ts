@@ -14,8 +14,8 @@ const base: CaseSummary = {
 	status: "candidate-published",
 	group: "waiting",
 	queued: false,
-	reasons: ["no review of the current head by the configured reviewer yet"],
-	nextAction: "the reviewer will review the current head",
+	reasons: ["no review of the current head yet"],
+	nextAction: "the review bot will review the current head, or a maintainer can approve it",
 	assignedBy: "maintainer",
 	autoIntake: false,
 	createdAt: NOW - 90 * 60_000,
@@ -58,13 +58,27 @@ describe("case board", () => {
 		);
 		const waiting = html.slice(html.indexOf('id="waiting"'), html.indexOf('id="finished"'));
 		expect(waiting).toContain("#12");
-		expect(waiting).toContain("The reviewer will review the current head.");
+		expect(waiting).toContain(
+			"The review bot will review the current head, or a maintainer can approve it.",
+		);
+		expect(waiting).toContain("no review yet");
 		expect(waiting).toContain("checks 7/7");
 		expect(waiting).toContain("https://issue-12.preview.example");
 		expect(html).toContain("Waiting for a slot");
 		expect(html).toContain("All 2 slots in use · 1 queued");
 		expect(html).toContain("Nothing needs a maintainer.");
 		expect(html).toContain("bot:fix");
+	});
+
+	it("says who reviewed", () => {
+		const review = (by: string, state: string, maintainer: boolean, actionable = 0) =>
+			renderBoard([{ ...base, review: { by, state, maintainer, actionable } }], options);
+		expect(review("ascorbic", "APPROVED", true)).toContain("approved by @ascorbic");
+		expect(review("ascorbic", "CHANGES_REQUESTED", true, 1)).toContain(
+			"changes requested by @ascorbic",
+		);
+		expect(review("emdashbot[bot]", "COMMENTED", false, 2)).toContain("review bot: 2 to address");
+		expect(review("emdashbot[bot]", "APPROVED", false)).toContain("approved by @emdashbot");
 	});
 
 	it("escapes text from issues", () => {
