@@ -1,0 +1,19 @@
+evals/bin/review-replay.ts
+  s_4c97aa8e7b616f::t_ff0ae9225b934f 7,21-22,101,128-130,132-133,137-160,163,193,205-207,210,212-213,218,222-228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "af2a94cdd59468ba100534f1e32051d065d5b901",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
