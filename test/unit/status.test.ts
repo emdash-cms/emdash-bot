@@ -71,6 +71,23 @@ describe("deterministic status", () => {
 		expect(computeStatus({ ...base, reviews: [older] }).status).toBe("candidate-published");
 	});
 
+	it("lets a publication or review of a commit cover format-only commits on top of it", () => {
+		const atH0 = { ...base, reviews: [{ ...base.reviews[0]!, commit: "h0" }] };
+		const formatted = { ...atH0, verifications: [check("test", "h2", "succeeded", "success")] };
+		const onH2 = {
+			...formatted,
+			observedHead: "h2",
+			mergeability: { head: "h2", mergeable: true },
+		};
+		expect(computeStatus(onH2).status).toBe("waiting-for-checks");
+		const covered = computeStatus({ ...onH2, formatParents: { h2: "h1", h1: "h0" } });
+		expect(covered.status).toBe("ready-for-human");
+		expect(covered.reviewedHead).toBe(true);
+		expect(computeStatus({ ...onH2, formatParents: { h1: "h0" } }).status).toBe(
+			"waiting-for-checks",
+		);
+	});
+
 	it("separates code failures from infrastructure failures", () => {
 		expect(
 			computeStatus({ ...base, verifications: [check("test", "h1", "failed", "code")] }).status,

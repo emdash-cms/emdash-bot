@@ -24,6 +24,8 @@ export interface StatusInput {
 	readonly reviews: readonly ReviewRecord[];
 	/** The branch head last observed on GitHub, when known. */
 	readonly observedHead: string | null;
+	/** Format-only commits, mapped to their parent: a review of the parent covers them. */
+	readonly formatParents?: Readonly<Record<string, string>>;
 	readonly mergeability: { head: string; mergeable: boolean | null } | undefined;
 	readonly policy: CheckPolicy;
 }
@@ -43,7 +45,7 @@ export interface StatusReport {
 	readonly publication: Publication | undefined;
 	readonly head: string | null;
 	readonly requiredChecks: readonly RequiredCheck[];
-	/** The configured reviewer's latest review of the current head, if any. */
+	/** The configured reviewer's latest review of the current head (or the commit it formats), if any. */
 	readonly review: ReviewRecord | undefined;
 	readonly reviewedHead: boolean;
 	readonly humanApproval: "required";
@@ -97,7 +99,15 @@ export function computeStatus(input: StatusInput): StatusReport {
 			: null;
 	const head = input.observedHead ?? publishedHead;
 	const checks = requiredChecks(input.policy, input.verifications, head);
-	const review = head ? input.reviews.filter((r) => r.commit === head).at(-1) : undefined;
+	// The head and the commits it only formats: a review or publication of one covers them all.
+	const covered = new Set<string>();
+	for (
+		let commit: string | undefined = head ?? undefined;
+		commit && !covered.has(commit);
+		commit = input.formatParents?.[commit]
+	)
+		covered.add(commit);
+	const review = input.reviews.filter((r) => covered.has(r.commit)).at(-1);
 	const base = {
 		candidate,
 		publication,
@@ -144,7 +154,7 @@ export function computeStatus(input: StatusInput): StatusReport {
 			"inspect the publication receipt",
 		);
 	}
-	if (publishedHead && input.observedHead && input.observedHead !== publishedHead) {
+	if (publishedHead && input.observedHead && !covered.has(publishedHead)) {
 		return report(
 			"waiting-for-checks",
 			[`the branch moved to ${input.observedHead.slice(0, 12)} after publication`],

@@ -265,6 +265,63 @@ describe("review repair and asynchronous CI", () => {
 		expect(ready.requiredChecks).toEqual([]);
 	});
 
+	it("counts a review of the parent of a format-only push, but not of a maintainer's push", async () => {
+		const FORMATTER = "emdashbot[bot]";
+		bot = await startBot({
+			repositories: [
+				{
+					id: REPO_ID,
+					fullName: REPO,
+					requiredChecks: [],
+					formatCommit: { author: FORMATTER, message: "style: format" },
+				},
+			],
+		});
+		const caseId = issueCaseId(39);
+		const branch = "emdash-bot/issue-39";
+		// The second, empty round answers the branch-update messages.
+		const script = { rounds: [...fixScript().rounds, { steps: [] }] };
+		await bot.webhook("issues", assignIssue({ issueId: 39, number: 39, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const reviewed = bot.github.head(REPO, branch)!;
+		const push = (before: string, after: string, sender: string) =>
+			bot!.webhook("pull_request", {
+				action: "synchronize",
+				sender: { login: sender },
+				before,
+				after,
+				pull_request: { id: 9000 + pr, number: pr, head: { ref: branch, sha: after } },
+			});
+
+		const formatted = bot.github.commitFiles(
+			REPO,
+			branch,
+			{ "greet.js": `${FIX_GREETING.content}\n` },
+			"style: format",
+			false,
+			FORMATTER,
+		);
+		await push(reviewed, formatted, FORMATTER);
+		await bot.waitFor("format push recorded", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.some((e: any) => e.type === "branch.formatted") ? r : null;
+		});
+		await bot.webhook(
+			"pull_request_review",
+			review(pr, reviewed, { version: 1, reviewedCommit: reviewed, findings: [] }, "APPROVED"),
+		);
+		const ready = await statusIs(bot, caseId, "ready-for-human");
+		expect(ready.head).toBe(formatted);
+		expect(ready.review.commit).toBe(reviewed);
+
+		const edited = bot.github.commitFiles(REPO, branch, { "notes.md": "x\n" }, "style: format");
+		await push(formatted, edited, "maintainer");
+		const moved = await statusIs(bot, caseId, "waiting-for-checks");
+		expect(moved.head).toBe(edited);
+		expect(moved.reviewedHead).toBe(false);
+	});
+
 	it("labels the issue and PR awaiting the reporter when ready, with area labels from changed paths", async () => {
 		bot = await startBot({
 			repositories: [

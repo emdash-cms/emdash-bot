@@ -135,3 +135,24 @@ export function parseReview(
 export function actionableCount(parsed: ParsedReview): number {
 	return parsed.findings.filter((f) => f.actionable).length;
 }
+
+interface ComparedCommit {
+	readonly author?: { readonly login?: string } | null;
+	readonly commit?: { readonly message?: string };
+}
+
+/** Whether a push added only the repository formatter's commits on top of the previous head. */
+export function isFormatOnlyPush(
+	rule: { readonly author: string; readonly message: string },
+	comparison: { readonly status?: string; readonly commits?: readonly ComparedCommit[] },
+): boolean {
+	const commits = comparison.commits ?? [];
+	return (
+		comparison.status === "ahead" &&
+		commits.length > 0 &&
+		commits.every(
+			(c) =>
+				c.author?.login === rule.author && c.commit?.message?.split("\n", 1)[0] === rule.message,
+		)
+	);
+}

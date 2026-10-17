@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { classifyCheck } from "../../src/github/checks.ts";
-import { parseReview } from "../../src/github/review.ts";
+import { isFormatOnlyPush, parseReview } from "../../src/github/review.ts";
 import { egressDecision } from "../../src/execution/egress-policy.ts";
 import { nextScriptedResponse } from "../../src/runtime/scripted-author.ts";
 
@@ -154,6 +154,38 @@ describe("inline review comments", () => {
 		expect(
 			parseReview("", 9, "c", "APPROVED", [{ id: 4, path: "a", line: 1, body: "nit" }]).findings[0]
 				?.actionable,
+		).toBe(false);
+	});
+});
+
+describe("format-only pushes", () => {
+	const rule = { author: "emdashbot[bot]", message: "style: format" };
+	const format = { author: { login: "emdashbot[bot]" }, commit: { message: "style: format" } };
+
+	it("matches only fast-forwards made entirely of the formatter's commits", () => {
+		expect(isFormatOnlyPush(rule, { status: "ahead", commits: [format, format] })).toBe(true);
+		expect(
+			isFormatOnlyPush(rule, {
+				status: "ahead",
+				commits: [{ ...format, commit: { message: "style: format\n\nbody" } }],
+			}),
+		).toBe(true);
+		expect(isFormatOnlyPush(rule, { status: "ahead", commits: [] })).toBe(false);
+		expect(isFormatOnlyPush(rule, { status: "diverged", commits: [format] })).toBe(false);
+		expect(
+			isFormatOnlyPush(rule, {
+				status: "ahead",
+				commits: [
+					format,
+					{ author: { login: "maintainer" }, commit: { message: "style: format" } },
+				],
+			}),
+		).toBe(false);
+		expect(
+			isFormatOnlyPush(rule, {
+				status: "ahead",
+				commits: [{ ...format, commit: { message: "fix: tweak" } }],
+			}),
 		).toBe(false);
 	});
 });

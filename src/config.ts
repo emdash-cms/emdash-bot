@@ -19,6 +19,18 @@ export interface RepositoryConfig {
 	readonly requiredChecks?: readonly string[];
 	/** Labels applied for changed paths, by path prefix (e.g. `packages/core/` -> `area/core`). */
 	readonly areaLabels?: Readonly<Record<string, string>>;
+	/**
+	 * Commits the repository's formatter pushes to PR branches. A review of their
+	 * parent still covers them, since the reviewer does not re-review them.
+	 */
+	readonly formatCommit?: FormatCommitRule;
+}
+
+export interface FormatCommitRule {
+	/** The pusher's login, e.g. `emdashbot[bot]`. */
+	readonly author: string;
+	/** The commit message's first line, e.g. `style: format`. */
+	readonly message: string;
 }
 
 export interface Budgets {

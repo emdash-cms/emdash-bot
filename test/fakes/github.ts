@@ -97,19 +97,23 @@ export class FakeGitHub {
 		return this.commitFiles(repo, defaultBranch, files, "initial commit", true);
 	}
 
-	/** Commit file changes on top of a branch (a maintainer pushing). */
+	/**
+	 * Commit file changes on top of a branch (a maintainer pushing). The author
+	 * name stands in for the GitHub login the compare API reports.
+	 */
 	commitFiles(
 		repo: string,
 		branch: string,
 		files: Record<string, string | null>,
 		message: string,
 		initial = false,
+		author = "Maintainer",
 	): string {
 		const work = mkdtempSync(join(tmpdir(), "fake-gh-work-"));
 		const env = {
 			PATH: process.env.PATH ?? "",
 			GIT_CONFIG_GLOBAL: "/dev/null",
-			GIT_AUTHOR_NAME: "Maintainer",
+			GIT_AUTHOR_NAME: author,
 			GIT_AUTHOR_EMAIL: "m@example.com",
 			GIT_COMMITTER_NAME: "Maintainer",
 			GIT_COMMITTER_EMAIL: "m@example.com",
@@ -330,6 +334,26 @@ export class FakeGitHub {
 				{ ...pull, html_url: `https://github.com/${repo}/pull/${pull.number}` },
 				201,
 			);
+		}
+		if (method === "GET" && (match = rest.match(/^\/compare\/([0-9a-f]+)\.\.\.([0-9a-f]+)$/))) {
+			const [, base, head] = match;
+			let status = "identical";
+			if (base !== head) {
+				try {
+					this.git(repo, ["merge-base", "--is-ancestor", base!, head!]);
+					status = "ahead";
+				} catch {
+					status = "diverged";
+				}
+			}
+			const log = this.git(repo, ["log", "--reverse", "--format=%an%x1f%s", `${base}..${head}`]);
+			const commits = log
+				? log.split("\n").map((line) => {
+						const [login, message] = line.split("\x1f");
+						return { author: { login }, commit: { message } };
+					})
+				: [];
+			return this.#json({ status, commits });
 		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)$/))) {
 			const pull = this.pulls.find((p) => p.number === Number(match![1]));

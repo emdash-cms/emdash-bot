@@ -22,7 +22,12 @@ import { writeToken } from "../github/auth.ts";
 import { classifyCheck, outcomeOf } from "../github/checks.ts";
 import { GitHubClient } from "../github/client.ts";
 import { type PublishContext, publish, readArtifact } from "../github/publisher.ts";
-import { type ReviewComment, actionableCount, parseReview } from "../github/review.ts";
+import {
+	type ReviewComment,
+	actionableCount,
+	isFormatOnlyPush,
+	parseReview,
+} from "../github/review.ts";
 import {
 	STATUS_CHECK_NAME,
 	renderMovedToPullRequest,
@@ -1214,10 +1219,12 @@ export class CaseDO extends DurableObject<Env> {
 				return this.#applyReview(event);
 			case "check":
 				return this.#applyCheck(event);
-			case "head-changed":
+			case "head-changed": {
 				this.store.setMeta("observedHead", str(payload.after));
 				this.store.log("branch.advanced", { by: event.actor, head: payload.after });
-				return `## Branch updated\nFrom: ${from}\n\n${event.actor} pushed ${str(payload.after).slice(0, 12)} to the case branch. Your next candidate is published on top of it.`;
+				const formatted = await this.#recordFormatPush(str(payload.before), str(payload.after));
+				return `## Branch updated\nFrom: ${from}\n\n${event.actor} pushed ${str(payload.after).slice(0, 12)} to the case branch${formatted ? ", applying only the repository's formatter" : ""}. Your next candidate is published on top of it.`;
+			}
 			case "pr-opened":
 				return null;
 			case "closed": {
@@ -1233,6 +1240,30 @@ export class CaseDO extends DurableObject<Env> {
 			default:
 				return null;
 		}
+	}
+
+	/**
+	 * Record a push of only the repository formatter's commits, so a review of the
+	 * previous head still covers it: the reviewer does not re-review format commits.
+	 * Fails closed: without evidence the push needs its own review.
+	 */
+	async #recordFormatPush(before: string, after: string): Promise<boolean> {
+		const rule = this.#repoConfig()?.formatCommit;
+		if (!rule || !before || !after) return false;
+		try {
+			const comparison = await this.#github().request<Parameters<typeof isFormatOnlyPush>[1]>(
+				"GET",
+				`/repos/${this.#identity().repo}/compare/${before}...${after}`,
+			);
+			if (!isFormatOnlyPush(rule, comparison)) return false;
+		} catch (error) {
+			this.store.log("branch.compare-failed", { error: errorMessage(error) });
+			return false;
+		}
+		const parents = this.store.getMeta<Record<string, string>>("formatParents") ?? {};
+		this.store.setMeta("formatParents", { ...parents, [after]: before });
+		this.store.log("branch.formatted", { head: after, parent: before });
+		return true;
 	}
 
 	#currentHead(): string | null {
@@ -1922,6 +1953,7 @@ export class CaseDO extends DurableObject<Env> {
 			verifications: this.store.verifications(),
 			reviews: this.store.reviews(),
 			observedHead: this.store.getMeta<string>("observedHead") ?? null,
+			formatParents: this.store.getMeta<Record<string, string>>("formatParents") ?? {},
 			mergeability: this.store.getMeta("mergeability"),
 			policy: this.#checkPolicy(),
 		});
