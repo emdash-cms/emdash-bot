@@ -1,0 +1,49 @@
+README.md
+  s_4c97aa8e7b616f::t_5c0ebe54c6b714 17
+profiles/production.json
+  s_4c97aa8e7b616f::t_501557c1909ad1 16,76
+scripts/create-github-app.ts
+  s_4c97aa8e7b616f::t_46b8e4a25ce93b 102
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_c9c99b928c1853 100-107,248-251,256,1572-1573,1913-1919,2087-2105,2125-2145,2151-2165,2169-2170,2173-2174,2400-2402,2415-2481,2638-2643
+src/config.ts
+  s_4c97aa8e7b616f::t_aaa7da07f08983 29-37,117-118,191
+src/github/checks.ts
+  s_4c97aa8e7b616f::t_c53b80f8cdb50f 65-67
+src/github/publisher.ts
+  s_4c97aa8e7b616f::t_9e9afa792ab84c 354-367
+src/reports/status.ts
+  s_4c97aa8e7b616f::t_4fdb2f490fe4ad 29-30,88-92,94-101,178-179,181,183-188,205-216,219-233,236-241,275
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_1783bf626ed50c 185-187,344
+test/fakes/github.ts
+  s_4c97aa8e7b616f::t_3e6c1ba1c7aa33 243
+test/recovery/lifecycle.test.ts
+  s_4c97aa8e7b616f::t_450c82c5586ee5 187-189,201-226,232,238-239,360-361
+test/unit/author-method.test.ts
+  s_4c97aa8e7b616f::t_77370e9921d68d 15-24
+test/unit/checks-review.test.ts
+  s_4c97aa8e7b616f::t_0e312824473949 37
+test/unit/status.test.ts
+  s_4c97aa8e7b616f::t_f55d9e0e0776c0 57,67-78,119-125,147-171
+test/workers/intake.test.ts
+  s_4c97aa8e7b616f::t_609ad3f27291d7 364-367
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_e1f233d34800f0 553,575,577,579-582
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "af3387180eee4e53e9477697d48ef6844613dc0d",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
