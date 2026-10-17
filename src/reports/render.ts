@@ -26,6 +26,14 @@ const LABEL: Record<StatusReport["status"], string> = {
 	terminal: "Closed",
 };
 
+/** A status phrase as a sentence: capitalised, with a full stop. */
+function sentence(text: string): string {
+	const trimmed = text.trim();
+	if (!trimmed) return trimmed;
+	const capitalised = trimmed[0]!.toUpperCase() + trimmed.slice(1);
+	return /[.!?]$/.test(capitalised) ? capitalised : `${capitalised}.`;
+}
+
 /** The name of the bot's own check run on the pull request head. */
 export const STATUS_CHECK_NAME = "EmDash bot";
 
@@ -42,9 +50,9 @@ export interface StatusCheck {
  */
 export function renderStatusCheck(report: StatusReport): StatusCheck {
 	const summary = [
-		...report.reasons.map((r) => `- ${r}`),
+		...report.reasons.map((r) => `- ${sentence(r)}`),
 		"",
-		`Next action: ${report.nextAction}.`,
+		`Next action: ${sentence(report.nextAction)}`,
 	].join("\n");
 	const title = LABEL[report.status];
 	switch (report.status) {
@@ -82,9 +90,9 @@ export function renderStatus(
 		...(extras.plan ? ["**Plan**", "", ...renderWorkPlan(extras.plan), ""] : []),
 		"**Status**",
 		"",
-		...report.reasons.map((r) => `- ${r}`),
+		...report.reasons.map((r) => `- ${sentence(r)}`),
 		"",
-		`Next action: ${report.nextAction}.`,
+		`Next action: ${sentence(report.nextAction)}`,
 	];
 	// Evidence about a change only once there is one.
 	if (report.candidate || report.head) {

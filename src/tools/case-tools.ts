@@ -279,7 +279,13 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		name: "handoff",
 		description:
 			"Ask a maintainer to step in, with the reason and a concrete next action, when only they can unblock you. The status comment shows it until the next message arrives. This ends your turn.",
-		parameters: Type.Object({ reason: Type.String(), nextAction: Type.String() }),
+		parameters: Type.Object({
+			reason: Type.String({ description: "What blocks you, as a plain statement of fact." }),
+			nextAction: Type.String({
+				description:
+					'Who will do what next, e.g. "a maintainer will decide whether the API should change".',
+			}),
+		}),
 		replay: "unsafe",
 		execute: async (args, api) => {
 			const blocked = runtime.guard(true);

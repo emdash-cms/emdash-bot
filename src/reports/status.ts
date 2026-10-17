@@ -90,6 +90,8 @@ export function reviewIsClean(review: ReviewRecord): boolean {
 	);
 }
 
+const WILL_UPDATE = "the bot will update this comment when it has something to show";
+
 export function computeStatus(input: StatusInput): StatusReport {
 	const candidate = input.candidates.at(-1);
 	const publication = candidate
@@ -135,38 +137,42 @@ export function computeStatus(input: StatusInput): StatusReport {
 			[input.handoff?.reason ?? "the bot declined this issue"],
 			"a maintainer can apply the intake label to assign it anyway",
 		);
-	if (input.authorBusy) return report("working", ["the bot is working"], "wait for the bot");
+	if (input.authorBusy) return report("working", ["the bot is working"], WILL_UPDATE);
 	if (input.waitingForSlot)
 		return report(
 			"working",
 			["the bot is busy with other issues and will start when one finishes"],
-			"wait for the bot",
+			WILL_UPDATE,
 		);
 	// Includes a case created ahead of admission (an operator fixture before intake).
 	if (!input.authorStarted && !input.handoff)
-		return report("working", ["the bot is starting"], "wait for the bot");
+		return report("working", ["the bot is starting"], WILL_UPDATE);
 	if (input.handoff) return report("needs-human", [input.handoff.reason], input.handoff.nextAction);
 	if (!candidate)
 		return report(
 			"waiting-for-reply",
 			["the bot has stopped without proposing a change"],
-			"the reporter or a maintainer can reply on the issue",
+			"the bot will continue when the reporter or a maintainer replies",
 		);
 	if (!publication || publication.state === "intent" || publication.state === "commit-created") {
-		return report("working", ["the saved candidate is being published"], "wait for publication");
+		return report(
+			"working",
+			["the saved candidate is being published"],
+			"the bot will open or update the pull request",
+		);
 	}
 	if (publication.state === "needs-human" || publication.state === "failed") {
 		return report(
 			"needs-human",
 			[`publication stopped: ${publication.error ?? publication.state}`],
-			"inspect the publication receipt",
+			"an operator will look at the publication receipt",
 		);
 	}
 	if (publishedHead && input.observedHead && !covered.has(publishedHead)) {
 		return report(
 			"waiting-for-checks",
 			[`the branch moved to ${input.observedHead.slice(0, 12)} after publication`],
-			"verify and review the new head",
+			"the new head will need its own checks and review",
 		);
 	}
 	const failedCode = checks.filter((c) => c.state === "failed" && c.classification === "code");
@@ -182,8 +188,8 @@ export function computeStatus(input: StatusInput): StatusReport {
 			"needs-human",
 			blocked.map((c) => `${c.name}: ${c.classification} (${c.detail})`),
 			blocked.some((c) => c.classification === "infrastructure")
-				? "re-run the failed check after the infrastructure problem clears"
-				: "inspect the failed check",
+				? "a maintainer will re-run the failed check once the infrastructure problem clears"
+				: "a maintainer will look at the failed check",
 		);
 	}
 	if (review && !reviewIsClean(review)) {
@@ -192,7 +198,7 @@ export function computeStatus(input: StatusInput): StatusReport {
 			[
 				`the reviewer's latest review of the current head has ${review.actionable} item(s) of feedback`,
 			],
-			"the bot will respond to the review, and the reviewer approves when satisfied",
+			"the bot will respond to the review, and the reviewer will approve when satisfied",
 		);
 	}
 	const pending = checks.filter((c) => c.state === "missing" || c.state === "pending");
@@ -200,13 +206,13 @@ export function computeStatus(input: StatusInput): StatusReport {
 		return report(
 			"waiting-for-checks",
 			pending.map((c) => `${c.name}: ${c.detail}`),
-			"wait for the required checks",
+			"the bot will continue when the required checks finish",
 		);
 	if (!review)
 		return report(
 			"candidate-published",
 			["no review of the current head by the configured reviewer yet"],
-			"wait for the reviewer",
+			"the reviewer will review the current head",
 		);
 	if (
 		!input.mergeability ||
@@ -216,20 +222,20 @@ export function computeStatus(input: StatusInput): StatusReport {
 		return report(
 			"candidate-published",
 			["mergeability has not been assessed for the current head"],
-			"reassess mergeability",
+			"the bot will check mergeability again",
 		);
 	}
 	if (!input.mergeability.mergeable)
 		return report(
 			"needs-human",
 			["the pull request does not merge cleanly"],
-			"resolve the merge conflict",
+			"a maintainer will resolve the merge conflict",
 		);
 	return report(
 		"ready-for-human",
 		[
 			"required checks passed, the reviewer's latest review of the current head is clean, and the head merges cleanly",
 		],
-		"maintainer review and approval",
+		"a maintainer will review and approve the pull request",
 	);
 }

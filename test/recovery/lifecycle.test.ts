@@ -209,7 +209,7 @@ describe("model failures", () => {
 		await bot.waitFor("error in the progress comment", async () =>
 			bot!.github.comments.find(
 				(c) =>
-					c.issue === 17 && c.body.includes("the model call failed: upstream returned nothing"),
+					c.issue === 17 && c.body.includes("The model call failed: upstream returned nothing"),
 			),
 		);
 		await bot.webhook("issue_comment", {

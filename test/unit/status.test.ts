@@ -107,6 +107,10 @@ describe("deterministic status", () => {
 		// The evidence table is collapsed; the status and next action stay visible.
 		expect(rendered.indexOf("<details>")).toBeLessThan(rendered.indexOf("| Candidate |"));
 		expect(rendered.indexOf("Next action")).toBeLessThan(rendered.indexOf("<details>"));
+		expect(rendered).toContain(
+			"Next action: A maintainer will review and approve the pull request.",
+		);
+		expect(rendered).toMatch(/^- Required checks passed, .+ merges cleanly\.$/m);
 		const body = renderPullRequestBody({
 			identity,
 			template:

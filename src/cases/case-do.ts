@@ -824,7 +824,7 @@ export class CaseDO extends DurableObject<Env> {
 		if (message?.trim()) this.#queueReply(`${opId}:message`, undefined, true, message);
 		const handoff: Handoff = {
 			reason: `declined: ${reason}`,
-			nextAction: "a maintainer can apply the intake label to assign it anyway",
+			nextAction: `a maintainer can apply the \`${this.config.intakeLabel}\` label to assign it anyway`,
 			at: Date.now(),
 		};
 		this.store.transaction(() => {
@@ -1543,7 +1543,7 @@ export class CaseDO extends DurableObject<Env> {
 			await this.#handoff(
 				`runs:${runs}`,
 				`the bot has used all ${this.config.budgets.rounds} of its runs on this issue`,
-				"a maintainer decides how to continue; an operator can grant more runs",
+				"a maintainer will decide how to continue; an operator can grant more runs",
 			);
 			return;
 		}
@@ -1718,7 +1718,7 @@ export class CaseDO extends DurableObject<Env> {
 				await this.#handoff(
 					`run-timeout:${started}`,
 					"the bot ran out of time for this run",
-					"a maintainer reads the transcript, then comments or asks an operator to resume",
+					"a maintainer will read the transcript, then comment or ask an operator to resume",
 				);
 			}
 			return { rescheduleAt: Date.now() + this.config.reconcileMs };
