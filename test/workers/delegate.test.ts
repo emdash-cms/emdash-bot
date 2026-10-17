@@ -48,6 +48,15 @@ describe("delegate", () => {
 			.filter((m: any) => m.role === "toolResult" && m.toolName === "delegate");
 		expect(JSON.stringify(results)).toContain("no punctuation");
 		expect(bot.github.pulls).toHaveLength(1);
+		// The helper's own transcript is available by its conversation id.
+		const helperEvidence = await bot.ops(
+			`cases/${caseId}/evidence?session=${results[0].details.conversationId}`,
+		);
+		const helperTools = helperEvidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.filter((m: any) => m.role === "toolResult")
+			.map((m: any) => m.toolName);
+		expect(helperTools).toEqual(["read"]);
 	});
 
 	it("reviews the change with independent reviewers before submitting", async () => {

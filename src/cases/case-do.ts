@@ -2928,7 +2928,10 @@ export class CaseDO extends DurableObject<Env> {
 
 	// ---------------- operator interface ----------------
 
-	async inspect(options: { transcript?: boolean } = {}): Promise<Record<string, unknown>> {
+	/** With `session`, the transcript is that child conversation's (a helper's or reviewer's) instead of the author's. */
+	async inspect(
+		options: { transcript?: boolean; session?: string } = {},
+	): Promise<Record<string, unknown>> {
 		await this.lifecycle.start();
 		const identity = this.store.identity();
 		if (!identity) return { exists: false };
@@ -2956,7 +2959,13 @@ export class CaseDO extends DurableObject<Env> {
 			pending: await this.harness.pending(),
 			faults: this.store.armedFaults(),
 			log: this.store.logEntries(),
-			...(options.transcript ? { transcript: await this.harness.messages() } : {}),
+			...(options.transcript
+				? {
+						transcript: await this.harness.messages(
+							options.session ? { session: options.session } : undefined,
+						),
+					}
+				: {}),
 		};
 	}
 

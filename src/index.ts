@@ -393,7 +393,16 @@ async function operator(
 		if (request.method === "GET" && action === "") return json(await rpc(stub.inspect()));
 		if (request.method === "GET" && action === "status") return json(await stub.status());
 		if (request.method === "GET" && action === "evidence")
-			return json(await rpc(stub.inspect({ transcript: true })));
+			return json(
+				await rpc(
+					stub.inspect({
+						transcript: true,
+						...(url.searchParams.get("session")
+							? { session: url.searchParams.get("session")! }
+							: {}),
+					}),
+				),
+			);
 		if (request.method === "POST" && action === "cancel") {
 			await stub.operatorCancel(actor);
 			return json({ cancelled: true });
