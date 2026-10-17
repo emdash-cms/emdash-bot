@@ -23,6 +23,7 @@ import type { Profile } from "../controller/types.ts";
 const SUITES: Record<string, string[]> = {
 	"initial-six": ["4141", "4074", "4070", "4013", "4095", "4024"],
 	controls: ["4141", "4074"],
+	"self-review": ["3686", "3669", "3577", "3592", "3018"],
 };
 
 const { positionals, values } = parseArgs({

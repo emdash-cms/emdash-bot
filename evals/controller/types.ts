@@ -6,6 +6,11 @@ export interface CaseManifest {
 		readonly repo?: string;
 		readonly startingCommit?: string;
 		readonly template?: string;
+		/**
+		 * Files layered onto the starting tree, by repository path, from paths in this
+		 * repository: e.g. guidance the fixture should have that the starting commit lacks.
+		 */
+		readonly overlay?: Readonly<Record<string, string>>;
 	};
 	readonly issue: { readonly title: string; readonly body: string; readonly sourceUrl: string };
 	readonly originalCandidate?: {

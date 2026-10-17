@@ -1,0 +1,33 @@
+{
+	"id": "3669",
+	"kind": "fix",
+	"behaviour": "Re-run of the bot's fix for upstream issue 3669 with pre-submit self-review; graded by adversarial review against the findings on its original pull request.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "68b954e651da818b53cdacc477ea6fd5ae8ad5cf",
+		"note": "Parent of the bot's first commit on its original pull request. Fixture repositories receive a single-commit snapshot of this tree. The adversarial review skill is overlaid with the version from upstream PR 4227.",
+		"overlay": {
+			"skills/adversarial-reviewer/SKILL.md": "evals/overlays/adversarial-reviewer-skill.md"
+		}
+	},
+	"issue": {
+		"title": "Concurrent first-request auto-seeds on D1 duplicate menu items (and an interrupted one can leave a collection table the resume refuses)",
+		"body": "**Versions:** emdash 1.0.1, @emdash-cms/cloudflare 1.0.1, astro 7.3.5, Cloudflare Workers + D1.\n\n**What we see.** On a fresh D1, the structure auto-seed that the Worker's first request runs sometimes leaves more menu items than the seed declares: a seed with 9 items across two menus ended with 11 on one fresh database and 17 on another. The extra rows duplicate the last items of each menu: same label, URL and `sort_order`, different id. It is intermittent, and it happens when more than one request reaches a fresh instance during its first-request init, which spreads over several isolates on Workers.\n\n**Mechanism (read in 1.0.1's source):**\n\n- `src/emdash-runtime.ts`, the auto-seed block (the `seedCollectionsReadable && !seedComplete && !setupDone` gate). The seed runs under `initWithLock(seedHolder.lock, …)`, which is **per isolate**. `emdash:seed_complete` is written only after `applySeed` returns, so a second isolate that reads the gate while the first isolate's seed is still running also calls `applySeed(db, seed, { onConflict: \"skip\" })`.\n- `src/seed/apply.ts`, the menus step. When a menu `(name, locale)` already exists, `applySeed` deletes all its items (`deleteFrom(\"_emdash_menu_items\").where(\"menu_id\", \"=\", menuId)`) and re-inserts the seed's items. On D1 nothing is transactional, so two seeds interleave. The second seed deletes and re-inserts the full set, and the first seed's remaining inserts then land beside it.\n\n**Repro (local emulation of D1's interleaving):**\n\n1. Run migrations on one SQLite database.\n2. Wrap the dialect's driver so each `executeQuery` awaits 5 ms (a D1 round trip).\n3. On one Kysely instance, start `applySeed(db, seed, { onConflict: \"skip\" })`. About 750–800 ms later (at 5 ms per statement the first call takes about 960 ms), start a second identical call.\n4. Result: 12 menu items against the seed's 9, with the last item of each menu doubled.\n\nWhen the second call starts earlier, it throws `Collection \"<slug>\" already exists` or `UNIQUE constraint failed: _emdash_collections.slug` in the collections step and never reaches menus. When it starts later, both calls complete cleanly. A single-isolate `wrangler dev` never shows it: 16 concurrent first requests on a fresh state left exactly 9 items.\n\n**Related shape.** `SchemaRegistry.createCollection` (`src/schema/registry.ts`) now answers `COLLECTION_TABLE_ORPHANED` when `ec_<slug>` exists without an `_emdash_collections` row. On D1, `withTransaction` does not make the `CREATE TABLE` and the row insert atomic, so an auto-seed that dies between the two leaves exactly that state. The resumed auto-seed (the `seed_complete` gate from #3485) then hits the same check for that slug, so the interrupted seed cannot resume past it. We saw this on a fresh D1 as `POST /schema/collections → 409 COLLECTION_TABLE_ORPHANED (\"ec_routes\")`. We did not reproduce this part locally, because SQLite runs `createCollection` in a real transaction.\n\n**Expected:**\n\n- The first-request auto-seed runs once per database, not once per isolate: a database-level claim, for example an options row written before `applySeed` and checked by the gate, in the same way the migration lock is a database row.\n- Or `applySeed`'s menu step is idempotent under concurrency: it replaces items in one statement, or skips a menu whose items already exist when `onConflict: \"skip\"`.\n- A resumed seed can adopt or drop an `ec_<slug>` table that has no registered row instead of refusing it.\n",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/3669"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 40,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": [
+		"CI is not available in fixtures",
+		"adversarial review against the original pull request's findings"
+	],
+	"graded": [
+		"fixes the reported scenario in the reporter's configuration",
+		"the original pull request's missed findings",
+		"new defects"
+	]
+}

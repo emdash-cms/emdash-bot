@@ -1,0 +1,33 @@
+{
+	"id": "3686",
+	"kind": "fix",
+	"behaviour": "Re-run of the bot's fix for upstream issue 3686 with pre-submit self-review; graded by adversarial review against the findings on its original pull request.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "68b954e651da818b53cdacc477ea6fd5ae8ad5cf",
+		"note": "Parent of the bot's first commit on its original pull request. Fixture repositories receive a single-commit snapshot of this tree. The adversarial review skill is overlaid with the version from upstream PR 4227.",
+		"overlay": {
+			"skills/adversarial-reviewer/SKILL.md": "evals/overlays/adversarial-reviewer-skill.md"
+		}
+	},
+	"issue": {
+		"title": "Site settings stay stale in other Worker isolates after a change, with no time limit, so purged pages are rebuilt with the old settings",
+		"body": "### Description\n\n`getSiteSettings()` (`packages/core/src/settings/index.ts`) caches settings with `singleFlightCached`, which keeps the value \"for the lifetime of the JS global scope\" (the isolate, on Workers). A settings write calls `invalidateSiteSettingsCache()`, which bumps the version of the writing isolate's cache only. Every other warm isolate keeps the old settings until Cloudflare recycles it. There is no TTL and no cross-isolate signal. With `kvCache()` configured the object cache is invalidated by epoch, but the single-flight layer above it still returns the old value without consulting it.\n\nThe route cache makes this visible. Since #2618 a settings change purges its cache tag, but a purged page can then be rebuilt by an isolate holding the old settings, and that rebuild is cached until the next purge or expiry. #3488 (route-cache fills read from the database) doesn't reach it, because the settings read never gets past the in-isolate cache.\n\nWhat we saw on a production site (emdash 1.0.1, Cloudflare Workers, Workers Cache through `cacheCloudflare()`, no object cache), after setting `seo.googleVerification`:\n\n- Every cache-busted render (`/?v=<random>`) carried `<meta name=\"google-site-verification\">`, and so did other cached pages (`/about/`, `/whats-on/`, `/blog/`).\n- The cached home page kept being rebuilt without it. More than 15 minutes after the change it was served with `age: 38`, so rebuilt after the purge, and still had no tag. It did have `seo.defaultOgImage`, set a few hours earlier, so the isolate's copy of the settings came from between the two writes.\n\nSearch engine verification is where this bites: Search Console fetches the page, and a tag missing from a cached page can fail verification or a later re-check. Any other setting a page renders (title, tagline, logo, social links) lags the same way.\n\nRedirects had the same shape and were fixed in #2408, which bounds per-isolate staleness to 30 seconds with a TTL and a generation check (`redirects/cache.ts`, `REDIRECT_CACHE_TTL_MS`). The same treatment for settings would bound the lag. #876 is the same class for the admin manifest. Alternatively the single-flight value could be keyed to the object cache's settings epoch when an object cache is configured.\n\nThe code is unchanged on `main` as of 2026-09-30.\n\n### Steps to reproduce\n\n1. A site on Cloudflare Workers with Workers Cache (`cacheCloudflare()`), enough traffic to keep several isolates warm.\n2. Change a site setting that pages render, e.g. `seo.googleVerification` in the admin's SEO settings or with the MCP `settings_update` tool.\n3. Fetch a page repeatedly with a cache-busting query: renders that land on the isolate that handled the write show the new value; others can show the old one.\n4. Fetch the same page without a query after its cached copy is refreshed: it can be rebuilt, and cached, with the old value, well after the change.\n\n### Environment\n\n- emdash 1.0.1, @emdash-cms/cloudflare 1.0.1\n- Astro 7.3.2, @astrojs/cloudflare 14.3.1, Cloudflare Workers with D1, Workers Cache, no `objectCache`\n- Code checked on `main` at 2026-09-30\n\n### Screenshots\n\nNot applicable.\n\n### Logs / error output\n\n```\n$ curl -s \"https://<site>/?v=1234\" | grep -c google-site-verification\n1\n$ curl -sD - https://<site>/ -o page.html | grep -i '^age'; grep -c google-site-verification page.html\nage: 38\n0\n```\n",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/3686"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 40,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": [
+		"CI is not available in fixtures",
+		"adversarial review against the original pull request's findings"
+	],
+	"graded": [
+		"fixes the reported scenario in the reporter's configuration",
+		"the original pull request's missed findings",
+		"new defects"
+	]
+}

@@ -1,0 +1,33 @@
+{
+	"id": "3577",
+	"kind": "fix",
+	"behaviour": "Re-run of the bot's fix for upstream issue 3577 with pre-submit self-review; graded by adversarial review against the findings on its original pull request.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "68b954e651da818b53cdacc477ea6fd5ae8ad5cf",
+		"note": "Parent of the bot's first commit on its original pull request. Fixture repositories receive a single-commit snapshot of this tree. The adversarial review skill is overlaid with the version from upstream PR 4227.",
+		"overlay": {
+			"skills/adversarial-reviewer/SKILL.md": "evals/overlays/adversarial-reviewer-skill.md"
+		}
+	},
+	"issue": {
+		"title": "With an Astro locale object, content created at runtime is stamped with the `path` while `Astro.currentLocale` is the code, so a lookup by the current locale misses it",
+		"body": "**Versions:** emdash 0.42.0 and 1.0.1, `@emdash-cms/cloudflare` same, astro 7.3.2, `astro dev` on workerd.\n\n**Config**\n\n```js\ni18n: {\n  defaultLocale: \"es-MX\",\n  locales: [\"es-MX\", { path: \"en\", codes: [\"en-US\"] }],\n  fallback: { en: \"es-MX\" },\n  routing: { prefixDefaultLocale: false, fallbackType: \"rewrite\" },\n}\n```\n\n**Steps**\n\n1. Seed a `pages` entry `terminos-y-condiciones` in `es-MX`.\n2. Create its translation through the REST API with the locale the admin offers for that entry, `en` (the locale list EmDash exposes is the normalized one, `[\"es-MX\", \"en\"]`): `POST /_emdash/api/content/pages` with `{ slug: \"terminos-y-condiciones\", locale: \"en\", translationOf: <id>, data: { title: \"Terms EN\" } }`, then publish.\n3. On a page served under `/en/`, read `Astro.currentLocale` and query the entry with it.\n\n**Observed**\n\n- `Astro.currentLocale` under `/en/` is `\"en-US\"` (Astro returns the locale's first code).\n- `getEmDashEntry(\"pages\", \"terminos-y-condiciones\", { locale: \"en-US\" })` returns the `es-MX` row (via the fallback chain); `{ locale: \"en\" }` returns \"Terms EN\".\n- The sitemap is consistent: `sitemap-pages.xml` lists `/en/terminos-y-condiciones` for the `en` row, and an `en-US` row is listed under `/en/` too — `resolveLocaleSegment` matches `entry.path === locale || entry.codes.includes(locale)` since 0.42.0.\n\n**Expected**\n\nOne locale identity per configured locale object across writes and reads: either rows are stamped with a code (so `Astro.currentLocale` finds them), or queries normalize a code to its object's `path` before matching. Today `normalizeAstroI18n` maps each object to its `path` (`src/i18n/normalize.ts`), which is what rows get, while Astro hands templates a code.\n\n**Workaround**\n\nUse string locales only, so the URL segment, `Astro.currentLocale` and the stored row locale are the same string.\n\n(At 0.38.0 the sitemap side was broken as well — rows stamped with the `path` were dropped from it; that half is fixed in 0.42.0.)\n",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/3577"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 40,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": [
+		"CI is not available in fixtures",
+		"adversarial review against the original pull request's findings"
+	],
+	"graded": [
+		"fixes the reported scenario in the reporter's configuration",
+		"the original pull request's missed findings",
+		"new defects"
+	]
+}

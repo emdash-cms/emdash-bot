@@ -1,0 +1,33 @@
+{
+	"id": "3592",
+	"kind": "fix",
+	"behaviour": "Re-run of the bot's fix for upstream issue 3592 with pre-submit self-review; graded by adversarial review against the findings on its original pull request.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "68b954e651da818b53cdacc477ea6fd5ae8ad5cf",
+		"note": "Parent of the bot's first commit on its original pull request. Fixture repositories receive a single-commit snapshot of this tree. The adversarial review skill is overlaid with the version from upstream PR 4227.",
+		"overlay": {
+			"skills/adversarial-reviewer/SKILL.md": "evals/overlays/adversarial-reviewer-skill.md"
+		}
+	},
+	"issue": {
+		"title": "<Image> Props don't declare quality, though it is forwarded to Astro's Image",
+		"body": "### Description\n\n`<Image>` from `emdash/ui` (`EmDashImage.astro`) forwards extra props to Astro's `<Image>` through `...attrs`, so `quality` already works at runtime for local media. The rendered URL gets `q=70`. But `Props` extends `HTMLAttributes<\"img\">` and doesn't declare `quality`, so `astro check` rejects it:\n\n```\nsrc/components/Photo.astro:24:118 - error ts(2322): Type '{ image: never; alt: string; width: number | undefined; height: number | undefined; sizes: string; priority: boolean; quality: number | undefined; class: string; }' is not assignable to type 'IntrinsicAttributes & Props'.\n  Property 'quality' does not exist on type 'IntrinsicAttributes & Props'.\n```\n\nExpected: `quality` is typed, since it is passed through. Something like:\n\n```ts\n/** Output quality for optimized variants (Astro image service). Local media only. */\nquality?: ImageQuality; // or number | \"low\" | \"mid\" | \"high\" | \"max\"\n```\n\nWorkaround: `{...{ quality }}`, because TypeScript skips the excess-property check on spread props.\n\n### Steps to reproduce\n\n1. In a site that uses `emdash/ui`: `<Image image={post.data.featured_image} quality={70} />`\n2. Run `astro check`, which reports the error above.\n3. Run the site: the `/_image` URL still contains `q=70`.\n\n### Environment\n\n- emdash 1.0.1, @emdash-cms/cloudflare 1.0.1, astro 7.3.5\n- Node.js 26.7.0\n- Runtime: Cloudflare Workers\n- OS: Linux\n\n### Screenshots\n\nNot applicable.\n",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/3592"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 40,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": [
+		"CI is not available in fixtures",
+		"adversarial review against the original pull request's findings"
+	],
+	"graded": [
+		"fixes the reported scenario in the reporter's configuration",
+		"the original pull request's missed findings",
+		"new defects"
+	]
+}

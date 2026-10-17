@@ -1,0 +1,33 @@
+{
+	"id": "3018",
+	"kind": "fix",
+	"behaviour": "Re-run of the bot's fix for upstream issue 3018 with pre-submit self-review; graded by adversarial review against the findings on its original pull request.",
+	"source": {
+		"repo": "emdash-cms/emdash",
+		"startingCommit": "7e47487036c6932969d634a1f747a3761cac3823",
+		"note": "Parent of the bot's first commit on its original pull request. Fixture repositories receive a single-commit snapshot of this tree. The adversarial review skill is overlaid with the version from upstream PR 4227.",
+		"overlay": {
+			"skills/adversarial-reviewer/SKILL.md": "evals/overlays/adversarial-reviewer-skill.md"
+		}
+	},
+	"issue": {
+		"title": "bug(media): Caption field value is missing from response data payload",
+		"body": "### Description\n\nWhen adding or editing an image in the media modal, the `Alt Text` field saves and reflects correctly in the API response/data payload. However, the `Caption` field value is omitted/missing from the returned image object entirely.\n\nPreviously, removing and re-adding the image would occasionally workaround the issue, but as of current versions, the caption fails to persist/appear completely.\n\n---\n\n#### Priority & Impact / Request for Hotfix\n\n> **Note:** Please consider releasing a **hotfix** for this issue once resolved rather than waiting for the next major/minor release. Without the `caption` field, it is currently impossible to include image descriptions and source/credit information, which directly impacts production usability.\n\n---\n\n#### Expected Behavior\n\nThe returned JSON payload should include a `caption` property containing the value entered in the media details form (e.g., `caption: 'Test xxx'`).\n\n---\n\n#### Actual Behavior\n\nThe `alt` property is correctly present in the object, but the `caption` field/property is entirely missing from the response payload:\n\n```javascript\n{\n  id: '01M236SY1S4NQ2DFDA4236Q9QG',\n  provider: 'local',\n  filename: 'mor-shani-li4dxZ0KYRw-unsplash.jpg',\n  mimeType: 'image/jpeg',\n  width: 2400,\n  height: 1676,\n  blurhash: 'LmG[{5M|s.oz.ARkWBj]4?oeNGae',\n  dominantColor: 'rgb(126,126,124)',\n  alt: 'Alt text xxxx',\n  meta: {\n    storageKey: '01M236SY1S8EDSXKKRKVBKFW1S.01M236SY25VRT0ZF1X0A9PGB8J.jpg'\n  }\n}\n```\n\n### Steps to reproduce\n\n1. Open the Media Details modal for an uploaded image.\n2. Fill in values for both **Alt Text** (e.g., `\"Alt text xxxx\"`) and **Caption** (e.g., `\"Test xxx\"`).\n3. Click **Save**.\n4. Inspect the resulting image JSON / data payload.\n\n### Environment\n\n- emdash version: 0.36/0.37\n- Node.js version: 22\n- Runtime: Node\n- OS: macOS/Linux\n\n### Screenshots\n\n<img width=\"1072\" height=\"681\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/6c9b17ec-3cca-4f4e-a38d-e7e2a050829b\" />\n\n<img width=\"1234\" height=\"450\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/0326a3b2-0703-4ece-9d1e-4bcbeb3a9d9c\" />",
+		"sourceUrl": "https://github.com/emdash-cms/emdash/issues/3018"
+	},
+	"acceptableOutcome": "fix",
+	"budget": {
+		"rounds": 40,
+		"authorMinutes": 45,
+		"caseMinutes": 240
+	},
+	"verification": [
+		"CI is not available in fixtures",
+		"adversarial review against the original pull request's findings"
+	],
+	"graded": [
+		"fixes the reported scenario in the reporter's configuration",
+		"the original pull request's missed findings",
+		"new defects"
+	]
+}

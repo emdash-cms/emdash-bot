@@ -3,7 +3,7 @@
 // never referenced by URL from fixture text.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gh, gitAuthEnv, gitUrl } from "./github.ts";
@@ -131,6 +131,14 @@ export async function resetRepo(
 				start,
 			]);
 			tree = git(work, ["rev-parse", `${start}^{tree}`]);
+		}
+		if (manifest.source.overlay) {
+			git(work, ["read-tree", tree]);
+			for (const [path, from] of Object.entries(manifest.source.overlay)) {
+				const blob = git(work, ["hash-object", "-w", "--stdin"], readFileSync(from, "utf8"));
+				git(work, ["update-index", "--add", "--cacheinfo", `100644,${blob},${path}`]);
+			}
+			tree = git(work, ["write-tree"]);
 		}
 		const snapshot = git(work, [
 			"commit-tree",
