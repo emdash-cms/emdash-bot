@@ -1,0 +1,31 @@
+evals/self-review-answer-key.md
+  s_4c97aa8e7b616f::t_a252569a12e34f 20-24
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_82bf8a3c5eaf6f 64,514-519,611-631,855-856,2050-2055
+src/config.ts
+  s_4c97aa8e7b616f::t_740c6e32fa0c36 118-119,122-123,200
+src/runtime/scripted-author.ts
+  s_4c97aa8e7b616f::t_717172464c59b3 42,68-69,71
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_ee485596cf5e8b 14,95,97-102,109-154,242,250-302,608-652,677
+test/unit/author-method.test.ts
+  s_4c97aa8e7b616f::t_8da35bc47bc556 23
+test/workers/delegate.test.ts
+  s_4c97aa8e7b616f::t_c77afe119fa6c7 1-3,53-54,69-74,80-88,92-95,98-100,106,108-109,118-119,123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2f4ec41f2c6bfc8204033bee038affe2fc5b9a35",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
