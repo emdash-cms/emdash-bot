@@ -57,7 +57,8 @@ export class SandboxDO extends DurableObject<Env> {
 			container.start({
 				image: container.images.workspace!,
 				enableInternet: false,
-				instance: "standard-3",
+				// 4 vCPU, 12 GiB: EmDash's root build and repository-wide checks run several Node processes at once.
+				instance: "standard-4",
 				labels: { case: scope.caseId.slice(0, 63) },
 			});
 		}

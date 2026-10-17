@@ -18,8 +18,10 @@ RUN apt-get update \
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # EmDash's root build exceeds Node's default heap in the core package; 6 GB
-# was still too little in practice, 12 GB succeeds. This is a ceiling, not a reservation.
-ENV NODE_OPTIONS=--max-old-space-size=12288
+# was still too little in practice. A ceiling, not a reservation: kept below
+# the sandbox's 12 GiB so Node fails with its own error before the container
+# runs out of memory.
+ENV NODE_OPTIONS=--max-old-space-size=10240
 COPY --from=browsers /ms-playwright /ms-playwright
 RUN npx -y playwright@1.61.1 install-deps chromium && rm -rf /root/.npm /var/lib/apt/lists/*
 

@@ -59,6 +59,32 @@ describe("delegate", () => {
 		expect(helperTools).toEqual(["read"]);
 	});
 
+	it("reports a helper that ends without a report as a failed delegation", async () => {
+		bot = await startBot({ childModel: "scripted:author" });
+		const caseId = issueCaseId(94);
+		const helper = {
+			rounds: [{ steps: [{ tool: "read", args: { path: "greet.js" } }], final: "" }],
+		};
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{ tool: "delegate", args: { task: helperBrief(helper) } },
+						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 94, number: 94, script }));
+		await bot.waitFor("handoff", async () => (await bot!.inspect(caseId)).handoff);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const result = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.find((m: any) => m.role === "toolResult" && m.toolName === "delegate");
+		expect(result.isError).toBe(true);
+		expect(JSON.stringify(result)).toContain("ended without a report. Its last tool call was read");
+	});
+
 	it("reviews the change with independent reviewers before submitting", async () => {
 		// No review model configured: the reviewers run on the author's own model.
 		bot = await startBot({ childModel: "workers-ai:@cf/unavailable/helper" });

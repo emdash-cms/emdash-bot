@@ -301,7 +301,27 @@ async function ask(
 		.flatMap((part) => (part.type === "text" ? [part.text] : []))
 		.join("\n")
 		.trim();
-	return { ok: true, text: text || "(no text returned)" };
+	if (text) return { ok: true, text };
+	// No report is a failed delegation, not a silent success: say what it last did.
+	const recent = await api.commit(
+		(tx) => tx.scanEntries({ conversationId: id, maxEntryId: settled.answer! }, 20),
+		context,
+	);
+	const last = recent.items
+		.flatMap((entry) => [...(entry.model ?? [])].reverse())
+		.find((m) => m.role === "toolResult");
+	const output = last
+		? last.content
+				.flatMap((part) => (part.type === "text" ? [part.text] : []))
+				.join("\n")
+				.slice(-2_000)
+		: "";
+	return {
+		ok: false,
+		text: last
+			? `The child ended without a report. Its last tool call was ${last.toolName}${last.isError ? ", which failed" : ""}; the end of its output:\n${output}`
+			: "The child ended without a report.",
+	};
 }
 
 export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
