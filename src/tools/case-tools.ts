@@ -91,6 +91,8 @@ export interface CaseRuntime {
 	ciLog(checkRunId: number, lines?: number): Promise<string>;
 	/** The helper model for `delegate`, or null when helpers are off. */
 	childModel(): { readonly provider: string; readonly modelId: string } | null;
+	/** The author's own model, for a delegation that needs careful judgement. */
+	mainModel(): { readonly provider: string; readonly modelId: string };
 	focusedChecks(): Readonly<Record<string, string>>;
 	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately. */
 	recordUsage(tokens: number, cacheRead: number): void;
@@ -184,7 +186,7 @@ Rules you cannot change:
 - When you change code in response to anything, submit a new candidate. When you disagree with feedback, reply with your technical reasoning instead of changing code; the reviewer or a maintainer decides.
 - Keep going until the change is ready for a maintainer's review: fix failing checks, respond to reviews, resolve merge conflicts, and rebuild when the branch moves. A maintainer's review and merge is the only step that needs a person.
 - When a choice is a matter of judgement (an approach, a name, how far a fix should reach), make the best defensible decision, explain it in the pull request, and carry on; reviewers can push back. Ask the reporter only for facts only they have, such as how to reproduce. Call handoff only when you cannot proceed correctly without a maintainer: the right behaviour cannot be worked out from the code, docs or issue and a wrong guess would be costly or hard to undo, or something outside the repository blocks you (access, a broken service). Never hand off for something you can check or fix yourself.
-- Before you submit a candidate, review your change adversarially, as a demanding maintainer would: does it fix what was reported in the reporter's situation, and is every claim in your summary and description true? Follow the repository's own review guidance (its AGENTS.md and skills, such as an adversarial review skill). A fresh look finds more: delegate the review to a helper with the issue, your diff and that guidance, then fix what it finds or explain why not.
+- Before you submit a candidate, review your change adversarially, as a demanding maintainer would: does it fix what was reported in the reporter's situation, and is every claim in your summary and description true? Follow the repository's own review guidance (its AGENTS.md and skills, such as an adversarial review skill). A fresh look finds more: delegate the review with thorough: true, giving the helper the issue, your diff and that guidance, then fix what it finds or explain why not.
 - End every turn with a next step: a submitted candidate, a reply (an answer, or a specific question for the reporter or a maintainer), a decline, or a handoff.
 - Keep a short plan with update_work_plan and update it as you go; it is the progress comment people watch, on the issue until your pull request opens and on the pull request after. Use reply for actual conversation: questions, disagreements, and asking the reporter to try the fix. Ask them on the issue once you receive the "Preview ready" message, with the links it gives, to confirm the fix solves their problem; if no preview comes, ask once you receive the "Ready for human review" message instead (not before). Skip it when the reporter is the maintainer who assigned you. If you later change the fix significantly, tell them on the issue and ask again, with the latest preview from case_status. When they confirm, call record_reporter_confirmation. Do not post noise.
 - When your change alters what people see (the admin UI, a rendered page, a component), include screenshots in the pull request description as the template asks: take them with Playwright's Chromium in the sandbox and publish each with attach_screenshot.
@@ -192,7 +194,7 @@ Rules you cannot change:
 
 const HELPER_INSTRUCTIONS = `You are a helper to the EmDash bot's author, not the author. Do exactly the task in the message, in the shared checkout, and stop. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Report back concisely: what you found or changed (paths and line numbers), what you ran and its result, and anything that surprised you. Quote only the lines that matter, never whole logs.`;
 
-const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit.`;
+const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit. For the few tasks that need careful judgement rather than legwork, above all the adversarial review of your change before you submit, pass thorough: true to run the helper on your own model; it costs more, so use it only for those.`;
 
 export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 	const read = guarded(runtime, createReadTool(), "safe");
@@ -494,12 +496,19 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			edits: Type.Optional(
 				Type.Boolean({ description: "Allow the helper to write and edit files" }),
 			),
+			thorough: Type.Optional(
+				Type.Boolean({
+					description:
+						"Run the helper on your own, more capable model instead of the cheaper one. Only for tasks that need careful judgement, such as an adversarial review of your change; it costs more.",
+				}),
+			),
 		}),
 		// A rerun after a restart finds the same child and the same submission.
 		replay: "safe",
 		execute: async (args, api, context) => {
-			const model = runtime.childModel();
-			if (!model) throw new Error("no helper model is configured for this case");
+			const helper = runtime.childModel();
+			if (!helper) throw new Error("no helper model is configured for this case");
+			const model = args.thorough ? runtime.mainModel() : helper;
 			const child = await api.commit(async (tx) => {
 				const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
 				if (existing !== undefined) return existing.id;

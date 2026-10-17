@@ -502,6 +502,13 @@ export class CaseDO extends DurableObject<Env> {
 				const parsed = parseModelRef(ref);
 				return { provider: parsed.provider, modelId: parsed.id };
 			},
+			mainModel: () => {
+				const parsed = parseModelRef(
+					(faultsEnabled(this.config) ? this.store.getMeta<string>("fixtureModel") : null) ??
+						this.config.authorModel,
+				);
+				return { provider: parsed.provider, modelId: parsed.id };
+			},
 			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
 			decline: (opId, reason, message) => this.#decline(opId, reason, message),
 			updateWorkPlan: async (input) => {

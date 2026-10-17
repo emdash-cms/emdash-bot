@@ -50,6 +50,37 @@ describe("delegate", () => {
 		expect(bot.github.pulls).toHaveLength(1);
 	});
 
+	it("runs a thorough delegation on the author's own model, not the helper", async () => {
+		// A helper model that cannot answer: only the author's model can complete the task.
+		bot = await startBot({ childModel: "workers-ai:@cf/unavailable/helper" });
+		const caseId = issueCaseId(97);
+		const reviewer = {
+			rounds: [
+				{
+					steps: [{ tool: "read", args: { path: "greet.js" } }],
+					final: "Review: no defects found.",
+				},
+			],
+		};
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{ tool: "delegate", args: { task: helperBrief(reviewer), thorough: true } },
+						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 97, number: 97, script }));
+		await bot.waitFor("handoff", async () => (await bot!.inspect(caseId)).handoff);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const results = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.filter((m: any) => m.role === "toolResult" && m.toolName === "delegate");
+		expect(JSON.stringify(results)).toContain("Review: no defects found.");
+	});
+
 	it("is unavailable without a helper model", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(96);
