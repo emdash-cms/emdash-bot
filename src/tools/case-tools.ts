@@ -91,8 +91,8 @@ export interface CaseRuntime {
 	ciLog(checkRunId: number, lines?: number): Promise<string>;
 	/** The helper model for `delegate`, or null when helpers are off. */
 	childModel(): { readonly provider: string; readonly modelId: string } | null;
-	/** The author's own model, for a delegation that needs careful judgement. */
-	mainModel(): { readonly provider: string; readonly modelId: string };
+	/** The model for a delegation that needs careful judgement: the review model, else the author's own. */
+	reviewModel(): { readonly provider: string; readonly modelId: string };
 	focusedChecks(): Readonly<Record<string, string>>;
 	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately. */
 	recordUsage(tokens: number, cacheRead: number): void;
@@ -194,7 +194,7 @@ Rules you cannot change:
 
 const HELPER_INSTRUCTIONS = `You are a helper to the EmDash bot's author, not the author. Do exactly the task in the message, in the shared checkout, and stop. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Report back concisely: what you found or changed (paths and line numbers), what you ran and its result, and anything that surprised you. Quote only the lines that matter, never whole logs.`;
 
-const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit. For the few tasks that need careful judgement rather than legwork, above all the adversarial review of your change before you submit, pass thorough: true to run the helper on your own model; it costs more, so use it only for those.`;
+const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit. For the few tasks that need careful judgement rather than legwork, above all the adversarial review of your change before you submit, pass thorough: true to run the helper on the stronger review model; it costs more, so use it only for those.`;
 
 export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 	const read = guarded(runtime, createReadTool(), "safe");
@@ -499,7 +499,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			thorough: Type.Optional(
 				Type.Boolean({
 					description:
-						"Run the helper on your own, more capable model instead of the cheaper one. Only for tasks that need careful judgement, such as an adversarial review of your change; it costs more.",
+						"Run the helper on the stronger review model instead of the cheaper one. Only for tasks that need careful judgement, such as an adversarial review of your change; it costs more.",
 				}),
 			),
 		}),
@@ -508,7 +508,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		execute: async (args, api, context) => {
 			const helper = runtime.childModel();
 			if (!helper) throw new Error("no helper model is configured for this case");
-			const model = args.thorough ? runtime.mainModel() : helper;
+			const model = args.thorough ? runtime.reviewModel() : helper;
 			const child = await api.commit(async (tx) => {
 				const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
 				if (existing !== undefined) return existing.id;

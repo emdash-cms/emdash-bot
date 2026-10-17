@@ -114,6 +114,11 @@ export interface BotConfig {
 	readonly budgets: Budgets;
 	readonly checks: CheckPolicy;
 	readonly githubApiUrl: string;
+	/**
+	 * The model for thorough delegations, above all the pre-submit adversarial
+	 * review; a different family from the author catches more. Defaults to the author's model.
+	 */
+	readonly reviewModel?: string;
 	/** The first delay before retrying a failed model call; later retries double it. */
 	readonly modelRetryBaseMs: number;
 	/** The Worker's public origin, for links such as published screenshots. */
@@ -189,6 +194,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		githubApiUrl: raw.githubApiUrl ?? "https://api.github.com",
 		publicUrl: (raw.publicUrl ?? "").replace(/\/$/, ""),
 		modelRetryBaseMs: raw.modelRetryBaseMs ?? 2 * 60_000,
+		...(raw.reviewModel ? { reviewModel: raw.reviewModel } : {}),
 		gitRemoteBase: raw.gitRemoteBase ?? "https://github.com",
 		maxArtifactBytes: raw.maxArtifactBytes ?? 8 * 1024 * 1024,
 		reconcileMs: raw.reconcileMs ?? 15_000,

@@ -26,6 +26,12 @@ describe("production profile", () => {
 });
 
 describe("staging profile", () => {
+	it("reviews with a different model family from the author", () => {
+		const config = readConfig({ BOT_CONFIG: load("staging") });
+		expect(config.reviewModel).toMatch(/claude/);
+		expect(config.authorModel).not.toMatch(/claude/);
+	});
+
 	it("never admits the production repository", () => {
 		const config = readConfig({ BOT_CONFIG: load("staging") });
 		expect(repositoryFor(config, 1198246700, "emdash-cms/emdash")).toBeUndefined();

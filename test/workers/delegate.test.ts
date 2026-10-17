@@ -81,6 +81,35 @@ describe("delegate", () => {
 		expect(JSON.stringify(results)).toContain("Review: no defects found.");
 	});
 
+	it("runs a thorough delegation on the configured review model", async () => {
+		// A review model that cannot answer: the thorough delegation fails, where the helper would not.
+		bot = await startBot({
+			childModel: "scripted:author",
+			reviewModel: "workers-ai:@cf/unavailable/review",
+		});
+		const caseId = issueCaseId(98);
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{
+							tool: "delegate",
+							args: { task: helperBrief({ rounds: [{ steps: [] }] }), thorough: true },
+						},
+						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 98, number: 98, script }));
+		await bot.waitFor("handoff", async () => (await bot!.inspect(caseId)).handoff);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const results = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.filter((m: any) => m.role === "toolResult" && m.toolName === "delegate");
+		expect(JSON.stringify(results)).toMatch(/did not finish|unavailable|error/i);
+	});
+
 	it("is unavailable without a helper model", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(96);
