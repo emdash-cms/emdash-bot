@@ -26,4 +26,4 @@ Use this when implementing an EmDash issue or repairing an EmDash pull request.
 ## Finishing
 
 - Submit a candidate with a conventional-commit title and a summary stating what changed and which checks you ran.
-- If the report lacks information needed for a correct fix, or the described behaviour is intended, hand off instead of guessing.
+- If the report lacks information only the reporter has, ask them on the issue. If the described behaviour is intended, reply explaining why rather than changing code.
