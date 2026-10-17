@@ -1,0 +1,33 @@
+README.md
+  s_4c97aa8e7b616f::t_dd5fd81ab03637 11
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_5dbef72fe5f631 68-69,97-122,922-933,935-937,939,941,943-968,970-1038,1040-1042,1044,1047-1089,1406-1407,1410-1411,1416-1420,1434,1480,1486-1497,1865,1870-1872,1964-1965,2081-2083
+src/cases/repository-do.ts
+  s_4c97aa8e7b616f::t_ae499224adbea0 309-313
+src/github/webhook.ts
+  s_4c97aa8e7b616f::t_87c8d98e315205 92,112,185-219,355-360,366,374-437
+src/index.ts
+  s_4c97aa8e7b616f::t_29b1f657302775 6,45-46,140-166
+test/fakes/github.ts
+  s_4c97aa8e7b616f::t_d1b99a149e7ea7 36-39,54-55,498-519
+test/unit/webhook.test.ts
+  s_4c97aa8e7b616f::t_a2fda470af12eb 70,82-130
+test/workers/intake.test.ts
+  s_4c97aa8e7b616f::t_3e5e8b93f12920 1-261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f5b4a9772bba9b271493d7b0aa723a00f29e01dd",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
