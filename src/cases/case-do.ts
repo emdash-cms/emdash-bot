@@ -488,7 +488,7 @@ export class CaseDO extends DurableObject<Env> {
 		const budgets = this.config.budgets;
 		const runStartedAt = this.store.getMeta<number>("runStartedAt");
 		if (runStartedAt && Date.now() - runStartedAt > budgets.authorMs)
-			return "the author time budget for this run is exhausted";
+			return "the bot ran out of time for this run";
 		const assignedAt =
 			this.store.getMeta<number>("assignedAt") ??
 			this.store.getMeta<number>("createdAt") ??
@@ -1542,8 +1542,8 @@ export class CaseDO extends DurableObject<Env> {
 		if (counted && runs > this.config.budgets.rounds) {
 			await this.#handoff(
 				`runs:${runs}`,
-				`the author run budget (${this.config.budgets.rounds}) is exhausted`,
-				"a maintainer decides how to continue (operator resume grants more)",
+				`the bot has used all ${this.config.budgets.rounds} of its runs on this issue`,
+				"a maintainer decides how to continue; an operator can grant more runs",
 			);
 			return;
 		}
@@ -1717,8 +1717,8 @@ export class CaseDO extends DurableObject<Env> {
 				await this.#stopAuthor();
 				await this.#handoff(
 					`run-timeout:${started}`,
-					"the author exceeded the run time budget",
-					"inspect the transcript; a new comment or operator resume continues",
+					"the bot ran out of time for this run",
+					"a maintainer reads the transcript, then comments or asks an operator to resume",
 				);
 			}
 			return { rescheduleAt: Date.now() + this.config.reconcileMs };
@@ -1947,6 +1947,7 @@ export class CaseDO extends DurableObject<Env> {
 			state: this.store.state(),
 			authorBusy: this.store.state() === "active" && (await this.#authorBusy()),
 			authorStarted: (this.store.getMeta<number>("runs") ?? 0) > 0,
+			waitingForSlot: (this.store.getMeta<unknown[]>("held") ?? []).length > 0,
 			handoff: this.store.getMeta<Handoff | null>("handoff") ?? undefined,
 			candidates: this.store.candidates(),
 			publications: this.store.publications(),

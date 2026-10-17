@@ -17,6 +17,8 @@ export interface StatusInput {
 	readonly authorBusy: boolean;
 	/** Whether the author has run at all in this case. */
 	readonly authorStarted: boolean;
+	/** Whether messages for the author are held until an author slot frees up. */
+	readonly waitingForSlot?: boolean;
 	readonly handoff: { reason: string; nextAction: string; at: number } | undefined;
 	readonly candidates: readonly Candidate[];
 	readonly publications: readonly Publication[];
@@ -130,18 +132,24 @@ export function computeStatus(input: StatusInput): StatusReport {
 	if (input.state === "declined")
 		return report(
 			"declined",
-			[input.handoff?.reason ?? "the author declined this issue"],
+			[input.handoff?.reason ?? "the bot declined this issue"],
 			"a maintainer can apply the intake label to assign it anyway",
 		);
-	if (input.authorBusy) return report("working", ["the author is working"], "wait for the author");
+	if (input.authorBusy) return report("working", ["the bot is working"], "wait for the bot");
+	if (input.waitingForSlot)
+		return report(
+			"working",
+			["the bot is busy with other issues and will start when one finishes"],
+			"wait for the bot",
+		);
 	// Includes a case created ahead of admission (an operator fixture before intake).
 	if (!input.authorStarted && !input.handoff)
-		return report("working", ["the author is starting"], "wait for the author");
+		return report("working", ["the bot is starting"], "wait for the bot");
 	if (input.handoff) return report("needs-human", [input.handoff.reason], input.handoff.nextAction);
 	if (!candidate)
 		return report(
 			"waiting-for-reply",
-			["the author is idle and has not submitted a change"],
+			["the bot has stopped without proposing a change"],
 			"the reporter or a maintainer can reply on the issue",
 		);
 	if (!publication || publication.state === "intent" || publication.state === "commit-created") {
@@ -166,7 +174,7 @@ export function computeStatus(input: StatusInput): StatusReport {
 		return report(
 			"changes-required",
 			failedCode.map((c) => `${c.name} failed on the current head`),
-			"the author repairs the failing check",
+			"the bot will fix the failing check",
 		);
 	const blocked = checks.filter((c) => c.state === "failed");
 	if (blocked.length > 0) {
@@ -184,7 +192,7 @@ export function computeStatus(input: StatusInput): StatusReport {
 			[
 				`the reviewer's latest review of the current head has ${review.actionable} item(s) of feedback`,
 			],
-			"the author responds; approve when satisfied",
+			"the bot will respond to the review, and the reviewer approves when satisfied",
 		);
 	}
 	const pending = checks.filter((c) => c.state === "missing" || c.state === "pending");

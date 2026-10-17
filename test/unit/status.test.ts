@@ -129,6 +129,12 @@ describe("deterministic status", () => {
 		expect(body).not.toContain("Required checks");
 	});
 
+	it("says it is waiting for a slot while its messages are held", () => {
+		const held = computeStatus({ ...base, authorStarted: false, waitingForSlot: true });
+		expect(held.status).toBe("working");
+		expect(held.reasons[0]).toMatch(/busy with other issues/);
+	});
+
 	it("is starting, not waiting for a reply, before the author has run", () => {
 		const report = computeStatus({
 			...base,
