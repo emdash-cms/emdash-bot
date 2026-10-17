@@ -1,0 +1,31 @@
+README.md
+  s_4c97aa8e7b616f::t_8a6fbb2bcdb58e 15
+profiles/production.json
+  s_4c97aa8e7b616f::t_9ce7a092ff89a9 15-19
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_9979f9bb9264eb 1822,1908-1914,2268-2330,2358-2360
+src/config.ts
+  s_4c97aa8e7b616f::t_168cfd90361fbc 27-37
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_14c55f2dc07593 184
+test/unit/author-method.test.ts
+  s_4c97aa8e7b616f::t_0d22b8e6ebd04a 8-9,11
+test/workers/intake.test.ts
+  s_4c97aa8e7b616f::t_c498e7ac73c107 262-352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "69b3f1e572e67ee50cb6ab51de4d5352ca54963a",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
