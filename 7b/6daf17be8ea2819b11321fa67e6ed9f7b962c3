@@ -1,0 +1,27 @@
+evals/bin/review-replay.ts
+  s_4c97aa8e7b616f::t_c9b8725b2c1a5a 1-3,5-12,19,26,31,137-177,179-182,206,209-216,224-296,298,333
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_e69f52e88683bc 19,53,95-96,346-357,522,524-526,551-557,2937,3061-3062,3071,3074
+src/index.ts
+  s_4c97aa8e7b616f::t_12861b1464d644 341-342,367-368
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_71186f1407cf84 104-105,714-719
+test/workers/delivery.test.ts
+  s_4c97aa8e7b616f::t_97d2ecf656ae38 110-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7b6daf17be8ea2819b11321fa67e6ed9f7b962c3",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
