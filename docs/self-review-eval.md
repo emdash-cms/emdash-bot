@@ -6,21 +6,21 @@ Does the author's pre-submit adversarial self-review catch what it missed on its
 
 The author's pre-submit self-review, replayed as a staging dry run (GPT-6.1 Sol, the author's own model) on a private snapshot of each pull request's head, with the issue, the diff, the description and the adversarial review skill from upstream PR 4227. Two runs per pull request. Scored against `evals/self-review-answer-key.md`.
 
-| PR | Key finding | Run 1 | Run 2 |
-| --- | --- | --- | --- |
-| 4226 | K1 route-cache fresh read gated on an object cache | found | found |
-| 4226 | K2 tests set the flag directly | not reported | not reported |
-| 4226 | K3 hard expiry, not stale-while-revalidate | not reported | not reported |
-| 4225 | K4 widget-area race | missed ("no actionable defects") | missed |
-| 4225 | K5 not atomic on Durable Object SQL | missed | missed |
-| 4224 | K6 code-stamped rows unreachable; "no migration" false | found | found (reproduced with SQLite) |
-| 4224 | K7 case behaviour for string-only configs | not reported | not reported |
-| 4221 | K8 quality values break the Cloudflare image endpoint | missed ("no defects") | missed; judged presets correct |
-| 4221 | K9 quality ignored in most render paths | missed | missed |
-| 4201 | K10 conflicts with `meta.caption` | not reported | not reported |
-| 4201 | K11 generated types omit `caption` | found | found |
-| 4201 | K12 Edit asset overwrites the per-use caption | not reported | not reported |
-| 4201 | K13 seed and export paths | not reported | not reported |
+| PR   | Key finding                                            | Run 1                            | Run 2                          |
+| ---- | ------------------------------------------------------ | -------------------------------- | ------------------------------ |
+| 4226 | K1 route-cache fresh read gated on an object cache     | found                            | found                          |
+| 4226 | K2 tests set the flag directly                         | not reported                     | not reported                   |
+| 4226 | K3 hard expiry, not stale-while-revalidate             | not reported                     | not reported                   |
+| 4225 | K4 widget-area race                                    | missed ("no actionable defects") | missed                         |
+| 4225 | K5 not atomic on Durable Object SQL                    | missed                           | missed                         |
+| 4224 | K6 code-stamped rows unreachable; "no migration" false | found                            | found (reproduced with SQLite) |
+| 4224 | K7 case behaviour for string-only configs              | not reported                     | not reported                   |
+| 4221 | K8 quality values break the Cloudflare image endpoint  | missed ("no defects")            | missed; judged presets correct |
+| 4221 | K9 quality ignored in most render paths                | missed                           | missed                         |
+| 4201 | K10 conflicts with `meta.caption`                      | not reported                     | not reported                   |
+| 4201 | K11 generated types omit `caption`                     | found                            | found                          |
+| 4201 | K12 Edit asset overwrites the per-use caption          | not reported                     | not reported                   |
+| 4201 | K13 seed and export paths                              | not reported                     | not reported                   |
 
 Headline findings: 3 of 5 pull requests (4226, 4224, 4201), consistently across both runs. Missed in 2 of 5 (4225, 4221), with both runs reporting the change as sound.
 
@@ -32,13 +32,13 @@ The misses share a shape: K4 and K5 need the reviewer to look beyond the changed
 
 The bot (staging, GPT-6.1 Sol with Luna helpers, deployed at a2bc67a) re-ran five issues from scratch in private fixtures with the upstream PR 4227 review skill overlaid. Every case ran a thorough (main-model) self-review before submitting. Each resulting pull request was graded by an independent adversarial review against `evals/self-review-answer-key.md`. Per-case notes are beside this file.
 
-| Issue (orig. PR) | Self-review | Key findings | New defects |
-| --- | --- | --- | --- |
-| 3669 (4225) | ran; "no defects" | K5 resolved (approach needs no atomicity); K4 widgets still missed | low: PostgreSQL FK throw for a losing run (pre-existing) |
-| 3686 (4226) | ran; "no defects" | K1, K2, K3 all still present (TTL only; the gap is admitted in the PR body) | none |
-| 3018 (4201) | found K11, then fixed and re-verified | K11 fixed; K10, K12, K13 still present | medium: id-only writes still lack top-level caption |
-| 3577 (4224) | found K6 and two follow-on defects, fixed them over three rounds | K6 partly fixed (entries and collections); K7 still present | **critical**: build breaks for object-locale sites (strict manifest schema; an existing test fails) |
-| 3592 (4221) | ran; "no defects" | K8, K9 still present | none |
+| Issue (orig. PR) | Self-review                                                      | Key findings                                                                | New defects                                                                                         |
+| ---------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 3669 (4225)      | ran; "no defects"                                                | K5 resolved (approach needs no atomicity); K4 widgets still missed          | low: PostgreSQL FK throw for a losing run (pre-existing)                                            |
+| 3686 (4226)      | ran; "no defects"                                                | K1, K2, K3 all still present (TTL only; the gap is admitted in the PR body) | none                                                                                                |
+| 3018 (4201)      | found K11, then fixed and re-verified                            | K11 fixed; K10, K12, K13 still present                                      | medium: id-only writes still lack top-level caption                                                 |
+| 3577 (4224)      | found K6 and two follow-on defects, fixed them over three rounds | K6 partly fixed (entries and collections); K7 still present                 | **critical**: build breaks for object-locale sites (strict manifest schema; an existing test fails) |
+| 3592 (4221)      | ran; "no defects"                                                | K8, K9 still present                                                        | none                                                                                                |
 
 Key findings resolved: K5, K11, and half of K6, out of 13; the rest persist. The self-review changed the shipped code in two of five cases (3018, 3577), and in both it found the same headline issue the independent reviewers had flagged on the original pull requests. It missed whatever needed tracing into another package or backend (K1, K4, K8), matching the step 1 replay. One re-run introduced a critical regression that a focused run of the package's existing tests would have caught.
 
