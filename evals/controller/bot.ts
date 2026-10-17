@@ -23,6 +23,8 @@ export async function ops<T = any>(profile: Profile, path: string, body?: unknow
 			"x-operator": "eval-controller",
 		},
 		body: body === undefined ? undefined : JSON.stringify(body),
+		// A hung request otherwise stalls the whole run silently.
+		signal: AbortSignal.timeout(120_000),
 	});
 	const text = await response.text();
 	if (!response.ok) throw new Error(`bot ${path}: ${response.status} ${text.slice(0, 300)}`);

@@ -24,6 +24,8 @@ function git(cwd: string, args: string[], input?: string): string {
 	return execFileSync("git", args, {
 		cwd,
 		input,
+		// Fetching and pushing an EmDash snapshot takes well under this; a hang fails instead.
+		timeout: 10 * 60_000,
 		env: {
 			PATH: process.env.PATH ?? "",
 			HOME: process.env.HOME ?? "",

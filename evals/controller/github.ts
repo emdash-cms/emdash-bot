@@ -24,6 +24,8 @@ export async function gh<T = any>(
 			"content-type": "application/json",
 		},
 		body: body === undefined ? undefined : JSON.stringify(body),
+		// A hung request otherwise stalls the whole run silently.
+		signal: AbortSignal.timeout(120_000),
 	});
 	const text = await response.text();
 	const data = (text ? JSON.parse(text) : null) as T;
