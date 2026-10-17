@@ -1,0 +1,1019 @@
+<title>EmDash Autofix board</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+	rel="stylesheet"
+	href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+/>
+<style>
+	/* Layout: one centred column; a quiet header, a one-line summary of who acts next, then case lists grouped by that same question. Tokens follow emdashcms.com and plugins.emdashcms.com. */
+	:root {
+		--page: #f9f9f9;
+		--surface: #ffffff;
+		--surface-soft: #f5f5f4;
+		--ink: #262626;
+		--muted: #737373;
+		--subtle: #a3a3a3;
+		--line: #e5e5e5;
+		--line-soft: #eeeeec;
+		--accent: #ff6633;
+		--accent-strong: #e84c1a;
+		--accent-ink: #9c2e0b;
+		--accent-soft: #fff0e9;
+		--heat-12: #fa5d191f;
+		--ok: #1f9d55;
+		--ok-soft: #e7f6ec;
+		--warn: #a86a00;
+		--warn-soft: #fdf3dc;
+		--wait: #57534e;
+		--wait-soft: #f0efed;
+		--font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+		--font-mono: "SFMono-Regular", ui-monospace, Consolas, "Liberation Mono", monospace;
+		--radius: 0.55rem;
+		--shell: min(68rem, 100%);
+	}
+	@media (prefers-color-scheme: dark) {
+		:root:not([data-theme="light"]) {
+			--page: #111110;
+			--surface: #171717;
+			--surface-soft: #222220;
+			--ink: #f3f3f1;
+			--muted: #a8a8a3;
+			--subtle: #777773;
+			--line: #30302d;
+			--line-soft: #292927;
+			--accent: #ff7a4d;
+			--accent-strong: #ff8c66;
+			--accent-ink: #ffb49b;
+			--accent-soft: #351d16;
+			--heat-12: #ff5e1f1f;
+			--ok: #4ade80;
+			--ok-soft: #13291b;
+			--warn: #ecb730;
+			--warn-soft: #2e2511;
+			--wait: #c4c1bc;
+			--wait-soft: #262624;
+			color-scheme: dark;
+		}
+	}
+	:root[data-theme="dark"] {
+		--page: #111110;
+		--surface: #171717;
+		--surface-soft: #222220;
+		--ink: #f3f3f1;
+		--muted: #a8a8a3;
+		--subtle: #777773;
+		--line: #30302d;
+		--line-soft: #292927;
+		--accent: #ff7a4d;
+		--accent-strong: #ff8c66;
+		--accent-ink: #ffb49b;
+		--accent-soft: #351d16;
+		--heat-12: #ff5e1f1f;
+		--ok: #4ade80;
+		--ok-soft: #13291b;
+		--warn: #ecb730;
+		--warn-soft: #2e2511;
+		--wait: #c4c1bc;
+		--wait-soft: #262624;
+		color-scheme: dark;
+	}
+	* {
+		box-sizing: border-box;
+	}
+	body {
+		background: var(--page);
+		color: var(--ink);
+		font-family: var(--font-sans);
+		font-size: 15px;
+		line-height: 1.5;
+		padding-left: max(16px, env(safe-area-inset-left, 0px));
+		padding-right: max(16px, env(safe-area-inset-right, 0px));
+		padding-block: 0 4rem;
+		-webkit-font-smoothing: antialiased;
+	}
+	a {
+		color: inherit;
+	}
+	a:focus-visible,
+	summary:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+	.shell {
+		width: var(--shell);
+		margin-inline: auto;
+	}
+	.mono {
+		font-family: var(--font-mono);
+		font-size: 0.82em;
+	}
+
+	/* Header */
+	.site-nav {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		height: 5rem;
+		gap: 1rem;
+	}
+	.logo {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.45rem;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+		font-size: 1.15rem;
+		text-decoration: none;
+	}
+	.logo strong {
+		color: var(--muted);
+		font-weight: 500;
+	}
+	.nav-links {
+		display: flex;
+		gap: 1.5rem;
+		font-size: 0.85rem;
+		color: var(--muted);
+	}
+	.nav-links a {
+		text-decoration: none;
+	}
+	.nav-links a:hover {
+		color: var(--ink);
+	}
+	.nav-cta {
+		justify-self: end;
+		color: #fff;
+		background: var(--accent);
+		border-radius: var(--radius);
+		padding: 0.6rem 0.9rem;
+		font-size: 0.78rem;
+		font-weight: 600;
+		text-decoration: none;
+		box-shadow: inset 0 1px #ffffff38;
+		transition:
+			background 0.15s,
+			transform 0.15s;
+	}
+	.nav-cta:hover {
+		background: var(--accent-strong);
+		transform: translateY(-1px);
+	}
+
+	/* Intro */
+	.intro {
+		padding-block: 2.5rem 2rem;
+		display: grid;
+		gap: 1.25rem;
+	}
+	.eyebrow {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--muted);
+		letter-spacing: 0.02em;
+	}
+	h1 {
+		margin: 0;
+		font-size: clamp(2rem, 4.5vw, 3.1rem);
+		line-height: 1.02;
+		letter-spacing: -0.055em;
+		text-wrap: balance;
+		max-width: 18ch;
+	}
+	.lede {
+		margin: 0;
+		color: var(--muted);
+		max-width: 60ch;
+	}
+	.summary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+	.summary a {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.75rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		font-size: 0.82rem;
+		text-decoration: none;
+		font-variant-numeric: tabular-nums;
+	}
+	.summary a:hover {
+		border-color: var(--subtle);
+	}
+	.summary b {
+		font-weight: 600;
+	}
+	.slots {
+		font-size: 0.82rem;
+		color: var(--muted);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+	.slot {
+		width: 1.6rem;
+		height: 0.5rem;
+		border-radius: 999px;
+		background: var(--line);
+	}
+	.slot.on {
+		background: var(--accent);
+	}
+
+	/* Groups */
+	.group {
+		margin-top: 2.5rem;
+		scroll-margin-top: 1rem;
+	}
+	.group-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 1rem;
+		flex-wrap: wrap;
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid var(--line);
+	}
+	h2 {
+		margin: 0;
+		font-size: 1.15rem;
+		letter-spacing: -0.03em;
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+	}
+	.count {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--muted);
+		font-weight: 400;
+	}
+	.group-note {
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+
+	/* Case rows */
+	.cases {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.case {
+		border-bottom: 1px solid var(--line-soft);
+	}
+	.case > details > summary {
+		list-style: none;
+		cursor: pointer;
+		display: grid;
+		grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+		gap: 0.25rem 1rem;
+		padding-block: 1rem;
+		align-items: start;
+	}
+	.case > details > summary::-webkit-details-marker {
+		display: none;
+	}
+	.case > details > summary:hover .title {
+		text-decoration: underline;
+		text-underline-offset: 0.2rem;
+		text-decoration-color: var(--subtle);
+	}
+	.num {
+		font-family: var(--font-mono);
+		font-size: 0.82rem;
+		color: var(--muted);
+		padding-top: 0.1rem;
+	}
+	.main {
+		min-width: 0;
+		display: grid;
+		gap: 0.3rem;
+	}
+	.title {
+		font-weight: 600;
+		letter-spacing: -0.015em;
+	}
+	.next {
+		color: var(--muted);
+		font-size: 0.88rem;
+	}
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem 0.9rem;
+		font-size: 0.78rem;
+		color: var(--subtle);
+		font-variant-numeric: tabular-nums;
+	}
+	.meta a {
+		color: var(--muted);
+	}
+	.side {
+		display: grid;
+		justify-items: end;
+		gap: 0.45rem;
+	}
+
+	.pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.2rem 0.6rem;
+		border-radius: 999px;
+		white-space: nowrap;
+	}
+	.pill::before {
+		content: "";
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: currentColor;
+	}
+	.pill.human {
+		color: var(--warn);
+		background: var(--warn-soft);
+	}
+	.pill.ready {
+		color: var(--ok);
+		background: var(--ok-soft);
+	}
+	.pill.working {
+		color: var(--accent-ink);
+		background: var(--accent-soft);
+	}
+	.pill.working::before {
+		background: var(--accent);
+		animation: pulse 1.6s ease-in-out infinite;
+	}
+	.pill.queued {
+		color: var(--wait);
+		background: var(--wait-soft);
+	}
+	.pill.queued::before {
+		background: transparent;
+		border: 1.5px solid currentColor;
+	}
+	.pill.waiting {
+		color: var(--wait);
+		background: var(--wait-soft);
+	}
+	.pill.done {
+		color: var(--muted);
+		background: transparent;
+		border: 1px solid var(--line);
+	}
+	@keyframes pulse {
+		50% {
+			opacity: 0.35;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.pill.working::before {
+			animation: none;
+		}
+	}
+
+	.evidence {
+		display: flex;
+		gap: 0.3rem;
+		align-items: center;
+	}
+	.evidence span {
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		padding: 0.1rem 0.4rem;
+		border-radius: 4px;
+		border: 1px solid var(--line);
+		color: var(--muted);
+		white-space: nowrap;
+	}
+	.evidence .yes {
+		color: var(--ok);
+		border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+	}
+	.evidence .no {
+		color: var(--subtle);
+	}
+	.evidence .bad {
+		color: var(--warn);
+		border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+	}
+
+	/* Expanded detail */
+	.detail {
+		display: grid;
+		grid-template-columns: 4.5rem minmax(0, 1fr) minmax(0, 1fr);
+		gap: 1rem;
+		padding-bottom: 1.25rem;
+		font-size: 0.85rem;
+	}
+	.detail h3 {
+		margin: 0 0 0.5rem;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--muted);
+		font-weight: 600;
+	}
+	.panel {
+		min-width: 0;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		padding: 0.9rem 1rem;
+	}
+	.plan,
+	.timeline {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.4rem;
+	}
+	.plan li {
+		display: grid;
+		grid-template-columns: 1.1rem 1fr;
+		gap: 0.4rem;
+	}
+	.plan .tick {
+		color: var(--ok);
+	}
+	.plan .now {
+		color: var(--accent);
+	}
+	.plan .todo {
+		color: var(--subtle);
+	}
+	.timeline li {
+		display: grid;
+		grid-template-columns: 3.4rem 1fr;
+		gap: 0.6rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.timeline time {
+		color: var(--subtle);
+		font-family: var(--font-mono);
+		font-size: 0.78rem;
+	}
+	.stop {
+		margin-top: 0.75rem;
+		font-size: 0.78rem;
+		color: var(--muted);
+	}
+
+	.footer {
+		margin-top: 3.5rem;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--line);
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 1rem;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.footer p {
+		margin: 0;
+		max-width: 62ch;
+	}
+	.sample {
+		display: inline-block;
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		color: var(--accent-ink);
+		background: var(--accent-soft);
+		padding: 0.1rem 0.45rem;
+		border-radius: 4px;
+	}
+
+	@media (max-width: 720px) {
+		.site-nav {
+			grid-template-columns: 1fr auto;
+			height: 4.5rem;
+		}
+		.nav-links {
+			display: none;
+		}
+		.case > details > summary {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.num {
+			padding-top: 0;
+		}
+		.side {
+			justify-items: start;
+			grid-auto-flow: column;
+			justify-content: start;
+		}
+		.detail {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.detail .spacer {
+			display: none;
+		}
+	}
+</style>
+
+<header class="shell">
+	<nav class="site-nav" aria-label="Primary navigation">
+		<a class="logo" href="#">EmDash <strong>Autofix</strong></a>
+		<div class="nav-links">
+			<a href="https://github.com/emdash-cms/emdash/issues?q=is%3Aopen+label%3Abot%3Afix">Issues</a>
+			<a href="https://github.com/emdash-cms/emdash/pulls/app%2Femdash-autofix">Pull requests</a>
+			<a href="#how">How it works</a>
+		</div>
+		<a class="nav-cta" href="https://github.com/emdash-cms/emdash/issues">Find an issue</a>
+	</nav>
+</header>
+
+<main class="shell">
+	<section class="intro">
+		<span class="eyebrow"
+			>emdash-cms/emdash · updated 30 seconds ago <span class="sample">example data</span></span
+		>
+		<h1>What the EmDash bot is working on</h1>
+		<p class="lede">
+			Every issue and pull request the bot has, grouped by who acts next. Everything here is also on
+			GitHub; act there by labelling, commenting or reviewing.
+		</p>
+		<div class="summary" aria-label="Summary">
+			<a href="#human"><span class="pill human">1</span>needs a maintainer</a>
+			<a href="#ready"><span class="pill ready">1</span>ready for review</a>
+			<a href="#working"><span class="pill working">2</span>working, <b>1</b> waiting for a slot</a>
+			<a href="#waiting"><span class="pill waiting">3</span>waiting on CI, review or a reply</a>
+		</div>
+		<div class="slots" aria-label="Author slots">
+			<span class="slot on"></span><span class="slot on"></span>Both slots in use · 1 case queued
+		</div>
+	</section>
+
+	<section class="group" id="human">
+		<div class="group-head">
+			<h2>Needs a maintainer <span class="count">1</span></h2>
+			<span class="group-note">The bot can't go further without you</span>
+		</div>
+		<ul class="cases">
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#3201</span>
+						<span class="main">
+							<span class="title"
+								>Every search re-reads the FTS schema metadata: 6 queries per search</span
+							>
+							<span class="next"
+								>A maintainer will decide whether the cached FTS metadata should be invalidated by
+								schema writes or a TTL.</span
+							>
+							<span class="meta"
+								><a href="#">PR #4220</a><span>assigned by @ascorbic</span><span>open 1 h 20 m</span
+								><span>last activity 6 m ago</span></span
+							>
+						</span>
+						<span class="side">
+							<span class="pill human">Handed off</span>
+							<span class="evidence"
+								><span class="yes" title="Required checks passed">checks 7/7</span
+								><span class="no" title="No review of the current head">review –</span></span
+							>
+						</span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Plan</h3>
+							<ul class="plan">
+								<li>
+									<span class="tick">✓</span>Measure queries per search with the issue's harness
+								</li>
+								<li>
+									<span class="tick">✓</span>Cache title-column and search-config reads per database
+								</li>
+								<li><span class="now">●</span>Choose how schema changes invalidate the cache</li>
+								<li><span class="todo">○</span>Update query-count snapshots and publish</li>
+							</ul>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>08:29</time>Assigned by @ascorbic</li>
+								<li><time>08:47</time>Published to PR #4220</li>
+								<li><time>08:52</time>Query-count snapshots updated by emdashbot</li>
+								<li><time>09:12</time>Fixed a failing check, published again</li>
+								<li><time>09:44</time>Handed off with a design question</li>
+							</ul>
+							<p class="stop">
+								To stop the bot, remove <span class="mono">bot:fix</span> from the issue or the pull
+								request.
+							</p>
+						</div>
+					</div>
+				</details>
+			</li>
+		</ul>
+	</section>
+
+	<section class="group" id="ready">
+		<div class="group-head">
+			<h2>Ready for human review <span class="count">1</span></h2>
+			<span class="group-note">Checks passed, reviewer approved, merges cleanly</span>
+		</div>
+		<ul class="cases">
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#3592</span>
+						<span class="main">
+							<span class="title"
+								>&lt;Image&gt; Props don't declare quality, though it is forwarded to Astro's
+								Image</span
+							>
+							<span class="next">A maintainer will review and approve the pull request.</span>
+							<span class="meta"
+								><a href="#">PR #4221</a><span>assigned by @ascorbic</span><span>open 1 h 10 m</span
+								><span>last activity 12 m ago</span></span
+							>
+						</span>
+						<span class="side">
+							<span class="pill ready">Ready</span>
+							<span class="evidence"
+								><span class="yes">checks 7/7</span><span class="yes">approved</span
+								><span class="yes" title="The reporter confirmed the fix">reporter ✓</span></span
+							>
+						</span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Plan</h3>
+							<ul class="plan">
+								<li><span class="tick">✓</span>Reproduce the astro check error</li>
+								<li><span class="tick">✓</span>Type quality on EmDashImage props</li>
+								<li><span class="tick">✓</span>Add a type-level regression test and changeset</li>
+							</ul>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>08:39</time>Started after waiting 10 m for a slot</li>
+								<li><time>08:49</time>Published to PR #4221</li>
+								<li><time>08:58</time>Preview up; asked the reporter to try it</li>
+								<li><time>09:31</time>Reviewer approved</li>
+								<li><time>09:40</time>Reporter confirmed the fix</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+		</ul>
+	</section>
+
+	<section class="group" id="working">
+		<div class="group-head">
+			<h2>Working <span class="count">3</span></h2>
+			<span class="group-note">2 running at once; the rest start in turn</span>
+		</div>
+		<ul class="cases">
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#3669</span>
+						<span class="main">
+							<span class="title"
+								>Concurrent first-request auto-seeds on D1 duplicate menu items</span
+							>
+							<span class="next"
+								>The bot will update this comment when it has something to show.</span
+							>
+							<span class="meta"
+								><span>assigned by @ascorbic</span><span>open 24 m</span
+								><span>run 1 · 22 m of 45 m</span></span
+							>
+						</span>
+						<span class="side"><span class="pill working">Working</span></span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Plan</h3>
+							<ul class="plan">
+								<li>
+									<span class="tick">✓</span>Reproduce the interleaving with a delayed SQLite driver
+								</li>
+								<li>
+									<span class="now">●</span>Claim the seed across isolates with a database lock row
+								</li>
+								<li>
+									<span class="todo">○</span>Let an interrupted seed resume past its own tables
+								</li>
+								<li><span class="todo">○</span>Run seed tests on SQLite and PostgreSQL</li>
+							</ul>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>10:20</time>Assigned by @ascorbic</li>
+								<li><time>10:31</time>Reproduced: 12 menu items against 9</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#3577</span>
+						<span class="main">
+							<span class="title"
+								>With an Astro locale object, runtime content is stamped with the path, not the
+								code</span
+							>
+							<span class="next"
+								>The bot will update this comment when it has something to show.</span
+							>
+							<span class="meta"
+								><span>assigned by @ascorbic</span><span>open 24 m</span
+								><span>run 1 · 22 m of 45 m</span></span
+							>
+						</span>
+						<span class="side"><span class="pill working">Working</span></span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Plan</h3>
+							<ul class="plan">
+								<li>
+									<span class="tick">✓</span>Trace locale normalisation from config to queries
+								</li>
+								<li><span class="now">●</span>Normalise a requested code to its locale's path</li>
+								<li><span class="todo">○</span>Cover fallback chains and the sitemap</li>
+							</ul>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>10:20</time>Assigned by @ascorbic</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#3686</span>
+						<span class="main">
+							<span class="title"
+								>Site settings stay stale in other Worker isolates after a change</span
+							>
+							<span class="next"
+								>The bot is busy with other issues and will start when one finishes.</span
+							>
+							<span class="meta"
+								><span>assigned by @ascorbic</span><span>queued 24 m · next in line</span></span
+							>
+						</span>
+						<span class="side"><span class="pill queued">Waiting for a slot</span></span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Plan</h3>
+							<p style="margin: 0; color: var(--muted)">
+								No plan yet. The bot writes one when it starts.
+							</p>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>10:20</time>Assigned by @ascorbic, queued behind #3669 and #3577</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+		</ul>
+	</section>
+
+	<section class="group" id="waiting">
+		<div class="group-head">
+			<h2>Waiting <span class="count">3</span></h2>
+			<span class="group-note">On CI, a review, or a reply</span>
+		</div>
+		<ul class="cases">
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#3644</span>
+						<span class="main">
+							<span class="title">Block Kit button confirm dialog renders without padding</span>
+							<span class="next"
+								>The reviewer will review the current head. The reporter has been asked to try the
+								preview.</span
+							>
+							<span class="meta"
+								><a href="#">PR #4219</a><a href="#">preview</a><span>assigned by @ascorbic</span
+								><span>last activity 18 m ago</span></span
+							>
+						</span>
+						<span class="side">
+							<span class="pill waiting">Waiting for review</span>
+							<span class="evidence"
+								><span class="yes">checks 7/7</span><span class="no">review –</span
+								><span class="no">reporter –</span></span
+							>
+						</span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Plan</h3>
+							<ul class="plan">
+								<li><span class="tick">✓</span>Match the admin's dialog padding and size</li>
+								<li><span class="tick">✓</span>Answer the reviewer's two inline comments</li>
+								<li><span class="now">●</span>Wait for review and the reporter</li>
+							</ul>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>08:39</time>Published to PR #4219</li>
+								<li><time>09:18</time>Revised after review</li>
+								<li><time>10:02</time>Preview up; asked the reporter to try it</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#3018</span>
+						<span class="main">
+							<span class="title">Caption field value is missing from the image payload</span>
+							<span class="next">The bot will continue when the required checks finish.</span>
+							<span class="meta"
+								><a href="#">PR #4201</a><span>assigned by @ascorbic</span
+								><span>last activity 3 m ago</span></span
+							>
+						</span>
+						<span class="side">
+							<span class="pill waiting">Waiting for checks</span>
+							<span class="evidence"><span>checks 5/7</span><span class="yes">approved</span></span>
+						</span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Plan</h3>
+							<ul class="plan">
+								<li>
+									<span class="tick">✓</span>Carry captions through selection and normalisation
+								</li>
+								<li>
+									<span class="tick">✓</span>Merge the default branch and resolve a conflict in
+									normalize.ts
+								</li>
+							</ul>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>09:50</time>Merge conflict reported</li>
+								<li><time>09:58</time>Merged main, resolved, published again</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#4111</span>
+						<span class="main">
+							<span class="title"
+								>WordPress plugin import never lists menus on the review screen</span
+							>
+							<span class="next"
+								>The bot will continue when the reporter or a maintainer replies.</span
+							>
+							<span class="meta"
+								><span>taken on automatically</span><span>asked the reporter 2 h ago</span></span
+							>
+						</span>
+						<span class="side"><span class="pill waiting">Waiting for a reply</span></span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Question asked</h3>
+							<p style="margin: 0">
+								Which WordPress importer version produced the export, and does the file include
+								<span class="mono">nav_menu_item</span> entries?
+							</p>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>08:02</time>Triage accepted it; needs information</li>
+								<li><time>08:05</time>Asked the reporter</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+		</ul>
+	</section>
+
+	<section class="group" id="done">
+		<div class="group-head">
+			<h2>Finished this week <span class="count">2</span></h2>
+			<span class="group-note">Merged, closed, declined or stopped</span>
+		</div>
+		<ul class="cases">
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#2523</span>
+						<span class="main">
+							<span class="title"
+								>Portable Text plugin block field labels aren't associated with their inputs</span
+							>
+							<span class="meta"
+								><a href="#">PR #4197</a><span>merged by @ascorbic yesterday</span
+								><span>3 h 40 m from label to merge</span></span
+							>
+						</span>
+						<span class="side"><span class="pill done">Merged</span></span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Outcome</h3>
+							<p style="margin: 0">Merged after one review round. Reporter not asked.</p>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>Thu</time>Assigned, published 20 m later</li>
+								<li><time>Thu</time>Merged</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+			<li class="case">
+				<details>
+					<summary>
+						<span class="num">#4155</span>
+						<span class="main">
+							<span class="title">Missing SEO metadata settings in Social Media configuration</span>
+							<span class="meta"
+								><span>declined at triage: a feature request</span><span>2 days ago</span></span
+							>
+						</span>
+						<span class="side"><span class="pill done">Declined</span></span>
+					</summary>
+					<div class="detail">
+						<span class="spacer"></span>
+						<div class="panel">
+							<h3>Outcome</h3>
+							<p style="margin: 0">
+								Feature requests need a design discussion first. A maintainer can apply
+								<span class="mono">bot:fix</span> to assign it anyway.
+							</p>
+						</div>
+						<div class="panel">
+							<h3>Timeline</h3>
+							<ul class="timeline">
+								<li><time>Wed</time>Opened; declined with a short reply</li>
+							</ul>
+						</div>
+					</div>
+				</details>
+			</li>
+		</ul>
+	</section>
+
+	<footer class="footer" id="how">
+		<p>
+			<strong>How to use the bot.</strong> Add <span class="mono">bot:fix</span> to an issue, or
+			start a comment with <span class="mono">@emdash-autofix</span> and say what you want. Remove
+			the label to stop it. A maintainer always approves and merges.
+		</p>
+		<p>Read-only. Transcripts, prompts and costs stay with operators.</p>
+	</footer>
+</main>

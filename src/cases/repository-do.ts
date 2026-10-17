@@ -10,6 +10,10 @@ import { GitHubClient } from "../github/client.ts";
 import type { NormalizedDelivery } from "../github/webhook.ts";
 import type { CaseDelivery } from "./case-do.ts";
 import { cases } from "../bindings.ts";
+import type { CaseSummary } from "../reports/dashboard.ts";
+
+/** Finished cases stay on the board for a week. */
+const FINISHED_ON_BOARD_MS = 7 * 24 * 3_600_000;
 
 export interface AdmitResult {
 	readonly status: "forwarded" | "pending" | "unrouted" | "rejected";
@@ -31,6 +35,10 @@ export class RepositoryDO extends DurableObject<Env> {
 		);
 		ctx.storage.sql.exec(
 			`CREATE TABLE IF NOT EXISTS aliases (alias TEXT PRIMARY KEY, case_id TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+		);
+		// The public board: one summary per case, published by the case.
+		ctx.storage.sql.exec(
+			`CREATE TABLE IF NOT EXISTS case_summaries (case_id TEXT PRIMARY KEY, number INTEGER NOT NULL, summary TEXT NOT NULL, finished_at INTEGER, updated_at INTEGER NOT NULL)`,
 		);
 		// A case whose object keeps failing (a platform storage error, say). Its
 		// deliveries stop retrying, people are told once, and a new intake for the
@@ -304,6 +312,45 @@ export class RepositoryDO extends DurableObject<Env> {
 			return { granted: true, holders: [...new Set([...holders, caseId])] };
 		}
 		return { granted: false, holders };
+	}
+
+	/** Record a case's board summary. */
+	async putCaseSummary(summary: CaseSummary): Promise<void> {
+		this.ctx.storage.sql.exec(
+			`INSERT INTO case_summaries (case_id, number, summary, finished_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(case_id) DO UPDATE SET number = excluded.number, summary = excluded.summary, finished_at = excluded.finished_at, updated_at = excluded.updated_at`,
+			summary.caseId,
+			summary.number,
+			JSON.stringify(summary),
+			summary.finishedAt,
+			Date.now(),
+		);
+	}
+
+	/**
+	 * The board: open cases and those finished in the last week, or every case
+	 * for one issue or pull request number (its own, or one it closes).
+	 */
+	async caseSummaries(number?: number): Promise<CaseSummary[]> {
+		const rows =
+			number === undefined
+				? this.ctx.storage.sql.exec(
+						`SELECT summary FROM case_summaries WHERE finished_at IS NULL OR finished_at > ?`,
+						Date.now() - FINISHED_ON_BOARD_MS,
+					)
+				: this.ctx.storage.sql.exec(
+						`SELECT summary FROM case_summaries WHERE number = ? OR case_id IN (SELECT case_id FROM aliases WHERE alias = ?)`,
+						number,
+						`number:${number}`,
+					);
+		return rows.toArray().map((r) => JSON.parse(r.summary as string) as CaseSummary);
+	}
+
+	/** Every case this repository has routed to, for rebuilding the board. */
+	async caseIds(): Promise<string[]> {
+		return this.ctx.storage.sql
+			.exec(`SELECT DISTINCT case_id FROM aliases`)
+			.toArray()
+			.map((r) => r.case_id as string);
 	}
 
 	/** The case an alias (e.g. `number:12`) routes to, if any. */

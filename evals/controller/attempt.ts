@@ -93,7 +93,7 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 		state.botCaseId = seeded.prId
 			? `${state.repo!.id}-pr-${seeded.prId}`
 			: `${state.repo!.id}-issue-${seeded.issueId}`;
-		const bot = await ops(profile, "/");
+		const bot = await ops(profile, "/ops/service");
 		state.manifest = {
 			attemptId: state.attemptId,
 			case: manifest.id,

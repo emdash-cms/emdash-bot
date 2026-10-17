@@ -123,6 +123,29 @@ export class CaseStore {
 		console.log(JSON.stringify({ event: type, case: this.identity()?.caseId, ...data }));
 	}
 
+	/** The latest entries of the given types, oldest first. */
+	logOfTypes(
+		types: readonly string[],
+		limit: number,
+	): Array<{ at: number; type: string; data: Record<string, unknown> }> {
+		if (types.length === 0) return [];
+		return this.rows(
+			`SELECT at, type, data FROM case_log WHERE type IN (${types.map(() => "?").join(", ")}) ORDER BY seq DESC LIMIT ?`,
+			...types,
+			limit,
+		)
+			.map((r) => ({
+				at: r.at as number,
+				type: r.type as string,
+				data: JSON.parse(r.data as string) as Record<string, unknown>,
+			}))
+			.reverse();
+	}
+
+	lastLogAt(): number | null {
+		return (this.rows(`SELECT MAX(at) AS at FROM case_log`)[0]?.at as number | null) ?? null;
+	}
+
 	logEntries(): Array<{ seq: number; at: number; type: string; data: Record<string, unknown> }> {
 		return this.rows(`SELECT * FROM case_log ORDER BY seq`).map((r) => ({
 			seq: r.seq as number,

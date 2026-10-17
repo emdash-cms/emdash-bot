@@ -67,6 +67,7 @@ import { Mutex, errorMessage, sha256Hex, str, text } from "../util.ts";
 import { CaseStore } from "./store.ts";
 import { cases, repositories } from "../bindings.ts";
 import { isMaintainer } from "../github/webhook.ts";
+import { type CaseSummary, MILESTONES, boardGroup } from "../reports/dashboard.ts";
 import type {
 	Candidate,
 	CaseEvent,
@@ -2265,6 +2266,67 @@ export class CaseDO extends DurableObject<Env> {
 		});
 	}
 
+	/** Publish this case's row on the public board (also used to rebuild it). */
+	async publishSummary(): Promise<void> {
+		if (!this.store.identity()) return;
+		await this.#publishSummary(await this.status());
+	}
+
+	async #publishSummary(report: StatusReport): Promise<void> {
+		const identity = this.#identity();
+		const number = identity.kind === "issue" ? identity.issueNumber! : identity.prNumber!;
+		const group = boardGroup(report.status);
+		const finishedAt =
+			group === "finished" ? (this.store.getMeta<number>("finishedAt") ?? Date.now()) : null;
+		if (finishedAt !== this.store.getMeta<number | null>("finishedAt"))
+			this.store.setMeta("finishedAt", finishedAt);
+		const timeline: Array<{ at: number; text: string }> = [];
+		for (const entry of this.store.logOfTypes(Object.keys(MILESTONES), 40)) {
+			const text = MILESTONES[entry.type]?.(entry.data);
+			if (text && timeline.at(-1)?.text !== text) timeline.push({ at: entry.at, text });
+		}
+		const title = (this.store.requirements()[0]?.body ?? "")
+			.split("\n", 1)[0]!
+			.replace(/^#\s*/, "");
+		const summary: CaseSummary = {
+			caseId: identity.caseId,
+			repo: identity.repo,
+			kind: identity.kind,
+			number,
+			title: title.slice(0, 300),
+			url: `https://github.com/${identity.repo}/${identity.kind === "issue" ? "issues" : "pull"}/${number}`,
+			pr: this.store.getMeta<number>("pr") ?? identity.prNumber ?? null,
+			previewUrl: this.store.getMeta<{ url: string }>("preview")?.url ?? null,
+			status: report.status,
+			group,
+			queued:
+				report.status === "working" && (this.store.getMeta<unknown[]>("held") ?? []).length > 0,
+			reasons: report.reasons,
+			nextAction: report.nextAction,
+			assignedBy: this.store.getMeta<string>("assignedBy") ?? null,
+			autoIntake: this.store.getMeta<boolean>("autoIntake") === true,
+			createdAt: this.store.getMeta<number>("createdAt") ?? Date.now(),
+			lastActivity: this.store.lastLogAt() ?? Date.now(),
+			checks: {
+				passed: report.requiredChecks.filter((c) => c.state === "succeeded").length,
+				total: report.requiredChecks.length,
+			},
+			review: report.review?.state ?? null,
+			reporterConfirmed: !!this.store.getMeta("reporterConfirmation"),
+			plan: (this.store.getMeta<WorkPlan>("workPlan")?.steps ?? []).map((s) => ({
+				title: s.title,
+				status: s.status,
+			})),
+			timeline: timeline.slice(-8),
+			finishedAt,
+		};
+		// lastActivity moves with every log line; publish only when something shown changes.
+		const digest = await sha256Hex(JSON.stringify({ ...summary, lastActivity: 0 }));
+		if (digest === this.store.getMeta<string>("boardDigest")) return;
+		await repositories(this.env).getByName(String(identity.repoId)).putCaseSummary(summary);
+		this.store.setMeta("boardDigest", digest);
+	}
+
 	/**
 	 * When the repository's preview of the bot's pull request is up, collect its
 	 * links. The first time, tell the author so it can ask the reporter to try
@@ -2354,6 +2416,9 @@ export class CaseDO extends DurableObject<Env> {
 		)
 			await this.#schedule("replies", Date.now());
 		const report = await this.status();
+		await this.#publishSummary(report).catch((error: unknown) =>
+			this.store.log("board.failed", { error: errorMessage(error) }),
+		);
 		await this.#reportMergeConflict(report.head);
 		await this.#reportPreview(report.head).catch((error: unknown) =>
 			this.store.log("preview.failed", { error: errorMessage(error) }),

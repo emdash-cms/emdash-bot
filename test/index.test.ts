@@ -9,9 +9,12 @@ beforeAll(() => {
 afterAll(() => mf.dispose());
 
 describe("worker", () => {
-	it("reports the service and profile", async () => {
-		const response = await mf.dispatchFetch("https://example.com/");
-		expect(await response.json()).toEqual({ service: "emdash-bot-pi", profile: "test" });
+	it("serves the public board, and the service details only to operators", async () => {
+		const board = await mf.dispatchFetch("https://example.com/");
+		expect(board.headers.get("content-type")).toContain("text/html");
+		expect(await board.text()).toContain("What the EmDash bot is working on");
+		expect((await mf.dispatchFetch("https://example.com/ops/service")).status).toBe(401);
+		expect((await mf.dispatchFetch("https://example.com/api/cases?issue=x")).status).toBe(400);
 	});
 
 	it("rejects unsigned webhooks", async () => {

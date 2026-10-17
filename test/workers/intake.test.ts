@@ -350,3 +350,39 @@ describe("asking the reporter to try a preview", () => {
 		);
 	});
 });
+
+describe("the public board", () => {
+	it("lists a case with its status, and filters the data by issue", async () => {
+		bot = await startBot({ repositories: [{ id: 1001, fullName: REPO, requiredChecks: [] }] });
+		const caseId = issueCaseId(80);
+		await bot.webhook("issues", assignIssue({ issueId: 80, number: 80, script: fixScript() }));
+		await bot.waitFor("published", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
+		});
+		const data = await bot.waitFor("board row", async () => {
+			const response = await bot!.mf.dispatchFetch("https://bot.test/api/cases?issue=80");
+			const body = (await response.json()) as { cases: any[] };
+			return body.cases.find((c) => c.status === "candidate-published") ? body : null;
+		});
+		expect(data.cases[0]).toMatchObject({
+			caseId,
+			number: 80,
+			title: "Greeting lacks punctuation",
+			group: "waiting",
+			assignedBy: "maintainer",
+		});
+		expect(data.cases[0].timeline.map((t: any) => t.text)).toEqual(
+			expect.arrayContaining([
+				"Assigned by @maintainer",
+				expect.stringMatching(/^Published to pull request #/),
+			]),
+		);
+		const other = await bot.mf.dispatchFetch("https://bot.test/api/cases?issue=81");
+		expect(((await other.json()) as { cases: unknown[] }).cases).toHaveLength(0);
+		expect(await bot.ops("service")).toMatchObject({ service: "emdash-bot-pi" });
+		const html = await (await bot.mf.dispatchFetch("https://bot.test/")).text();
+		expect(html).toContain("#80");
+		expect(html).toContain("Greeting lacks punctuation");
+	});
+});

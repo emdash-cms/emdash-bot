@@ -3,7 +3,8 @@
 import { type BotConfig, readConfig, repositoryFor } from "./config.ts";
 import { writeToken } from "./github/auth.ts";
 import { GitHubClient } from "./github/client.ts";
-import { addressesBot, verifySignature, normalize } from "./github/webhook.ts";
+import { addressesBot, botHandle, verifySignature, normalize } from "./github/webhook.ts";
+import { renderBoard } from "./reports/dashboard.ts";
 import { constantTimeEqual, json, rpc, sha256Hex, text } from "./util.ts";
 import { AUTHOR_METHOD } from "./tools/case-tools.ts";
 import authorSkill from "../skills/emdash-author/SKILL.md?raw";
@@ -138,6 +139,58 @@ async function sandboxSmoke(
 }
 
 /**
+ * The public board (`/`) and its data (`/api/cases`, or `/api/cases?issue=N`
+ * for the cases on one issue or pull request). Read-only, built from the rows
+ * cases publish, and cached briefly so public traffic reaches no Durable Object
+ * more than about twice a minute.
+ */
+async function board(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+	url: URL,
+): Promise<Response> {
+	const issue = url.searchParams.get("issue");
+	if (issue !== null && !/^\d+$/.test(issue))
+		return json({ error: "issue must be an issue or pull request number" }, 400);
+	const cacheKey = new Request(url.toString(), { method: "GET" });
+	const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
+	const hit = await cache?.match(cacheKey);
+	if (hit) return hit;
+	const config = readConfig(env);
+	const summaries = (
+		await Promise.all(
+			config.repositories.map((repo) =>
+				repositories(env)
+					.getByName(String(repo.id))
+					.caseSummaries(issue === null ? undefined : Number(issue)),
+			),
+		)
+	).flat();
+	const headers = {
+		"cache-control": "public, max-age=30",
+		"access-control-allow-origin": "*",
+	};
+	const response =
+		url.pathname === "/"
+			? new Response(
+					renderBoard(summaries, {
+						repos: config.repositories.map((r) => r.fullName),
+						intakeLabel: config.intakeLabel,
+						botHandle: botHandle(config),
+						maxActiveAuthors: config.maxActiveAuthors,
+						now: Date.now(),
+					}),
+					{ headers: { ...headers, "content-type": "text/html; charset=utf-8" } },
+				)
+			: new Response(JSON.stringify({ generatedAt: new Date().toISOString(), cases: summaries }), {
+					headers: { ...headers, "content-type": "application/json" },
+				});
+	if (cache) ctx.waitUntil(cache.put(cacheKey, response.clone()));
+	return response;
+}
+
+/**
  * A comment that addresses the bot on a pull request assigns it, but comment
  * payloads lack the pull request's branch and author: fetch them. Other
  * comments need nothing extra.
@@ -213,6 +266,37 @@ async function operator(
 	if (!authorized(request, env)) return json({ error: "unauthorized" }, 401);
 	const actor = request.headers.get("x-operator") ?? "operator";
 	const parts = url.pathname.split("/").filter(Boolean).slice(1);
+	if (parts[0] === "service") {
+		const config = readConfig(env);
+		const version = (env as { CF_VERSION_METADATA?: { id?: string; tag?: string } })
+			.CF_VERSION_METADATA;
+		return json({
+			service: "emdash-bot-pi",
+			profile: config.profile,
+			version: version?.id ?? null,
+			authorModel: config.authorModel,
+			promptHash: await sha256Hex(AUTHOR_METHOD),
+			skillHash: await sha256Hex(authorSkill),
+			budgets: config.budgets,
+		});
+	}
+	// Ask every case to publish its board row again, e.g. after the board's format changes.
+	if (parts[0] === "board" && parts[1] === "rebuild" && request.method === "POST") {
+		const config = readConfig(env);
+		let published = 0;
+		const failed: string[] = [];
+		for (const repo of config.repositories) {
+			for (const caseId of await repositories(env).getByName(String(repo.id)).caseIds()) {
+				try {
+					await cases(env).getByName(caseId).publishSummary();
+					published++;
+				} catch {
+					failed.push(caseId);
+				}
+			}
+		}
+		return json({ published, failed });
+	}
 	if (parts[0] === "repositories" && parts[1]) {
 		const stub = repositories(env).getByName(parts[1]);
 		if (parts[2] === "deliveries") return json(await rpc(stub.deliveries()));
@@ -326,24 +410,8 @@ export default {
 			return operator(request, env, ctx, url).catch((error: unknown) =>
 				json({ error: error instanceof Error ? error.message : String(error) }, 502),
 			);
-		if (url.pathname === "/") {
-			const config = readConfig(env);
-			const version = (env as { CF_VERSION_METADATA?: { id?: string; tag?: string } })
-				.CF_VERSION_METADATA;
-			return json({
-				service: "emdash-bot-pi",
-				profile: config.profile,
-				...(authorized(request, env)
-					? {
-							version: version?.id ?? null,
-							authorModel: config.authorModel,
-							promptHash: await sha256Hex(AUTHOR_METHOD),
-							skillHash: await sha256Hex(authorSkill),
-							budgets: config.budgets,
-						}
-					: {}),
-			});
-		}
+		if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/api/cases"))
+			return board(request, env, ctx, url);
 		return json({ error: "not found" }, 404);
 	},
 } satisfies ExportedHandler<Env>;

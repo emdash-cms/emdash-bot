@@ -17,6 +17,8 @@ if (profileName !== "staging" && profileName !== "production")
 	throw new Error(`EMDASH_BOT_PROFILE must be staging or production, not ${profileName}`);
 const profile = profileName === "production" ? production : staging;
 const name = profileName === "production" ? "emdash-autofix" : "emdash-bot-pi";
+// Production is also served on a custom domain: the public board, and webhooks.
+const domains = profileName === "production" ? ["autofix.emdashcms.com"] : [];
 
 // Tests (`vp build --mode test`) never start the container, so they use a
 // registry reference instead of building the image.
@@ -39,6 +41,7 @@ export default defineConfig({
 		compatibilityDate,
 		compatibilityFlags,
 		observability: { enabled: true },
+		domains,
 		exports: {
 			CaseDO: exports.durableObject({ storage: "sqlite" }),
 			RepositoryDO: exports.durableObject({ storage: "sqlite" }),
