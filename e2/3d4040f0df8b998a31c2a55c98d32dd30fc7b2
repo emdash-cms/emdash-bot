@@ -1,0 +1,19 @@
+src/tools/case-tools.ts
+  s_a29b1b5f36fdd3::t_e652b489e9e37f 249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e23d4040f0df8b998a31c2a55c98d32dd30fc7b2",
+  "prompts": {},
+  "sessions": {
+    "s_a29b1b5f36fdd3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d2cc0b-650d-47c4-bcfa-8a5a150f0ad7",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
