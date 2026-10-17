@@ -338,6 +338,8 @@ async function operator(
 			focusedChecks?: Record<string, string>;
 			prepare?: string;
 			model?: string;
+			reviewModel?: string;
+			workingCommit?: string;
 		};
 		const caseId = `dry-${body.repoId}-${body.issueNumber}-${Date.now()}`;
 		const identity = {
@@ -362,6 +364,8 @@ async function operator(
 						baseCommit: body.baseCommit,
 						repository: { focusedChecks: body.focusedChecks, prepare: body.prepare },
 						model: body.model,
+						reviewModel: body.reviewModel,
+						workingCommit: body.workingCommit,
 					},
 					actor,
 				),

@@ -101,8 +101,8 @@ export interface CaseRuntime {
 	/** Record that the change at this tree was reviewed. */
 	recordReview(treeHash: string, reports: number): void;
 	focusedChecks(): Readonly<Record<string, string>>;
-	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately. */
-	recordUsage(tokens: number, cacheRead: number): void;
+	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately, with the model's reported cost. */
+	recordUsage(tokens: number, cacheRead: number, model: string, cost: number): void;
 	instructions(): string;
 }
 
@@ -711,7 +711,12 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 				afterResponse: (message) => {
 					const usage = message.usage;
 					if (usage)
-						runtime.recordUsage(usage.input + usage.output + usage.cacheWrite, usage.cacheRead);
+						runtime.recordUsage(
+							usage.input + usage.output + usage.cacheWrite,
+							usage.cacheRead,
+							message.model,
+							usage.cost?.total ?? 0,
+						);
 				},
 			}),
 		],

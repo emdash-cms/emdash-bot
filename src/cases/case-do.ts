@@ -16,7 +16,7 @@ import {
 	readConfig,
 	repositoryFor,
 } from "../config.ts";
-import { type ExecBackend, REPO_DIR, openBackend } from "../execution/backend.ts";
+import { type ExecBackend, REPO_DIR, execOk, openBackend } from "../execution/backend.ts";
 import { SandboxExecutionEnv } from "../execution/env.ts";
 import { writeToken } from "../github/auth.ts";
 import { classifyCheck, outcomeOf } from "../github/checks.ts";
@@ -50,6 +50,7 @@ import {
 import { DEFAULT_PRIVILEGED_PREFIXES, PatchRejected, validatePatch } from "../source/patch.ts";
 import {
 	captureSource,
+	fetchCommit,
 	mergeIntoCheckout,
 	git,
 	materialize,
@@ -91,6 +92,8 @@ export interface CaseDelivery {
 
 interface DryRun {
 	readonly baseCommit: string;
+	/** A commit whose tree starts in the checkout as uncommitted work on the base, for review replays. */
+	readonly workingCommit?: string;
 	readonly repository: {
 		readonly focusedChecks?: Readonly<Record<string, string>>;
 		readonly prepare?: string;
@@ -340,6 +343,18 @@ export class CaseDO extends DurableObject<Env> {
 			prepareMs: prepared.prepareMs,
 			totalMs: Date.now() - started,
 		});
+		const working = this.#dryRun()?.workingCommit;
+		if (working && !this.store.getMeta<boolean>("workingApplied")) {
+			await fetchCommit(backend, this.#remoteUrl(), working, this.config.budgets.setupMs);
+			await execOk(
+				backend,
+				{ argv: git("read-tree", "-u", "--reset", working) },
+				"apply working commit",
+			);
+			// Recorded first: a rejected patch restores the base and must not retry.
+			this.store.setMeta("workingApplied", true);
+			await this.#capture(`dry-run:working:${working}`);
+		}
 	}
 
 	/**
@@ -504,9 +519,11 @@ export class CaseDO extends DurableObject<Env> {
 				return { provider: parsed.provider, modelId: parsed.id };
 			},
 			reviewModel: () => {
+				const fixture = faultsEnabled(this.config);
 				const parsed = parseModelRef(
-					this.config.reviewModel ??
-						(faultsEnabled(this.config) ? this.store.getMeta<string>("fixtureModel") : null) ??
+					(fixture ? this.store.getMeta<string>("fixtureReviewModel") : null) ??
+						this.config.reviewModel ??
+						(fixture ? this.store.getMeta<string>("fixtureModel") : null) ??
 						this.config.authorModel,
 				);
 				return { provider: parsed.provider, modelId: parsed.id };
@@ -531,7 +548,13 @@ export class CaseDO extends DurableObject<Env> {
 				return "Plan updated; it appears in the progress comment.";
 			},
 			focusedChecks: () => this.#repoConfig()?.focusedChecks ?? {},
-			recordUsage: (tokens, cacheRead) => {
+			recordUsage: (tokens, cacheRead, model, cost) => {
+				const byModel =
+					this.store.getMeta<Record<string, { tokens: number; cost: number }>>("usageByModel") ??
+					{};
+				const entry = byModel[model] ?? { tokens: 0, cost: 0 };
+				byModel[model] = { tokens: entry.tokens + tokens + cacheRead, cost: entry.cost + cost };
+				this.store.setMeta("usageByModel", byModel);
 				this.store.setMeta("tokens", (this.store.getMeta<number>("tokens") ?? 0) + tokens);
 				this.store.setMeta(
 					"cacheReadTokens",
@@ -2911,6 +2934,7 @@ export class CaseDO extends DurableObject<Env> {
 			status: await this.status(),
 			tokens: this.store.getMeta("tokens") ?? 0,
 			cacheReadTokens: this.store.getMeta("cacheReadTokens") ?? 0,
+			usageByModel: this.store.getMeta("usageByModel") ?? {},
 			requirements: this.store.requirements(),
 			events: this.store.events(),
 			checkpoints: this.store.checkpoints(),
@@ -3034,6 +3058,8 @@ export class CaseDO extends DurableObject<Env> {
 			baseCommit: string;
 			repository?: DryRun["repository"];
 			model?: string;
+			reviewModel?: string;
+			workingCommit?: string;
 		},
 		actor: string,
 	): Promise<{ accepted: boolean }> {
@@ -3042,8 +3068,10 @@ export class CaseDO extends DurableObject<Env> {
 		this.store.setMeta("dryRun", {
 			baseCommit: input.baseCommit,
 			repository: input.repository ?? {},
+			...(input.workingCommit ? { workingCommit: input.workingCommit } : {}),
 		});
 		if (input.model) this.store.setMeta("fixtureModel", input.model);
+		if (input.reviewModel) this.store.setMeta("fixtureReviewModel", input.reviewModel);
 		const result = await this.deliver({
 			deliveryId: `dry-run-${Date.now()}`,
 			caseId: input.identity.caseId,

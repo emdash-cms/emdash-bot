@@ -1,27 +1,34 @@
-// Replay the author's pre-submit adversarial self-review on existing pull
-// requests: each PR head becomes a private single-commit fixture, and the
-// staging author runs a dry run whose task is the review it would delegate
-// before submitting. Findings land in evals/results/review-replay/ for
-// scoring against an answer key. Nothing is posted anywhere.
+// Replay the author's pre-submit review on existing pull requests. Nothing is
+// posted anywhere; findings land in evals/results/review-replay/ for scoring
+// against the answer key.
 //
-//   node --experimental-strip-types evals/bin/review-replay.ts <pr>... [--runs 2] [--guidance <file>] [--models a,b]
+// --mode tool (default): the fixture starts at the pull request's merge base
+// with its change applied as uncommitted work, and the staging author calls
+// the review tool exactly as it would before submitting; --models picks the
+// review model.
+// --mode prompt: the earlier replay, a dry run at the PR head whose task is a
+// hand-written review; --models picks the author model doing the review.
+//
+//   node --experimental-strip-types evals/bin/review-replay.ts <pr>... [--runs 1] [--models a,b] [--mode tool|prompt]
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { ops } from "../controller/bot.ts";
+import { gh as githubApi } from "../controller/github.ts";
 import { ensureRepo, resetRepo, sanitize } from "../controller/provision.ts";
 import type { CaseManifest, Profile } from "../controller/types.ts";
 
 const { values, positionals } = parseArgs({
 	allowPositionals: true,
 	options: {
-		runs: { type: "string", default: "2" },
+		runs: { type: "string", default: "1" },
 		// Number of the first run, so a later repeat does not overwrite earlier results.
 		"first-run": { type: "string", default: "1" },
 		// Model refs as the Worker takes them, e.g. cloudflare-ai-gateway:claude-sonnet-5-5; empty for the profile's author model.
 		models: { type: "string", default: "" },
+		mode: { type: "string", default: "tool" },
 		guidance: { type: "string" },
 		profile: { type: "string", default: "pi-staging" },
 		"timeout-minutes": { type: "string", default: "60" },
@@ -127,8 +134,52 @@ async function waitSettled(caseId: string, deadline: number): Promise<string> {
 	}
 }
 
+interface PullRequest {
+	title: string;
+	body: string;
+	headRefOid: string;
+	baseRefOid: string;
+}
+
+function pullRequest(pr: number): PullRequest {
+	return JSON.parse(
+		gh([
+			"pr",
+			"view",
+			String(pr),
+			"-R",
+			"emdash-cms/emdash",
+			"--json",
+			"title,body,headRefOid,baseRefOid",
+		]),
+	) as PullRequest;
+}
+
+/** The task for the tool replay: call review with the pull request's own text, and relay the result. */
+function toolBrief(meta: PullRequest): { title: string; body: string } {
+	return {
+		title: `Review: ${meta.title}`,
+		body: [
+			"This is a review task, not an implementation task. The checkout already holds a finished change as uncommitted work. Do not change any files and do not submit a candidate.",
+			"",
+			'Call the review tool once, with exactly the title and description below. Then post the review tool\'s complete result, unedited, with the reply tool (it is recorded, not published), and call handoff with reason "review complete" and nextAction "none".',
+			"",
+			"## Title",
+			"",
+			sanitize(meta.title),
+			"",
+			"## Description",
+			"",
+			sanitize(meta.body).slice(0, 20_000),
+		].join("\n"),
+	};
+}
+
 /** The reviewer's report (its reply bodies, else its last text), with recorded usage and cost. */
-function findings(evidence: { transcript?: unknown[] }): { report: string; usage: string } {
+function findings(evidence: {
+	transcript?: unknown[];
+	usageByModel?: Record<string, { tokens: number; cost: number }>;
+}): { report: string; usage: string } {
 	const replies: string[] = [];
 	const texts: string[] = [];
 	let cost = 0;
@@ -152,9 +203,17 @@ function findings(evidence: { transcript?: unknown[] }): { report: string; usage
 					replies.push(part.arguments.body);
 			}
 		}
+	const byModel = Object.entries(evidence.usageByModel ?? {});
 	return {
 		report: replies.join("\n\n---\n\n") || texts.at(-1) || "(no report)",
-		usage: `${tokens} tokens, $${cost.toFixed(2)} recorded`,
+		usage: byModel.length
+			? byModel
+					.map(
+						([model, u]) =>
+							`${model}: ${(u.tokens / 1e6).toFixed(2)}M tokens, $${u.cost.toFixed(2)}`,
+					)
+					.join("; ")
+			: `${tokens} tokens, $${cost.toFixed(2)} recorded`,
 	};
 }
 
@@ -162,7 +221,81 @@ function slug(model: string): string {
 	return (model.split(":").pop() || "author").replace(/[^a-z0-9.-]+/gi, "-");
 }
 
+/** A fixture at the pull request's merge base, with its head tree as a child commit to apply as work. */
+async function toolFixture(
+	pr: number,
+	meta: PullRequest,
+): Promise<{ repo: { fullName: string; id: number }; snapshot: string; working: string }> {
+	const mergeBase = (
+		await githubApi<{ merge_base_commit: { sha: string } }>(
+			"GET",
+			`/repos/emdash-cms/emdash/compare/${meta.baseRefOid}...${meta.headRefOid}`,
+		)
+	).data.merge_base_commit.sha;
+	const manifest = {
+		id: `review-${pr}`,
+		kind: "fix",
+		source: { repo: "emdash-cms/emdash", startingCommit: mergeBase },
+		originalCandidate: { commit: meta.headRefOid, parent: mergeBase, reviews: [] },
+	} as unknown as CaseManifest;
+	const repo = await ensureRepo(profile, manifest);
+	const snapshot = await resetRepo(profile, manifest, repo.fullName);
+	const working = (
+		await githubApi<{ object: { sha: string } }>(
+			"GET",
+			`/repos/${repo.fullName}/git/ref/heads/fixture/original-candidate`,
+		)
+	).data.object.sha;
+	return { repo, snapshot, working };
+}
+
+async function replayTool(pr: number, run: number, model: string): Promise<void> {
+	const meta = pullRequest(pr);
+	const { repo, snapshot, working } = await toolFixture(pr, meta);
+	const { title, body } = toolBrief(meta);
+	const started = Date.now();
+	const result = (await ops(profile, "/ops/dry-run", {
+		repo: repo.fullName,
+		repoId: repo.id,
+		issueNumber: pr,
+		title,
+		body,
+		baseCommit: snapshot,
+		workingCommit: working,
+		prepare: upstream.prepare,
+		focusedChecks: upstream.focusedChecks,
+		...(model ? { reviewModel: model } : {}),
+	})) as { caseId: string };
+	console.log(`[${pr}#${run}] tool replay ${result.caseId} on ${repo.fullName}`);
+	await record(pr, run, model, "tool", result.caseId, started);
+}
+
+async function record(
+	pr: number,
+	run: number,
+	model: string,
+	mode: string,
+	caseId: string,
+	started: number,
+): Promise<void> {
+	const outcome = await waitSettled(caseId, started + Number(values["timeout-minutes"]) * 60_000);
+	const evidence = (await ops(profile, `/ops/cases/${caseId}/evidence`)) as {
+		transcript?: unknown[];
+		usageByModel?: Record<string, { tokens: number; cost: number }>;
+	};
+	const { report, usage } = findings(evidence);
+	const tag = `${pr}-${mode === "tool" ? "tool-" : ""}${slug(model)}-run${run}`;
+	const file = join(OUT, `${tag}.md`);
+	writeFileSync(
+		file,
+		`# Review replay (${mode}): PR ${pr}, ${model || "default model"}, run ${run}\n\nCase ${caseId}, outcome ${outcome}, ${Math.round((Date.now() - started) / 60_000)} min, ${usage}.\n\n${report}\n`,
+	);
+	writeFileSync(join(OUT, `${tag}.evidence.json`), JSON.stringify(evidence));
+	console.log(`[${tag}] ${outcome}, ${usage}; findings in ${file}`);
+}
+
 async function replay(pr: number, run: number, model: string): Promise<void> {
+	if (values.mode === "tool") return replayTool(pr, run, model);
 	const head = gh([
 		"pr",
 		"view",
@@ -197,22 +330,7 @@ async function replay(pr: number, run: number, model: string): Promise<void> {
 	console.log(
 		`[${pr}#${run}] dry run ${result.caseId} on ${repo.fullName} at ${snapshot.slice(0, 12)}`,
 	);
-	const outcome = await waitSettled(
-		result.caseId,
-		started + Number(values["timeout-minutes"]) * 60_000,
-	);
-	const evidence = (await ops(profile, `/ops/cases/${result.caseId}/evidence`)) as {
-		transcript?: unknown[];
-	};
-	const { report, usage } = findings(evidence);
-	const tag = `${pr}-${slug(model)}-run${run}`;
-	const file = join(OUT, `${tag}.md`);
-	writeFileSync(
-		file,
-		`# Review replay: PR ${pr}, ${model || "author model"}, run ${run}\n\nCase ${result.caseId}, outcome ${outcome}, ${Math.round((Date.now() - started) / 60_000)} min, ${usage}.\n\n${report}\n`,
-	);
-	writeFileSync(join(OUT, `${tag}.evidence.json`), JSON.stringify(evidence));
-	console.log(`[${tag}] ${outcome}, ${usage}; findings in ${file}`);
+	await record(pr, run, model, "prompt", result.caseId, started);
 }
 
 const prs = positionals.map(Number);

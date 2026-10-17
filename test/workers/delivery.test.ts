@@ -107,6 +107,58 @@ describe("operator dry run", () => {
 		);
 		expect(await patch.text()).toContain('+module.exports = (name) => "Hello, " + name + "!";');
 	});
+
+	it("starts a review replay with a pull request's change as uncommitted work", async () => {
+		bot = await startBot();
+		const working = bot.github.commitFiles(
+			REPO,
+			"main",
+			{ [FIX_GREETING.path]: FIX_GREETING.content },
+			"the change",
+		);
+		const reviewer = { rounds: [{ steps: [], final: "Review: fine." }] };
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{
+							tool: "review",
+							args: {
+								title: "fix: punctuate",
+								description: `\`\`\`scripted-author\n${JSON.stringify(reviewer)}\n\`\`\``,
+							},
+						},
+						{ tool: "handoff", args: { reason: "review complete", nextAction: "none" } },
+					],
+				},
+			],
+		};
+		const admitted = await bot.ops("dry-run", {
+			body: {
+				repo: REPO,
+				repoId: 1001,
+				issueNumber: 6,
+				title: "Review",
+				body: `Review it.\n\n\`\`\`scripted-author\n${JSON.stringify(script)}\n\`\`\`\n`,
+				baseCommit: bot.baseCommit,
+				workingCommit: working,
+				model: "scripted:author",
+				reviewModel: "scripted:author",
+			},
+		});
+		const record = await bot.waitFor("review replay handoff", async () => {
+			const r = await bot!.inspect(admitted.caseId);
+			return r.handoff ? r : null;
+		});
+		expect(record.log.find((e: any) => e.type === "review.completed")?.data.reports).toBe(2);
+		expect(record.usageByModel).toHaveProperty("author");
+		const evidence = await bot.ops(`cases/${admitted.caseId}/evidence`);
+		const result = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.find((m: any) => m.role === "toolResult" && m.toolName === "review");
+		expect(JSON.stringify(result)).toContain("Review: fine.");
+		expect(bot.github.requests.filter((r) => r.method !== "GET")).toEqual([]);
+	});
 });
 
 describe("delivery retention", () => {
