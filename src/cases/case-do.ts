@@ -893,6 +893,35 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	/** The author declines the issue: optionally say why on it, then stop working the case. */
+	/**
+	 * Apply or remove the intake label on an automatically admitted issue. Only a
+	 * label the bot applied is removed; a maintainer's label stays theirs.
+	 */
+	async #intakeLabel(action: "add" | "remove"): Promise<void> {
+		const identity = this.#identity();
+		if (identity.kind !== "issue" || this.#dryRun()) return;
+		if (action === "remove" && !this.store.getMeta<boolean>("intakeLabelApplied")) return;
+		const github = this.#github();
+		const label = this.config.intakeLabel;
+		try {
+			if (action === "add")
+				await github.request("POST", github.repoPath(`/issues/${identity.issueNumber}/labels`), {
+					labels: [label],
+				});
+			else
+				await github.request(
+					"DELETE",
+					github.repoPath(`/issues/${identity.issueNumber}/labels/${encodeURIComponent(label)}`),
+					undefined,
+					[404],
+				);
+			this.store.setMeta("intakeLabelApplied", action === "add");
+			this.store.log(action === "add" ? "intake-label.applied" : "intake-label.removed", { label });
+		} catch (error) {
+			this.store.log("intake-label.failed", { action, error: errorMessage(error) });
+		}
+	}
+
 	async #decline(opId: string, reason: string, message: string | undefined): Promise<void> {
 		if (message?.trim()) this.#queueReply(`${opId}:message`, undefined, true, message);
 		const handoff: Handoff = {
@@ -906,6 +935,7 @@ export class CaseDO extends DurableObject<Env> {
 			this.store.putOperation(opId, "decline", this.store.generation(), "completed", { reason });
 		});
 		this.store.log("case.declined", { reason, publicMessage: !!message?.trim() });
+		await this.#intakeLabel("remove");
 		await this.#schedule("replies", Date.now(), {}, "replies");
 		await this.#schedule("report", Date.now());
 	}
@@ -1272,6 +1302,9 @@ export class CaseDO extends DurableObject<Env> {
 						);
 						return null;
 					}
+					// Accepted: label it like a maintainer assignment, so it is visible and
+					// removing the label stops the bot. The bot's own label event assigns nothing.
+					await this.#intakeLabel("add");
 					if (verdict.decision === "needs-info") {
 						return `## New issue (needs information)\nFrom: ${from}\n\n${event.actor} opened ${what}; its text is in the case record. No maintainer has assigned it. Independent triage judged it in scope but not actionable as written (${verdict.reason}). Reply on the issue asking the reporter for exactly what you need. Do not implement anything until they answer.`;
 					}

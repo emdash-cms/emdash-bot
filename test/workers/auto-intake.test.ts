@@ -63,6 +63,9 @@ describe("auto-intake", () => {
 			actor: "reporter",
 		});
 		expect(bot.github.pulls).toHaveLength(1);
+		// Accepted issues carry the intake label, as a maintainer's assignment would.
+		expect(bot.github.labels.get(81)?.has("emdash-bot")).toBe(true);
+		expect(record.log.some((e: any) => e.type === "intake-label.applied")).toBe(true);
 	});
 
 	it("lets the author decline an issue triage passed, with a message", async () => {
@@ -93,6 +96,12 @@ describe("auto-intake", () => {
 		expect(comments[0]!.body).toContain("feature request");
 		expect(record.status.status).toBe("declined");
 		expect(bot.github.pulls).toHaveLength(0);
+		// The label the bot applied on accepting it comes off when it declines.
+		await bot.waitFor("intake label removed", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.some((e: any) => e.type === "intake-label.removed") ? r : null;
+		});
+		expect(bot.github.labels.get(82)?.has("emdash-bot") ?? false).toBe(false);
 	});
 
 	it("lets the author decline a malicious report silently", async () => {
@@ -163,6 +172,8 @@ describe("auto-intake", () => {
 		expect(bot.github.comments.filter((c) => c.issue === 86)[0]!.body).toContain("feature request");
 		expect(authorRuns(record)).toHaveLength(0);
 		expect(bot.github.pulls).toHaveLength(0);
+		// Declined at triage: never accepted, so never labelled.
+		expect(bot.github.labels.get(86)?.has("emdash-bot") ?? false).toBe(false);
 		await bot.waitFor("skipped label", async () =>
 			bot!.github.labels.get(86)?.has("triage/skipped"),
 		);
