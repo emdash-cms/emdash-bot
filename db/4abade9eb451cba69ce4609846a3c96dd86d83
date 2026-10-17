@@ -1,0 +1,23 @@
+skills/emdash-author/SKILL.md
+  s_4c97aa8e7b616f::t_c774fa9a2a9dbd 29
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_321bff6fd42f1b 187
+test/unit/author-method.test.ts
+  s_4c97aa8e7b616f::t_f100ffc285af52 23-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "db4abade9eb451cba69ce4609846a3c96dd86d83",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
