@@ -74,6 +74,7 @@
 	},
 	"gatewayId": "default",
 	"intakeLabel": "autofix",
+	"maxActiveAuthors": 2,
 	"autoIntake": false,
 	"autoIntakeMaintainers": false
 }

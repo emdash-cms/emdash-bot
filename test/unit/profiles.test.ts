@@ -20,6 +20,7 @@ describe("production profile", () => {
 			expect.arrayContaining(["Typecheck", "Tests", "Browser Tests", "Format"]),
 		);
 		expect(config.authorModel).not.toMatch(/^scripted:/);
+		expect(config.maxActiveAuthors).toBe(2);
 	});
 
 	it("lets only plan-gated required lanes skip, guarded by the required Tests job", () => {
