@@ -107,6 +107,8 @@ const MODEL_RETRIES = 3;
 const MAX_RERUNS = 2;
 /** Fresh runs after a run hits its time limit, before a human is asked. */
 const RUN_CONTINUATIONS = 3;
+/** How long past the run limit a tool call already running may take to finish before the run is stopped anyway. */
+const TOOL_GRACE_MS = 20 * 60_000;
 /** Reminders, per case, when a run ends with no next step. */
 const MAX_NUDGES = 2;
 const MAX_SCREENSHOT_BYTES = 5 * 1_048_576;
@@ -177,6 +179,8 @@ export class CaseDO extends DurableObject<Env> {
 	readonly store: CaseStore;
 	readonly #source = new Mutex();
 	#sandboxVerified = false;
+	/** Ids of tool calls in flight: the run limit waits for them. In memory; a restart replays them. */
+	readonly #toolsRunning = new Set<string>();
 	readonly registry = createRegistry();
 	readonly harness: PiHarness;
 	readonly lifecycle: Lifecycle<Env>;
@@ -548,6 +552,8 @@ export class CaseDO extends DurableObject<Env> {
 				return "Plan updated; it appears in the progress comment.";
 			},
 			focusedChecks: () => this.#repoConfig()?.focusedChecks ?? {},
+			toolStarted: (callId) => this.#toolsRunning.add(callId),
+			toolFinished: (callId) => this.#toolsRunning.delete(callId),
 			recordUsage: (tokens, cacheRead, model, cost) => {
 				const byModel =
 					this.store.getMeta<Record<string, { tokens: number; cost: number }>>("usageByModel") ??
@@ -2213,7 +2219,10 @@ export class CaseDO extends DurableObject<Env> {
 		}
 		if (await this.#authorBusy()) {
 			const started = this.store.getMeta<number>("runStartedAt");
-			if (started && Date.now() - started > this.config.budgets.authorMs) {
+			const overtime = started ? Date.now() - started - this.config.budgets.authorMs : -1;
+			// New tools are already refused past the limit; let one that is running finish, within a grace period.
+			if (overtime > 0 && (this.#toolsRunning.size === 0 || overtime > TOOL_GRACE_MS)) {
+				this.#toolsRunning.clear();
 				await this.#stopAuthor();
 				// Work is checkpointed: carry on in a fresh run a few times before asking a human.
 				const continued = this.store.getMeta<number>("runContinuations") ?? 0;

@@ -101,6 +101,9 @@ export interface CaseRuntime {
 	/** Record that the change at this tree was reviewed. */
 	recordReview(treeHash: string, reports: number): void;
 	focusedChecks(): Readonly<Record<string, string>>;
+	/** A tool call started or finished, so the run limit stops the author only between tool calls. */
+	toolStarted(callId: string): void;
+	toolFinished(callId: string): void;
 	/** Billable tokens (input, output, cache writes) and cache reads, recorded separately, with the model's reported cost. */
 	recordUsage(tokens: number, cacheRead: number, model: string, cost: number): void;
 	instructions(): string;
@@ -700,6 +703,11 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 					const blocked = runtime.guard(TERMINAL_TOOLS.has(call.name));
 					if (blocked) return { block: blocked };
 					if (!TERMINAL_TOOLS.has(call.name) && call.name !== "case_status") runtime.workStarted();
+					runtime.toolStarted(call.id);
+					return undefined;
+				},
+				afterTool: (call) => {
+					runtime.toolFinished(call.id);
 					return undefined;
 				},
 			}),
