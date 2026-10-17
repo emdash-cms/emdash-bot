@@ -1,0 +1,25 @@
+Dockerfile
+  s_4c97aa8e7b616f::t_7f345a7dc9e320 21-24
+src/execution/sandbox-do.ts
+  s_4c97aa8e7b616f::t_9d2e12992f7159 60-61
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_900cdf922ef086 304-324
+test/workers/delegate.test.ts
+  s_4c97aa8e7b616f::t_cf06c8727bb9b3 62-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "4d66cf0f9d243269b5e84c7bedfb409ebc619ce0",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
