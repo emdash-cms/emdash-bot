@@ -184,12 +184,38 @@ describe("Pi hosted in a case", () => {
 });
 
 describe("model failures", () => {
-	it("reports a failed model call as needing a human, and a comment retries", async () => {
-		bot = await startBot();
-		const caseId = issueCaseId(17);
+	it("retries a failed model call automatically and carries on", async () => {
+		bot = await startBot({ modelRetryBaseMs: 50 });
+		const caseId = issueCaseId(16);
 		const script = {
 			rounds: [
 				{ steps: [{ tool: "model_error", args: { message: "upstream returned nothing" } }] },
+				{
+					steps: [
+						{ tool: "write", args: FIX_GREETING },
+						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 16, number: 16, script }));
+		const record = await published(bot, caseId);
+		expect(record.handoff).toBeNull();
+		expect(record.log.some((e: any) => e.type === "author.retry-scheduled")).toBe(true);
+	});
+
+	it("hands off after repeated model failures, and a comment retries", async () => {
+		bot = await startBot({ modelRetryBaseMs: 20, budgets: { rounds: 20 } });
+		const caseId = issueCaseId(17);
+		const fail = {
+			steps: [{ tool: "model_error", args: { message: "upstream returned nothing" } }],
+		};
+		const script = {
+			rounds: [
+				fail,
+				fail,
+				fail,
+				fail,
 				{
 					steps: [
 						{ tool: "write", args: FIX_GREETING },
@@ -203,13 +229,14 @@ describe("model failures", () => {
 			const r = await bot!.inspect(caseId);
 			return r.handoff ? r : null;
 		});
-		expect(failed.handoff.reason).toContain("upstream returned nothing");
+		expect(failed.handoff.reason).toContain("failed 4 times: upstream returned nothing");
 		expect(failed.status.status).toBe("needs-human");
 		await bot.waitFor("failed label", async () => bot!.github.labels.get(17)?.has("triage/failed"));
 		await bot.waitFor("error in the progress comment", async () =>
 			bot!.github.comments.find(
 				(c) =>
-					c.issue === 17 && c.body.includes("The model call failed: upstream returned nothing"),
+					c.issue === 17 &&
+					c.body.includes("The model call failed 4 times: upstream returned nothing"),
 			),
 		);
 		await bot.webhook("issue_comment", {
@@ -330,8 +357,8 @@ describe("budgets", () => {
 });
 
 describe("reassignment", () => {
-	it("restarts the case time budget for a new ownership generation", async () => {
-		bot = await startBot({ budgets: { caseMs: 2500, cancelMs: 2000, rounds: 4 } });
+	it("starts a new ownership generation on reassignment, which can publish", async () => {
+		bot = await startBot({ budgets: { cancelMs: 2000, rounds: 4 } });
 		const caseId = issueCaseId(61);
 		const script = {
 			rounds: [
@@ -346,7 +373,6 @@ describe("reassignment", () => {
 		};
 		await bot.webhook("issues", assignIssue({ issueId: 61, number: 61, script }));
 		await bot.waitFor("first handoff", async () => (await bot!.inspect(caseId)).handoff);
-		await new Promise((r) => setTimeout(r, 3000));
 		const unassign = {
 			action: "unassigned",
 			sender: { login: "maintainer" },

@@ -182,7 +182,9 @@ Rules you cannot change:
 - Follow the repository instructions below, including localization, changeset and documentation requirements when they apply.
 - For nits and optional suggestions, decide whether they are worth fixing in this pull request. If not, say so briefly in the thread rather than changing code.
 - When you change code in response to anything, submit a new candidate. When you disagree with feedback, reply with your technical reasoning instead of changing code; the reviewer or a maintainer decides.
-- If you cannot proceed correctly (missing information, intended behaviour, a blocker), reply asking for what you need, or call handoff when only a maintainer can unblock you.
+- Keep going until the change is ready for a maintainer's review: fix failing checks, respond to reviews, resolve merge conflicts, and rebuild when the branch moves. A maintainer's review and merge is the only step that needs a person.
+- When a choice is a matter of judgement (an approach, a name, how far a fix should reach), make the best defensible decision, explain it in the pull request, and carry on; reviewers can push back. Ask the reporter only for facts only they have, such as how to reproduce. Call handoff only when you cannot proceed correctly without a maintainer: the right behaviour cannot be worked out from the code, docs or issue and a wrong guess would be costly or hard to undo, or something outside the repository blocks you (access, a broken service). Never hand off for something you can check or fix yourself.
+- End every turn with a next step: a submitted candidate, a reply (an answer, or a specific question for the reporter or a maintainer), a decline, or a handoff.
 - Keep a short plan with update_work_plan and update it as you go; it is the progress comment people watch, on the issue until your pull request opens and on the pull request after. Use reply for actual conversation: questions, disagreements, and asking the reporter to try the fix. Ask them on the issue once you receive the "Preview ready" message, with the links it gives, to confirm the fix solves their problem; if no preview comes, ask once you receive the "Ready for human review" message instead (not before). Skip it when the reporter is the maintainer who assigned you. If you later change the fix significantly, tell them on the issue and ask again, with the latest preview from case_status. When they confirm, call record_reporter_confirmation. Do not post noise.
 - When your change alters what people see (the admin UI, a rendered page, a component), include screenshots in the pull request description as the template asks: take them with Playwright's Chromium in the sandbox and publish each with attach_screenshot.
 - If a time or token budget is exhausted, other tools are refused but submit_candidate, reply and handoff remain available.`;
@@ -339,7 +341,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 	const handoff = defineTool({
 		name: "handoff",
 		description:
-			"Ask a maintainer to step in, with the reason and a concrete next action, when only they can unblock you. The status comment shows it until the next message arrives. This ends your turn.",
+			"Ask a maintainer to step in when you cannot proceed correctly without one: the right behaviour cannot be worked out from the code, docs or issue and a wrong guess would be costly, or something outside the repository blocks you. Not for judgement calls you can make and explain, and not for anything you can check or fix yourself. The status comment shows it until the next message arrives. This ends your turn.",
 		parameters: Type.Object({
 			reason: Type.String({ description: "What blocks you, as a plain statement of fact." }),
 			nextAction: Type.String({

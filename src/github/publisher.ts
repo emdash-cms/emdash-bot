@@ -351,12 +351,20 @@ export async function publish(ctx: PublishContext, candidateId: string): Promise
 			const applied = publication.commitSha !== null && head === publication.commitSha;
 			if (!applied && head !== publication.expectedHead) {
 				if (publication.expectedHead === null && head !== null && ctx.identity.ownsBranch) {
-					// The bot's branch exists from an earlier case attempt we have no record of.
-					publication = save(ctx, publication, {
-						state: "needs-human",
-						error: `bot branch ${publication.branch} already exists at ${head.slice(0, 12)}`,
-					});
-					return { state: "needs-human", reason: publication.error! };
+					// The bot's branch exists from an earlier attempt. If that attempt was this
+					// case's (its commits carry the case trailer), build on top of it.
+					const previous = await ctx.github
+						.request<{ message?: string }>("GET", ctx.github.repoPath(`/git/commits/${head}`))
+						.then((c) => c.message ?? "")
+						.catch(() => "");
+					if (!previous.includes(`EmDash-Bot-Case: ${ctx.identity.caseId}`)) {
+						publication = save(ctx, publication, {
+							state: "needs-human",
+							error: `bot branch ${publication.branch} already exists at ${head.slice(0, 12)} and was not made for this case`,
+						});
+						return { state: "needs-human", reason: publication.error! };
+					}
+					ctx.store.log("publication.branch-adopted", { head });
 				}
 				ctx.store.log("publication.branch-advanced", {
 					expected: publication.expectedHead,

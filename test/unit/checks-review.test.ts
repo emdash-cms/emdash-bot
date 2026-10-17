@@ -10,7 +10,6 @@ const policy = {
 	code: ["test", "lint"],
 	administrative: ["PR Maintenance"],
 	required: ["test"],
-	skippable: { lint: "docs-only changes" },
 };
 const ev = (name: string, conclusion: string | null, summary = "", headSha = "h") => ({
 	name,
@@ -35,7 +34,7 @@ describe("check classification", () => {
 		);
 		expect(classifyCheck(policy, ev("test", "cancelled"), "h").classification).toBe("cancellation");
 		expect(classifyCheck(policy, ev("lint", "skipped"), "h").classification).toBe("success");
-		expect(classifyCheck(policy, ev("test", "skipped"), "h").classification).toBe("unknown");
+		expect(classifyCheck(policy, ev("test", "skipped"), "h").classification).toBe("success");
 		expect(classifyCheck(policy, ev("deploy-preview", "failure", "boom"), "h").classification).toBe(
 			"unknown",
 		);

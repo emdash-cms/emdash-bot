@@ -54,7 +54,7 @@ describe("deterministic status", () => {
 		expect(conflicted.nextAction).toMatch(/bot will merge the default branch/);
 	});
 
-	it("treats the reviewer's latest review of the head as the readiness signal", () => {
+	it("blocks readiness only on a change request; the author decides what a comment needs", () => {
 		const commented = {
 			reviewId: "r2",
 			reviewer: "x",
@@ -64,9 +64,18 @@ describe("deterministic status", () => {
 			actionable: 1,
 			receivedAt: 1,
 		};
-		expect(computeStatus({ ...base, reviews: [commented] }).status).toBe("changes-required");
-		const clean = { ...commented, structured: true, actionable: 0 };
-		expect(computeStatus({ ...base, reviews: [clean] }).status).toBe("ready-for-human");
+		const ready = computeStatus({ ...base, reviews: [commented] });
+		expect(ready.status).toBe("ready-for-human");
+		expect(ready.reasons[0]).toContain("the review bot reviewed the current head");
+		const requested = { ...commented, state: "CHANGES_REQUESTED" };
+		expect(computeStatus({ ...base, reviews: [requested] })).toMatchObject({
+			status: "changes-required",
+			reasons: ["the review bot requested changes on the current head"],
+		});
+		// While the author works on a review, the status says so rather than "ready".
+		expect(computeStatus({ ...base, reviews: [commented], authorBusy: true }).status).toBe(
+			"working",
+		);
 		const older = { ...commented, commit: "h0" };
 		expect(computeStatus({ ...base, reviews: [older] }).status).toBe("candidate-published");
 	});
@@ -107,8 +116,13 @@ describe("deterministic status", () => {
 			actionable: 0,
 			maintainer: true,
 		};
-		expect(computeStatus({ ...base, reviews: [bot] }).status).toBe("changes-required");
-		const approved = computeStatus({ ...base, reviews: [bot, approve] });
+		expect(
+			computeStatus({ ...base, reviews: [{ ...bot, state: "CHANGES_REQUESTED" }] }).status,
+		).toBe("changes-required");
+		const approved = computeStatus({
+			...base,
+			reviews: [{ ...bot, state: "CHANGES_REQUESTED" }, approve],
+		});
 		expect(approved.status).toBe("ready-for-human");
 		expect(approved.reasons[0]).toContain("@ascorbic approved the current head");
 		const changes = { ...approve, reviewId: "c", state: "CHANGES_REQUESTED", actionable: 1 };
@@ -130,8 +144,31 @@ describe("deterministic status", () => {
 			...base,
 			verifications: [check("test", "h1", "failed", "infrastructure")],
 		});
-		expect(infra.status).toBe("needs-human");
-		expect(infra.nextAction).toContain("re-run");
+		// The bot re-runs a transient failure; only once it can't does a person step in.
+		expect(infra).toMatchObject({
+			status: "waiting-for-checks",
+			nextAction: "the bot will re-run the failed check",
+		});
+		const exhausted = computeStatus({
+			...base,
+			verifications: [check("test", "h1", "failed", "infrastructure")],
+			rerunsExhausted: ["test"],
+		});
+		expect(exhausted.status).toBe("needs-human");
+		expect(exhausted.nextAction).toContain("re-run");
+		const unknown = computeStatus({
+			...base,
+			verifications: [check("test", "h1", "failed", "unknown")],
+		});
+		expect(unknown).toMatchObject({
+			status: "changes-required",
+			nextAction: "the bot will investigate the failing check",
+		});
+		const gate = computeStatus({
+			...base,
+			verifications: [check("test", "h1", "failed", "administrative")],
+		});
+		expect(gate.status).toBe("needs-human");
 	});
 
 	it("renders status without instructions and fills the PR template", () => {

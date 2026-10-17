@@ -97,6 +97,14 @@ interface DryRun {
 }
 
 const MAX_SCREENSHOTS = 30;
+/** Automatic retries of a failed model call, with exponential backoff from `modelRetryBaseMs`. */
+const MODEL_RETRIES = 3;
+/** Re-runs of a required check that failed for infrastructure reasons, per head. */
+const MAX_RERUNS = 2;
+/** Fresh runs after a run hits its time limit, before a human is asked. */
+const RUN_CONTINUATIONS = 3;
+/** Reminders, per case, when a run ends with no next step. */
+const MAX_NUDGES = 2;
 const MAX_SCREENSHOT_BYTES = 5 * 1_048_576;
 
 /** Review states that decide readiness when a maintainer gives them. */
@@ -237,11 +245,15 @@ export class CaseDO extends DurableObject<Env> {
 				return this.#repliesJob();
 			case "checks":
 				return this.#checksJob();
+			case "resume":
+				if (this.store.state() === "active")
+					await this.#submitToAuthor(String(payload.key), String(payload.text));
+				return;
 		}
 	}
 
 	async #schedule(
-		fn: "reconcile" | "report" | "publish" | "replies" | "checks",
+		fn: "reconcile" | "report" | "publish" | "replies" | "checks" | "resume",
 		time: number,
 		payload: Record<string, unknown> = {},
 		id?: string,
@@ -542,11 +554,6 @@ export class CaseDO extends DurableObject<Env> {
 		const runStartedAt = this.store.getMeta<number>("runStartedAt");
 		if (runStartedAt && Date.now() - runStartedAt > budgets.authorMs)
 			return "the bot ran out of time for this run";
-		const assignedAt =
-			this.store.getMeta<number>("assignedAt") ??
-			this.store.getMeta<number>("createdAt") ??
-			Date.now();
-		if (Date.now() - assignedAt > budgets.caseMs) return "the case time budget is exhausted";
 		if ((this.store.getMeta<number>("tokens") ?? 0) > budgets.tokens)
 			return "the token budget is exhausted";
 		return undefined;
@@ -1488,7 +1495,6 @@ export class CaseDO extends DurableObject<Env> {
 					// Auto-intake has no assigner: the opener is the reporter, not a maintainer.
 					this.store.setMeta("assignedBy", auto ? null : event.actor);
 					this.store.setMeta("autoIntake", auto);
-					// The case time budget runs per ownership generation.
 					this.store.setMeta("assignedAt", Date.now());
 					this.store.setMeta("handoff", null);
 				});
@@ -1563,6 +1569,8 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.setMeta("observedHead", str(payload.after));
 				this.store.log("branch.advanced", { by: event.actor, head: payload.after });
 				const formatted = await this.#recordFormatPush(str(payload.before), str(payload.after));
+				// The review service only reviews the bot's own pushes: ask it to review this one.
+				if (!formatted) this.store.setMeta("foreignHead", str(payload.after));
 				return `## Branch updated\nFrom: ${from}\n\n${event.actor} pushed ${str(payload.after).slice(0, 12)} to the case branch${formatted ? ", applying only the repository's formatter" : ""}. Your next candidate is published on top of it.`;
 			}
 			case "pr-opened":
@@ -1902,6 +1910,13 @@ export class CaseDO extends DurableObject<Env> {
 	async #submitToAuthor(key: string, text: string): Promise<void> {
 		// The bot's own milestone notices do not spend the author's run budget.
 		const counted = !/^(published|ready|preview|publication-stopped):/.test(key);
+		// Retries, continuations and nudges are per stretch of work: a real event starts a new one.
+		if (!/^(continue|model-retry|nudge):/.test(key))
+			this.store.transaction(() => {
+				this.store.setMeta("modelRetries", 0);
+				this.store.setMeta("runContinuations", 0);
+				this.store.setMeta("nudges", 0);
+			});
 		const slot = await this.#authorSlot("acquire");
 		if (!slot.granted) {
 			const held = this.store.getMeta<Array<{ key: string; text: string }>>("held") ?? [];
@@ -2069,6 +2084,25 @@ export class CaseDO extends DurableObject<Env> {
 		await this.#schedule("report", Date.now());
 	}
 
+	/**
+	 * A run that ends with no candidate, question, handoff or decline leaves the
+	 * case waiting on nobody. Ask the author, once per run, for its next step.
+	 */
+	async #nudgeIfStopped(runStarted: number): Promise<void> {
+		if (this.store.state() !== "active" || this.store.getMeta("handoff")) return;
+		if (this.store.latestCandidate()) return;
+		const asked = (this.store.getMeta<ReplyIntent[]>("replyIntents") ?? []).some(
+			(i) => i.createdAt >= runStarted,
+		);
+		if (asked || (this.store.getMeta<number>("nudges") ?? 0) >= MAX_NUDGES) return;
+		this.store.setMeta("nudges", (this.store.getMeta<number>("nudges") ?? 0) + 1);
+		this.store.log("author.nudged", {});
+		await this.#submitToAuthor(
+			`nudge:${runStarted}`,
+			"## No next step\nFrom: the bot (runtime)\n\nYour last run ended without a candidate, a question or a handoff, so nobody is acting on this case. Carry on with the work, or ask the reporter or a maintainer for what you need, or call handoff if only a maintainer can unblock you.",
+		);
+	}
+
 	async #authorBusy(): Promise<boolean> {
 		return (await this.harness.pending()).length > 0;
 	}
@@ -2086,30 +2120,58 @@ export class CaseDO extends DurableObject<Env> {
 		const failure = await this.#failedTurn();
 		if (failure) {
 			this.store.log("author.failed", { error: failure.message });
-			// Record the handoff first so the status never reads as idle in between.
 			// Withdraw only the stranded input: the sandbox and its preparation are still good.
-			await this.#handoff(
-				`model-error:${failure.at}`,
-				`the model call failed: ${failure.message}`,
-				"a new comment or operator resume retries",
-			);
 			await this.harness.abort().catch(() => false);
+			// A provider failure is usually transient: retry with backoff before asking anyone.
+			const retries = this.store.getMeta<number>("modelRetries") ?? 0;
+			if (retries < MODEL_RETRIES) {
+				this.store.setMeta("modelRetries", retries + 1);
+				const delay = this.config.modelRetryBaseMs * 2 ** retries;
+				this.store.log("author.retry-scheduled", { attempt: retries + 1, delayMs: delay });
+				await this.#schedule(
+					"resume",
+					Date.now() + delay,
+					{
+						key: `model-retry:${failure.at}`,
+						text: `## Retrying after a model failure\nFrom: the bot (runtime)\n\nYour last run stopped because the model call failed (${failure.message}). Your work is saved. Continue where you left off.`,
+					},
+					`model-retry:${failure.at}`,
+				);
+			} else
+				await this.#handoff(
+					`model-error:${failure.at}`,
+					`the model call failed ${MODEL_RETRIES + 1} times: ${failure.message}`,
+					"a new comment or operator resume retries",
+				);
 		}
 		if (await this.#authorBusy()) {
 			const started = this.store.getMeta<number>("runStartedAt");
 			if (started && Date.now() - started > this.config.budgets.authorMs) {
 				await this.#stopAuthor();
-				await this.#handoff(
-					`run-timeout:${started}`,
-					"the bot ran out of time for this run",
-					"a maintainer will read the transcript, then comment or ask an operator to resume",
-				);
+				// Work is checkpointed: carry on in a fresh run a few times before asking a human.
+				const continued = this.store.getMeta<number>("runContinuations") ?? 0;
+				if (continued < RUN_CONTINUATIONS) {
+					this.store.setMeta("runContinuations", continued + 1);
+					this.store.log("author.continued", { run: continued + 1 });
+					await this.#submitToAuthor(
+						`continue:${started}`,
+						`## Time limit for one run reached\nFrom: the bot (runtime)\n\nYour run reached its ${Math.round(this.config.budgets.authorMs / 60_000)}-minute limit and was stopped; your saved work is intact. Continue where you left off, and keep each step focused so it fits in one run.`,
+					);
+				} else
+					await this.#handoff(
+						`run-timeout:${started}`,
+						`the bot ran out of time ${RUN_CONTINUATIONS + 1} runs in a row`,
+						"a maintainer will read the transcript, then comment or ask an operator to resume",
+					);
 			}
 			return { rescheduleAt: Date.now() + this.config.reconcileMs };
 		}
-		if (this.store.getMeta<number>("runStartedAt")) {
+		const runStarted = this.store.getMeta<number>("runStartedAt");
+		if (runStarted) {
 			this.store.setMeta("runStartedAt", null);
 			this.store.log("author.idle", {});
+			// A failed run already has a retry or a handoff; only a run that ended normally is nudged.
+			if (!failure) await this.#nudgeIfStopped(runStarted);
 		}
 		await this.#authorSlot("release");
 		const held = this.store.getMeta<Array<{ key: string; text: string }>>("held") ?? [];
@@ -2335,6 +2397,9 @@ export class CaseDO extends DurableObject<Env> {
 			authorBusy: this.store.state() === "active" && (await this.#authorBusy()),
 			authorStarted: (this.store.getMeta<number>("runs") ?? 0) > 0,
 			waitingForSlot: (this.store.getMeta<unknown[]>("held") ?? []).length > 0,
+			rerunsExhausted: Object.entries(this.store.getMeta<Record<string, number>>("reruns") ?? {})
+				.filter(([key, n]) => n >= MAX_RERUNS && key.startsWith(`${this.#currentHead()}:`))
+				.map(([key]) => key.slice(key.indexOf(":") + 1)),
 			handoff: this.store.getMeta<Handoff | null>("handoff") ?? undefined,
 			candidates: this.store.candidates(),
 			publications: this.store.publications(),
@@ -2344,6 +2409,73 @@ export class CaseDO extends DurableObject<Env> {
 			formatParents: this.store.getMeta<Record<string, string>>("formatParents") ?? {},
 			mergeability: this.store.getMeta("mergeability"),
 			policy: this.#checkPolicy(),
+		});
+	}
+
+	/**
+	 * Re-run required GitHub Actions jobs on the current head that failed for
+	 * infrastructure reasons or were cancelled, up to MAX_RERUNS times each.
+	 * Other apps' checks, and runs the App may not re-run, are left for people.
+	 */
+	async #rerunTransientFailures(): Promise<void> {
+		const head = this.#currentHead();
+		if (!head || this.store.state() !== "active" || this.#dryRun()) return;
+		const policy = this.#checkPolicy();
+		const reruns = this.store.getMeta<Record<string, number>>("reruns") ?? {};
+		const latest = new Map<string, Verification>();
+		for (const v of this.store.verifications())
+			if (v.kind === "workflow" && v.commitSha === head && policy.required.includes(v.name))
+				latest.set(v.name, v);
+		const github = this.#github();
+		for (const [name, v] of latest) {
+			if (v.classification !== "infrastructure" && v.classification !== "cancellation") continue;
+			const key = `${head}:${name}`;
+			const count = reruns[key] ?? 0;
+			if (count >= MAX_RERUNS) continue;
+			const jobId = /^check:(\d+)$/.exec(v.id)?.[1];
+			const actions = v.environment === "github:github-actions" && jobId;
+			const response = actions
+				? await github.raw("POST", github.repoPath(`/actions/jobs/${jobId}/rerun`))
+				: null;
+			const ok = response !== null && response.status < 300;
+			// A refusal (another app's check, no permission) will not change: stop trying.
+			reruns[key] = ok ? count + 1 : MAX_RERUNS;
+			this.store.log(ok ? "check.rerun" : "check.rerun-refused", {
+				name,
+				head,
+				attempt: count + 1,
+				...(response && !ok ? { status: response.status } : {}),
+			});
+		}
+		this.store.setMeta("reruns", reruns);
+	}
+
+	/**
+	 * Ask the review service for a review of the current head, once per head,
+	 * when none is coming on its own: someone else pushed to the branch, or the
+	 * review check failed. Re-applying its label is the service's own retry.
+	 */
+	async #requestReviewIfNeeded(): Promise<void> {
+		const rule = this.#repoConfig()?.review;
+		const head = this.#currentHead();
+		const pr = this.store.getMeta<number>("pr") ?? this.#identity().prNumber;
+		if (!rule || !head || !pr || this.store.state() !== "active" || this.#dryRun()) return;
+		const requested = this.store.getMeta<string[]>("reviewRequested") ?? [];
+		if (requested.includes(head)) return;
+		if (this.store.reviews().some((r) => r.commit === head)) return;
+		const failed = this.store
+			.verifications()
+			.some((v) => v.name === rule.check && v.commitSha === head && v.outcome === "failed");
+		const foreign = this.store.getMeta<string>("foreignHead") === head;
+		if (!failed && !foreign) return;
+		const github = this.#github();
+		const path = github.repoPath(`/issues/${pr}/labels`);
+		await github.request("DELETE", `${path}/${encodeURIComponent(rule.label)}`, undefined, [404]);
+		await github.request("POST", path, { labels: [rule.label] });
+		this.store.setMeta("reviewRequested", [...requested.slice(-20), head]);
+		this.store.log("review.requested", {
+			head,
+			reason: failed ? "review check failed" : "pushed by someone else",
 		});
 	}
 
@@ -2503,6 +2635,12 @@ export class CaseDO extends DurableObject<Env> {
 			(this.store.getMeta<ReplyIntent[]>("replyIntents") ?? []).some((i) => i.status === "pending")
 		)
 			await this.#schedule("replies", Date.now());
+		await this.#rerunTransientFailures().catch((error: unknown) =>
+			this.store.log("checks.rerun-failed", { error: errorMessage(error) }),
+		);
+		await this.#requestReviewIfNeeded().catch((error: unknown) =>
+			this.store.log("review.request-failed", { error: errorMessage(error) }),
+		);
 		const report = await this.status();
 		await this.#publishSummary(report).catch((error: unknown) =>
 			this.store.log("board.failed", { error: errorMessage(error) }),

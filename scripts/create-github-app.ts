@@ -99,7 +99,7 @@ const manifest = {
 		pull_requests: "write",
 		issues: "write",
 		checks: "write",
-		actions: "read",
+		actions: "write",
 		metadata: "read",
 	},
 	default_events: ["issues", "issue_comment", "pull_request", "pull_request_review", "check_run"],

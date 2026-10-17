@@ -26,6 +26,15 @@ export interface RepositoryConfig {
 	readonly formatCommit?: FormatCommitRule;
 	/** Where the repository publishes a preview of a pull request, for the reporter to try. */
 	readonly preview?: PreviewConfig;
+	/** How to ask the repository's review service for a review when it won't start one itself. */
+	readonly review?: ReviewServiceConfig;
+}
+
+export interface ReviewServiceConfig {
+	/** The label that asks the review service to review the pull request again. */
+	readonly label: string;
+	/** The check the review service reports on, whose failure means no review is coming. */
+	readonly check: string;
 }
 
 export interface PreviewConfig {
@@ -48,7 +57,6 @@ export interface Budgets {
 	readonly setupMs: number;
 	readonly authorMs: number;
 	readonly jobMs: number;
-	readonly caseMs: number;
 	readonly tokens: number;
 	/** Messages that may start the author working (assignment, comments, reviews, failing checks). */
 	readonly rounds: number;
@@ -62,8 +70,6 @@ export interface CheckPolicy {
 	readonly administrative: readonly string[];
 	/** Check names that must succeed on the exact head for readiness. */
 	readonly required: readonly string[];
-	/** Required checks that may be skipped, with the rule that permits it. */
-	readonly skippable?: Readonly<Record<string, string>>;
 }
 
 export interface BotConfig {
@@ -108,6 +114,8 @@ export interface BotConfig {
 	readonly budgets: Budgets;
 	readonly checks: CheckPolicy;
 	readonly githubApiUrl: string;
+	/** The first delay before retrying a failed model call; later retries double it. */
+	readonly modelRetryBaseMs: number;
 	/** The Worker's public origin, for links such as published screenshots. */
 	readonly publicUrl: string;
 	readonly gitRemoteBase: string;
@@ -143,7 +151,6 @@ export const DEFAULT_BUDGETS: Budgets = {
 	setupMs: 15 * 60_000,
 	authorMs: 45 * 60_000,
 	jobMs: 10 * 60_000,
-	caseMs: 6 * 60 * 60_000,
 	// A real fix with review rounds used 4.7M on its first pass; these are runaway guards, not targets.
 	tokens: 20_000_000,
 	rounds: 100,
@@ -181,6 +188,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		checks: { code: [], administrative: [], required: [], ...raw.checks },
 		githubApiUrl: raw.githubApiUrl ?? "https://api.github.com",
 		publicUrl: (raw.publicUrl ?? "").replace(/\/$/, ""),
+		modelRetryBaseMs: raw.modelRetryBaseMs ?? 2 * 60_000,
 		gitRemoteBase: raw.gitRemoteBase ?? "https://github.com",
 		maxArtifactBytes: raw.maxArtifactBytes ?? 8 * 1024 * 1024,
 		reconcileMs: raw.reconcileMs ?? 15_000,

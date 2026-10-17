@@ -62,15 +62,9 @@ export function classifyCheck(
 	if (outcome === "succeeded") return { classification: "success", reason: "check succeeded" };
 	if (outcome === "cancelled")
 		return { classification: "cancellation", reason: "check was cancelled" };
-	if (outcome === "skipped") {
-		const rule = policy.skippable?.[evidence.name];
-		return rule
-			? { classification: "success", reason: `skipped as permitted: ${rule}` }
-			: {
-					classification: "unknown",
-					reason: "required check was skipped without an applicability rule",
-				};
-	}
+	// GitHub's branch protection counts a skipped required check as passing; so do we.
+	if (outcome === "skipped")
+		return { classification: "success", reason: "skipped, which GitHub counts as passing" };
 	if (policy.administrative.includes(evidence.name) || evidence.conclusion === "action_required") {
 		return { classification: "administrative", reason: "administrative or human gate" };
 	}

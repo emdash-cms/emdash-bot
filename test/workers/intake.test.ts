@@ -361,7 +361,10 @@ describe("the public board", () => {
 			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
 		});
 		const data = await bot.waitFor("board row", async () => {
-			const response = await bot!.mf.dispatchFetch("https://bot.test/api/cases?issue=80");
+			// A distinct URL per poll, past the board's 30-second cache.
+			const response = await bot!.mf.dispatchFetch(
+				`https://bot.test/api/cases?issue=80&poll=${Date.now()}`,
+			);
 			const body = (await response.json()) as { cases: any[] };
 			return body.cases.find((c) => c.status === "candidate-published") ? body : null;
 		});

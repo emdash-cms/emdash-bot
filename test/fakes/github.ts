@@ -240,6 +240,7 @@ export class FakeGitHub {
 				return this.#json({
 					sha: match[1],
 					tree: { sha: this.git(repo, ["rev-parse", `${match[1]}^{tree}`]) },
+					message: this.git(repo, ["log", "-1", "--format=%B", match[1]!]),
 				});
 			} catch {
 				return this.#json({ message: "Not Found" }, 404);

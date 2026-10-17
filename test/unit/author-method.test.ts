@@ -12,6 +12,16 @@ describe("author method", () => {
 		);
 	});
 
+	it("keeps going until only human review remains, deciding judgement calls itself", () => {
+		expect(AUTHOR_METHOD).toContain(
+			"A maintainer's review and merge is the only step that needs a person.",
+		);
+		expect(AUTHOR_METHOD).toContain(
+			"make the best defensible decision, explain it in the pull request, and carry on",
+		);
+		expect(AUTHOR_METHOD).toContain("End every turn with a next step");
+	});
+
 	it("lets the author decide whether nits are worth fixing in this pull request", () => {
 		expect(AUTHOR_METHOD).toContain(
 			"For nits and optional suggestions, decide whether they are worth fixing in this pull request.",

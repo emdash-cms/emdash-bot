@@ -26,6 +26,8 @@ export interface StatusInput {
 	readonly reviews: readonly ReviewRecord[];
 	/** The branch head last observed on GitHub, when known. */
 	readonly observedHead: string | null;
+	/** Required checks on the current head that failed transiently and the bot can no longer re-run. */
+	readonly rerunsExhausted?: readonly string[];
 	/** Format-only commits, mapped to their parent: a review of the parent covers them. */
 	readonly formatParents?: Readonly<Record<string, string>>;
 	readonly mergeability: { head: string; mergeable: boolean | null } | undefined;
@@ -83,11 +85,20 @@ export function requiredChecks(
 	});
 }
 
-/** A review is clean when it approves, or when its findings block lists nothing actionable. */
+/**
+ * A review blocks readiness only when it requests changes. What a commented
+ * review needs (a fix, a reply, nothing) is the author's judgement; it answers
+ * every review, and a new head gets a new review.
+ */
 export function reviewIsClean(review: ReviewRecord): boolean {
-	return (
-		review.state.toUpperCase() === "APPROVED" || (review.structured && review.actionable === 0)
-	);
+	return review.state.toUpperCase() !== "CHANGES_REQUESTED";
+}
+
+function reviewedBy(review: ReviewRecord): string {
+	const who = review.maintainer ? `@${review.reviewer}` : "the review bot";
+	return review.state.toUpperCase() === "APPROVED"
+		? `${who} approved the current head`
+		: `${who} reviewed the current head`;
 }
 
 const WILL_UPDATE = "the bot will update this comment when it has something to show";
@@ -164,13 +175,19 @@ export function computeStatus(input: StatusInput): StatusReport {
 			"the bot will open or update the pull request",
 		);
 	}
-	if (publication.state === "needs-human" || publication.state === "failed") {
+	// The author is told when publication stops (the branch moved under it) and rebuilds.
+	if (publication.state === "needs-human")
+		return report(
+			"changes-required",
+			[`publication stopped: ${publication.error ?? publication.state}`],
+			"the bot will rebuild its change on the current branch head",
+		);
+	if (publication.state === "failed")
 		return report(
 			"needs-human",
-			[`publication stopped: ${publication.error ?? publication.state}`],
+			[`publication failed: ${publication.error ?? publication.state}`],
 			"an operator will look at the publication receipt",
 		);
-	}
 	if (publishedHead && input.observedHead && !covered.has(publishedHead)) {
 		return report(
 			"waiting-for-checks",
@@ -185,30 +202,43 @@ export function computeStatus(input: StatusInput): StatusReport {
 			failedCode.map((c) => `${c.name} failed on the current head`),
 			"the bot will fix the failing check",
 		);
-	const blocked = checks.filter((c) => c.state === "failed");
-	if (blocked.length > 0) {
+	const failed = checks.filter((c) => c.state === "failed");
+	const describe = (c: RequiredCheck) => `${c.name}: ${c.classification} (${c.detail})`;
+	// Administrative checks are human gates (a CLA, an approval); only people can pass them.
+	const gates = failed.filter((c) => c.classification === "administrative");
+	if (gates.length > 0)
+		return report("needs-human", gates.map(describe), "a maintainer will look at the failed check");
+	// Transient failures are re-run by the bot, a limited number of times.
+	const transient = failed.filter(
+		(c) => c.classification === "infrastructure" || c.classification === "cancellation",
+	);
+	const exhausted = transient.filter((c) => input.rerunsExhausted?.includes(c.name));
+	if (exhausted.length > 0)
 		return report(
 			"needs-human",
-			blocked.map((c) => `${c.name}: ${c.classification} (${c.detail})`),
-			blocked.some((c) => c.classification === "infrastructure")
-				? "a maintainer will re-run the failed check once the infrastructure problem clears"
-				: "a maintainer will look at the failed check",
+			exhausted.map(describe),
+			"a maintainer will re-run the failed check once the infrastructure problem clears",
 		);
-	}
+	if (transient.length > 0)
+		return report(
+			"waiting-for-checks",
+			transient.map(describe),
+			"the bot will re-run the failed check",
+		);
+	// Anything else unexplained goes to the author with its log.
+	if (failed.length > 0)
+		return report(
+			"changes-required",
+			failed.map(describe),
+			"the bot will investigate the failing check",
+		);
 	if (review && !reviewIsClean(review)) {
-		return review.maintainer
-			? report(
-					"changes-required",
-					[`@${review.reviewer} requested changes on the current head`],
-					`the bot will respond to @${review.reviewer}'s review`,
-				)
-			: report(
-					"changes-required",
-					[
-						`the review bot's latest review of the current head has ${review.actionable} item(s) to address`,
-					],
-					"the bot will respond to the review, and the review bot will approve when satisfied",
-				);
+		const who = review.maintainer ? `@${review.reviewer}` : "the review bot";
+		return report(
+			"changes-required",
+			[`${who} requested changes on the current head`],
+			`the bot will respond to ${review.maintainer ? `${who}'s` : "the"} review`,
+		);
 	}
 	const pending = checks.filter((c) => c.state === "missing" || c.state === "pending");
 	if (pending.length > 0)
@@ -242,9 +272,7 @@ export function computeStatus(input: StatusInput): StatusReport {
 		);
 	return report(
 		"ready-for-human",
-		[
-			`required checks passed, ${review.maintainer ? `@${review.reviewer} approved the current head` : "the review bot's latest review of the current head is clean"}, and the head merges cleanly`,
-		],
+		[`required checks passed, ${reviewedBy(review)}, and the head merges cleanly`],
 		"a maintainer will review and approve the pull request",
 	);
 }

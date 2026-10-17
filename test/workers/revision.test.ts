@@ -550,7 +550,7 @@ describe("review repair and asynchronous CI", () => {
 		expect(record.log.some((e: any) => e.type === "candidate.integrated")).toBe(true);
 	});
 
-	it("hands off when a maintainer commit conflicts with the revision", async () => {
+	it("asks the author to rebuild when a maintainer commit conflicts with the revision", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(35);
 		const branch = "emdash-bot/issue-35";
@@ -572,9 +572,14 @@ describe("review repair and asynchronous CI", () => {
 				findings: [{ id: "F1", severity: "major", title: "Missing default", body: "x" }],
 			}),
 		);
-		const status = await statusIs(bot, caseId, "needs-human");
+		const status = await statusIs(bot, caseId, "changes-required");
 		expect(status.reasons.join(" ")).toContain("does not apply cleanly");
+		expect(status.nextAction).toBe("the bot will rebuild its change on the current branch head");
 		expect(bot.github.head(REPO, branch)).toBe(maintainer);
+		await bot.waitFor("the author is told to rebuild", async () => {
+			const evidence = await bot!.ops(`cases/${caseId}/evidence`);
+			return JSON.stringify(evidence.transcript).includes("## Publication stopped") || null;
+		});
 	});
 
 	it("inspects an existing check run when its callback was lost", async () => {
