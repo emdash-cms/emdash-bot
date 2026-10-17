@@ -1,0 +1,21 @@
+profiles/production.json
+  s_4c97aa8e7b616f::t_7328220b312a77 77
+test/unit/profiles.test.ts
+  s_4c97aa8e7b616f::t_20362a91c29d65 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0a4180ae5d0cf411172ac64883d56315560dcbf4",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
