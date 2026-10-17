@@ -21,6 +21,7 @@ describe("production profile", () => {
 		);
 		expect(config.authorModel).not.toMatch(/^scripted:/);
 		expect(config.maxActiveAuthors).toBe(2);
+		expect(config.intakeLabel).toBe("bot:fix");
 	});
 
 	it("lets only plan-gated required lanes skip, guarded by the required Tests job", () => {

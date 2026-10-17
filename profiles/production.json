@@ -73,7 +73,7 @@
 		}
 	},
 	"gatewayId": "default",
-	"intakeLabel": "autofix",
+	"intakeLabel": "bot:fix",
 	"maxActiveAuthors": 2,
 	"autoIntake": false,
 	"autoIntakeMaintainers": false
