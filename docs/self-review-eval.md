@@ -170,10 +170,10 @@ Claude Opus 5.5 is the clear choice for the adversarial review: about 2.5 times 
 
 With `reviewModel` set to Claude Opus 5.5 on staging (the author still Sol, the review a `thorough` delegation the author briefed itself), cases 3686 and 3669 were re-run from scratch.
 
-| Case | Self-review | Grade | Key findings | Author cost and time |
-| --- | --- | --- | --- | --- |
-| 3686 | Found K1; a second review caught a prefetch regression in the fix; a third was clean | approve with minor reservations | K1 fixed, K2 partly, K3 still present | $0.91, 48 min model time |
-| 3669 | One review of "the staged diff"; tests verified against base, 703 nearby tests; raised only the unchanged 409 | request changes (mild) | K4 still present, K5 avoided, K15 partly, K16 present but disclosed | $1.44, 66 min model time (about 2.5 h wall clock) |
+| Case | Self-review                                                                                                   | Grade                           | Key findings                                                        | Author cost and time                              |
+| ---- | ------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------- |
+| 3686 | Found K1; a second review caught a prefetch regression in the fix; a third was clean                          | approve with minor reservations | K1 fixed, K2 partly, K3 still present                               | $0.91, 48 min model time                          |
+| 3669 | One review of "the staged diff"; tests verified against base, 703 nearby tests; raised only the unchanged 409 | request changes (mild)          | K4 still present, K5 avoided, K15 partly, K16 present but disclosed | $1.44, 66 min model time (about 2.5 h wall clock) |
 
 Compared with the original pull requests (#4226 blocked on K1; #4225 with K4 and K5) and the Sol-review re-runs, both improved. But on 3669 the end-to-end reviewer missed K4, which the Opus replay of #4225 found in both runs. The difference is the brief: the replay asked whether the change fixes the report, while the author asked its reviewer to check its own diff, and the reviewer checked the menus it was pointed at.
 

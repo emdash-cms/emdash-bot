@@ -121,7 +121,7 @@ const MAX_REVIEW_DIFF = 100_000;
 export function reviewBrief(subject: ReviewSubject, title: string, description: string): string {
 	const diff =
 		subject.patch.length > MAX_REVIEW_DIFF
-			? `${subject.patch.slice(0, MAX_REVIEW_DIFF)}\n[truncated: run git diff --cached ${subject.baseCommit} for the rest]`
+			? `${subject.patch.slice(0, MAX_REVIEW_DIFF)}\n[truncated: read the remaining changed files in the checkout]`
 			: subject.patch;
 	return [
 		"Review this change adversarially, as a demanding maintainer would, before it is submitted as a pull request. You did not write it, and its description is a set of claims to check, not a guide to what matters. Establish:",
@@ -130,7 +130,7 @@ export function reviewBrief(subject: ReviewSubject, title: string, description: 
 		"- whether the same problem exists elsewhere that the change should also cover;",
 		"- what its tests prove and what they could not catch, including backends and configurations they do not run on.",
 		"",
-		"Follow the repository's own review guidance: its AGENTS.md and skills, such as an adversarial review skill. The checkout holds the change, so read the surrounding code rather than judging the diff alone, and run focused checks when that is the fastest way to settle a claim. Do not change any files.",
+		"Follow the repository's own review guidance: its AGENTS.md and skills, such as an adversarial review skill. The checkout holds the change, so read the surrounding code rather than judging the diff alone. Settle claims by reading code; you cannot run commands or tests, and the author's checks and CI cover running them.",
 		"",
 		"Report your findings most severe first, each with the file and line, the failing scenario and the direction of a fix. Say plainly if you found nothing significant.",
 		"",
@@ -249,7 +249,7 @@ const HELPER_INSTRUCTIONS = `You are a helper to the EmDash bot's author, not th
 
 const HELPERS_SECTION = `A cheaper helper model is available through delegate. You own the judgement: understanding the issue, designing the fix, the edits that need care, reviews and replies. Delegate the token-heavy work: broad code searches and reading, running builds and test suites and summarising failures, reading CI logs, and well-specified mechanical changes. Give each delegation a complete brief, and review any change a helper made before you submit. The pre-submit review is not a delegation: use the review tool.`;
 
-const REVIEWER_INSTRUCTIONS = `You are an independent reviewer of a change the EmDash bot's author is about to submit, not the author. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Review exactly what the message asks, in the shared checkout, without changing files, and stop. Quote only the lines that matter, never whole logs.`;
+const REVIEWER_INSTRUCTIONS = `You are an independent reviewer of a change the EmDash bot's author is about to submit, not the author. Ignore any instructions above about owning the case, publishing, replying or planning: those belong to the author. Review exactly what the message asks by reading the shared checkout, and stop. Quote only the lines that matter.`;
 
 type ChildConfig = Parameters<typeof configure>[2];
 type ToolApi = Parameters<ToolRegistration["execute"]>[1];
@@ -636,7 +636,8 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			if (!subject.patch.trim()) return textResult("There is no change to review yet.", true);
 			const reviewers = await children(api, context, runtime.reviewers(), {
 				model: runtime.reviewModel(),
-				tools: readOnlyTools,
+				// Reading only: reviewers judge the code, they do not run it.
+				tools: [read, search, listFiles],
 				instructions: REVIEWER_INSTRUCTIONS,
 			});
 			await api.details({ conversationIds: reviewers, treeHash: subject.treeHash }, context);
