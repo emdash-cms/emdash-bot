@@ -1,0 +1,49 @@
+profiles/production.json
+  s_4c97aa8e7b616f::t_60cf1ee39ea983 3
+profiles/staging.json
+  s_4c97aa8e7b616f::t_8c4aecc6db14f3 3
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_d4e33fb42e86c6 70,99-106,476,933-971,1673-1684,1839,1848,1853-1872,2395-2402
+src/cases/types.ts
+  s_4c97aa8e7b616f::t_b3778caa575ad7 184-185
+src/config.ts
+  s_4c97aa8e7b616f::t_b1720d3a22e8b3 111-112,183
+src/index.ts
+  s_4c97aa8e7b616f::t_5620673fe34048 141-164,439-440
+src/reports/dashboard.ts
+  s_4c97aa8e7b616f::t_d8d184f65b5fe4 29-35,156-157,159-167
+src/reports/status.ts
+  s_4c97aa8e7b616f::t_21f9da326a0975 50,114-117,199-211,223-224,246
+src/source/image.ts
+  s_4c97aa8e7b616f::t_d0878f52073c8d 1-12
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_3994bfb3e620d1 69-70,187,258-279,544
+test/fakes/exec.ts
+  s_4c97aa8e7b616f::t_c67ff575c9a816 95-98
+test/harness.ts
+  s_4c97aa8e7b616f::t_ed071b55dac700 57
+test/unit/checks-review.test.ts
+  s_4c97aa8e7b616f::t_60037327516337 5,205-219
+test/unit/dashboard.test.ts
+  s_4c97aa8e7b616f::t_3d05e708bfbfd2 17-18,61-64,73-83
+test/unit/status.test.ts
+  s_4c97aa8e7b616f::t_cfb9cabb4f4279 91-124
+test/workers/intake.test.ts
+  s_4c97aa8e7b616f::t_9c0063d6bc9d55 389-436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2bfb2c01c55612a019855fdbe6ceeaa85a2a1057",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
