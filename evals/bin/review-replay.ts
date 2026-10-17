@@ -4,7 +4,7 @@
 // before submitting. Findings land in evals/results/review-replay/ for
 // scoring against an answer key. Nothing is posted anywhere.
 //
-//   node --experimental-strip-types evals/bin/review-replay.ts <pr>... [--runs 2] [--guidance <file>]
+//   node --experimental-strip-types evals/bin/review-replay.ts <pr>... [--runs 2] [--guidance <file>] [--models a,b]
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,6 +18,8 @@ const { values, positionals } = parseArgs({
 	allowPositionals: true,
 	options: {
 		runs: { type: "string", default: "2" },
+		// Model refs as the Worker takes them, e.g. cloudflare-ai-gateway:claude-sonnet-5-5; empty for the profile's author model.
+		models: { type: "string", default: "" },
 		guidance: { type: "string" },
 		profile: { type: "string", default: "pi-staging" },
 		"timeout-minutes": { type: "string", default: "60" },
@@ -96,7 +98,7 @@ function brief(pr: number): { title: string; body: string } {
 		"",
 		"## Report",
 		"",
-		'When you are done, write your findings in your final message, most severe first, each with the file and line, the failing scenario, and the fix direction. Say plainly if you found nothing significant. Then call handoff with reason "review complete" and nextAction "none".',
+		'When you are done, post your complete findings with the reply tool (it is recorded, not published): most severe first, each with the file and line, the failing scenario, and the fix direction. Say plainly if you found nothing significant. Then call handoff with reason "review complete" and nextAction "none".',
 	].join("\n");
 	return { title: `Review: ${meta.title}`, body };
 }
@@ -123,19 +125,42 @@ async function waitSettled(caseId: string, deadline: number): Promise<string> {
 	}
 }
 
-function findings(evidence: { transcript?: unknown[] }): string {
+/** The reviewer's report (its reply bodies, else its last text), with recorded usage and cost. */
+function findings(evidence: { transcript?: unknown[] }): { report: string; usage: string } {
+	const replies: string[] = [];
 	const texts: string[] = [];
+	let cost = 0;
+	let tokens = 0;
 	for (const entry of (evidence.transcript ?? []) as Array<{
 		model?: Array<Record<string, unknown>>;
 	}>)
-		for (const m of entry.model ?? [])
-			if (m.role === "assistant")
-				for (const part of (m.content as Array<{ type: string; text?: string }>) ?? [])
-					if (part.type === "text" && part.text?.trim()) texts.push(part.text.trim());
-	return texts.at(-1) ?? "(no final message)";
+		for (const m of entry.model ?? []) {
+			if (m.role !== "assistant") continue;
+			const usage = m.usage as { totalTokens?: number; cost?: { total?: number } } | undefined;
+			cost += usage?.cost?.total ?? 0;
+			tokens += usage?.totalTokens ?? 0;
+			for (const part of (m.content as Array<{
+				type: string;
+				text?: string;
+				name?: string;
+				arguments?: { body?: string };
+			}>) ?? []) {
+				if (part.type === "text" && part.text?.trim()) texts.push(part.text.trim());
+				if (part.type === "toolCall" && part.name === "reply" && part.arguments?.body)
+					replies.push(part.arguments.body);
+			}
+		}
+	return {
+		report: replies.join("\n\n---\n\n") || texts.at(-1) || "(no report)",
+		usage: `${tokens} tokens, $${cost.toFixed(2)} recorded`,
+	};
 }
 
-async function replay(pr: number, run: number): Promise<void> {
+function slug(model: string): string {
+	return (model.split(":").pop() || "author").replace(/[^a-z0-9.-]+/gi, "-");
+}
+
+async function replay(pr: number, run: number, model: string): Promise<void> {
 	const head = gh([
 		"pr",
 		"view",
@@ -165,6 +190,7 @@ async function replay(pr: number, run: number): Promise<void> {
 		baseCommit: snapshot,
 		prepare: upstream.prepare,
 		focusedChecks: upstream.focusedChecks,
+		...(model ? { model } : {}),
 	})) as { caseId: string };
 	console.log(
 		`[${pr}#${run}] dry run ${result.caseId} on ${repo.fullName} at ${snapshot.slice(0, 12)}`,
@@ -176,26 +202,29 @@ async function replay(pr: number, run: number): Promise<void> {
 	const evidence = (await ops(profile, `/ops/cases/${result.caseId}/evidence`)) as {
 		transcript?: unknown[];
 	};
-	const report = findings(evidence);
-	const file = join(OUT, `${pr}-run${run}.md`);
+	const { report, usage } = findings(evidence);
+	const tag = `${pr}-${slug(model)}-run${run}`;
+	const file = join(OUT, `${tag}.md`);
 	writeFileSync(
 		file,
-		`# Self-review replay: PR ${pr}, run ${run}\n\nCase ${result.caseId}, outcome ${outcome}, ${Math.round((Date.now() - started) / 60_000)} min.\n\n${report}\n`,
+		`# Review replay: PR ${pr}, ${model || "author model"}, run ${run}\n\nCase ${result.caseId}, outcome ${outcome}, ${Math.round((Date.now() - started) / 60_000)} min, ${usage}.\n\n${report}\n`,
 	);
-	writeFileSync(join(OUT, `${pr}-run${run}.evidence.json`), JSON.stringify(evidence));
-	console.log(`[${pr}#${run}] ${outcome}; findings in ${file}`);
+	writeFileSync(join(OUT, `${tag}.evidence.json`), JSON.stringify(evidence));
+	console.log(`[${tag}] ${outcome}, ${usage}; findings in ${file}`);
 }
 
 const prs = positionals.map(Number);
 const runs = Number(values.runs);
+const models = values.models ? values.models.split(",") : [""];
 // PRs in parallel (each has its own fixture repository); runs of one PR in sequence, as they share it.
 await Promise.all(
 	prs.map(async (pr) => {
-		for (let run = 1; run <= runs; run++)
-			await replay(pr, run).catch((error: unknown) =>
-				console.error(
-					`[${pr}#${run}] failed: ${error instanceof Error ? error.message : String(error)}`,
-				),
-			);
+		for (const model of models)
+			for (let run = 1; run <= runs; run++)
+				await replay(pr, run, model).catch((error: unknown) =>
+					console.error(
+						`[${pr} ${slug(model)}#${run}] failed: ${error instanceof Error ? error.message : String(error)}`,
+					),
+				);
 	}),
 );
