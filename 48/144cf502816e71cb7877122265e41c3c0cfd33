@@ -1,0 +1,27 @@
+docs/self-review-eval.md
+  s_4c97aa8e7b616f::t_3eb1283869f60c 186-196
+profiles/production.json
+  s_4c97aa8e7b616f::t_784de6db4b090b 40
+src/config.ts
+  s_4c97aa8e7b616f::t_517afee1cf5955 122,200
+test/workers/delegate.test.ts
+  s_4c97aa8e7b616f::t_d6f6c99062138b 90
+test/workers/delivery.test.ts
+  s_4c97aa8e7b616f::t_ec3ed35ad2ba8b 153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "48144cf502816e71cb7877122265e41c3c0cfd33",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
