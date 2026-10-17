@@ -183,17 +183,17 @@ That led to the `review` tool: trusted code briefs the reviewers from the origin
 
 The replay now drives the real `review` tool: each pull request's change sits at its merge base as uncommitted work, trusted code builds the brief, and two read-only reviewers run on the chosen model. Scored against K1 to K16 (1 found, 0.5 partial or dismissed). DeepSeek V4 Pro was started and stopped before finishing; it is not scored. Score files: `evals/results/review-replay/tool-scores-*.md`.
 
-| PR (key items) | Opus 5.5 | Sonnet 5.5 | Haiku 5.5 |
-| --- | --- | --- | --- |
-| 4226 (K1–K3) | 3 | 1.5 | 2 |
-| 4225 (K4, K5, K15, K16) | 2.5 | 1.5 | 0 |
-| 4224 (K6, K7, K14) | 0.5 | 0.5 | 0 |
-| 4221 (K8, K9) | 1 | 1 | 1 |
-| 4201 (K10–K13) | 2 | 0.5 | 1.5 |
-| **Total (of 16)** | **9** | **5** | **4.5** |
-| Significant false claims | none | several, including a false "High, do not submit" on 4201 | several, including the rejected D1 batch cap |
-| Reviewer cost per review (two reviewers) | $1.21 ($0.46–$2.07) | $0.25 | $0.06 |
-| Time per review | 3–6 min | 2–4 min | 2–4 min |
+| PR (key items)                           | Opus 5.5            | Sonnet 5.5                                               | Haiku 5.5                                    |
+| ---------------------------------------- | ------------------- | -------------------------------------------------------- | -------------------------------------------- |
+| 4226 (K1–K3)                             | 3                   | 1.5                                                      | 2                                            |
+| 4225 (K4, K5, K15, K16)                  | 2.5                 | 1.5                                                      | 0                                            |
+| 4224 (K6, K7, K14)                       | 0.5                 | 0.5                                                      | 0                                            |
+| 4221 (K8, K9)                            | 1                   | 1                                                        | 1                                            |
+| 4201 (K10–K13)                           | 2                   | 0.5                                                      | 1.5                                          |
+| **Total (of 16)**                        | **9**               | **5**                                                    | **4.5**                                      |
+| Significant false claims                 | none                | several, including a false "High, do not submit" on 4201 | several, including the rejected D1 batch cap |
+| Reviewer cost per review (two reviewers) | $1.21 ($0.46–$2.07) | $0.25                                                    | $0.06                                        |
+| Time per review                          | 3–6 min             | 2–4 min                                                  | 2–4 min                                      |
 
 Against the earlier prompt-based replay on the same K1–K13: Opus 8.5 against 7.5, with the first full K3 and K5 of any run; Sonnet and Haiku on round 1's four items, 2 and 1 against 0.5 each (Sonnet now finds the widget race). The brief helps every model, most the cheaper ones, but only Opus is both the strongest and free of false alarms. 4224 was worse than round 2's Opus run: both Opus reviewers argued no code-stamped rows can exist and dismissed K6.
 

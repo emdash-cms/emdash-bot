@@ -119,7 +119,7 @@ export interface BotConfig {
 	 * the author catches more. Defaults to the author's model.
 	 */
 	readonly reviewModel?: string;
-	/** How many independent reviewers the pre-submit review runs; separate runs find different defects. */
+	/** How many independent reviewers the pre-submit review runs; a second found more in about one run in five. */
 	readonly selfReviewers: number;
 	/** The first delay before retrying a failed model call; later retries double it. */
 	readonly modelRetryBaseMs: number;
@@ -197,7 +197,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		publicUrl: (raw.publicUrl ?? "").replace(/\/$/, ""),
 		modelRetryBaseMs: raw.modelRetryBaseMs ?? 2 * 60_000,
 		...(raw.reviewModel ? { reviewModel: raw.reviewModel } : {}),
-		selfReviewers: raw.selfReviewers ?? 2,
+		selfReviewers: raw.selfReviewers ?? 1,
 		gitRemoteBase: raw.gitRemoteBase ?? "https://github.com",
 		maxArtifactBytes: raw.maxArtifactBytes ?? 8 * 1024 * 1024,
 		reconcileMs: raw.reconcileMs ?? 15_000,

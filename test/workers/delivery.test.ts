@@ -150,7 +150,7 @@ describe("operator dry run", () => {
 			const r = await bot!.inspect(admitted.caseId);
 			return r.handoff ? r : null;
 		});
-		expect(record.log.find((e: any) => e.type === "review.completed")?.data.reports).toBe(2);
+		expect(record.log.find((e: any) => e.type === "review.completed")?.data.reports).toBe(1);
 		expect(record.usageByModel).toHaveProperty("author");
 		const evidence = await bot.ops(`cases/${admitted.caseId}/evidence`);
 		const result = evidence.transcript

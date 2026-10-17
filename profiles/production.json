@@ -37,6 +37,7 @@
 	"maintainers": ["ascorbic"],
 	"reviewers": ["emdashbot[bot]"],
 	"authorModel": "cloudflare-ai-gateway:gpt-6.1-sol",
+	"reviewModel": "cloudflare-ai-gateway:claude-opus-5-5",
 	"childModel": "cloudflare-ai-gateway:gpt-5.6-luna",
 	"thinkingLevel": "medium",
 	"checks": {

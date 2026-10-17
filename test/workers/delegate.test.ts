@@ -87,7 +87,7 @@ describe("delegate", () => {
 
 	it("reviews the change with independent reviewers before submitting", async () => {
 		// No review model configured: the reviewers run on the author's own model.
-		bot = await startBot({ childModel: "workers-ai:@cf/unavailable/helper" });
+		bot = await startBot({ childModel: "workers-ai:@cf/unavailable/helper", selfReviewers: 2 });
 		const caseId = issueCaseId(97);
 		const reviewer = {
 			rounds: [
