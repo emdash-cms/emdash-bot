@@ -93,3 +93,75 @@ Fixture PR emdash-cms/emdash-bot-pi-eval-3592#7 (+22/-1, 3 files). The author ra
 - K9 quality ignored in most render paths and spread onto the raw `<img>` via `attrs`: **still present**.
 - Improved: adds a type-test fixture (demos/simple/src/type-tests/image-quality.astro), covering the original's missing regression guard.
 - Graded directly from the diff (small change).
+
+## Reviewer model comparison
+
+The same replay (a staging dry run on a private snapshot of each pull request's head, with the issue, diff, description and the PR 4227 review skill), with the reviewing model varied and findings captured in full through `reply`. Costs are pi-ai's recorded usage costs.
+
+### Round 1: shortlist on the two pull requests Sol missed, plus a clean control
+
+PRs: 4225 (K4 widget race, K5 DO SQL atomicity), 4221 (K8 Cloudflare endpoint, K9 ignored in render paths / leaks onto img), 4220 (clean control: false alarms). One run each. Baseline Sol (step 1): missed K4, K5, K8, K9 in both runs.
+
+| Model             | PR             | Findings                                                                                                                                                                                                                                                       | Time   | Tokens | Cost  |
+| ----------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | ----- |
+| DeepSeek V4 Pro   | 4221           | K9 found (both halves, rated low, non-blocking); K8 missed (accepted presets)                                                                                                                                                                                  | 23 min | 2.64M  | $0.34 |
+| DeepSeek V4 Pro   | 4225           | K4 missed (named the collections race only); K5 missed (judged atomic); new uncertain point: D1 per-batch statement cap unbudgeted                                                                                                                             | 26 min | 3.50M  | $0.83 |
+| Claude Opus 5.5   | 4221           | K9 found (rated medium, clear fix; also flags misleading doc comment and changeset); K8 missed (accepted presets as Astro's type); one harness-caused false point (issue number)                                                                               | 3 min  | 0.18M  | $0.26 |
+| DeepSeek V4 Pro   | 4220 (control) | Over-severity false alarm: rated "High" that D1 rejects the correlated parameterised pragma_table_info (the reference rated it speculative/low; the PR's workerd D1 test passes, though that is Miniflare emulation, a fair point); would block a mergeable PR | 30 min | 3.94M  | $0.78 |
+| Claude Sonnet 5.5 | 4221           | K9 half (leak onto raw img, rated low/medium; missed the ignored cross-origin path); K8 missed; same harness-caused issue-number point                                                                                                                         | 3 min  | 0.13M  | $0.10 |
+| Claude Opus 5.5   | 4225           | **K4 found** (medium, exact location, scenario and fix); K5 partly (noted the DO SQL fallback is not atomic, but dismissed it as not the reporter's path); same harness-caused issue-number point                                                              | 6 min  | 0.75M  | $0.58 |
+| Claude Haiku 5.5  | 4221           | K9 half (leak onto img, low; noted quality is ignored remotely but judged that correct, docs only); K8 missed; same harness-caused issue-number point                                                                                                          | 2 min  | 0.31M  | $0.01 |
+| Claude Sonnet 5.5 | 4225           | K4 missed (flagged the collections-step race and missing database-level claim instead); K5 missed; useful scope points on "Closes"; same harness-caused issue-number point                                                                                     | 3 min  | 0.10M  | $0.11 |
+| Claude Opus 5.5   | 4220 (control) | Correct: no significant defects; D1 pragma risk kept as low residual (matches the reference); noted getSuggestions follow-up and ranking behaviour change; only the harness-caused prose point                                                                 | 9 min  | 0.58M  | $0.55 |
+| Claude Haiku 5.5  | 4225           | K4 missed; K5 missed (raised the non-batch fallback only as unverified, without naming DO SQL); believed the checkout was at the base commit (it was the head) and reviewed from the diff alone; reasonable scope points                                       | 3 min  | 0.25M  | $0.01 |
+| Claude Sonnet 5.5 | 4220 (control) | Correct: no high or critical defects; low notes on the ranking source change (matches the reference's nit), discovery set, and a new error path; no false alarm                                                                                                | 2 min  | 0.15M  | $0.16 |
+| Claude Haiku 5.5  | 4220 (control) | Correct: no confirmed defect; D1 compatibility as medium but explicitly unverified (calibrated); same harness-caused issue-number point                                                                                                                        | 3 min  | 0.60M  | $0.02 |
+
+## Round 1 summary
+
+K4, K5, K8, K9 are the four key findings on the two PRs where Sol (the author's model) missed everything in step 1. Half credit for a finding caught only in part or dismissed.
+
+| Model                  | Key findings (of 4)       | Control 4220              | Time per review | Cost (3 reviews) |
+| ---------------------- | ------------------------- | ------------------------- | --------------- | ---------------- |
+| Sol (baseline, step 1) | 0                         | not run                   | 4-8 min         | not recorded     |
+| **Claude Opus 5.5**    | **2.5** (K4, K9, half K5) | correct                   | 3-9 min         | $1.39            |
+| DeepSeek V4 Pro        | 1 (K9, rated low)         | over-severity false alarm | 23-30 min       | $1.95            |
+| Claude Sonnet 5.5      | 0.5 (half K9)             | correct                   | 2-3 min         | $0.37            |
+| Claude Haiku 5.5       | 0.5 (half K9)             | correct                   | 2-3 min         | $0.04            |
+
+No model found K8 (quality values breaking the Cloudflare image endpoint): every one accepted Astro's preset type without tracing into EmDash's own endpoint. All four made a harness-caused point about the issue number (the dry run labels the task with the pull request's number), not counted.
+
+Opus is the only candidate that clearly beats Sol on these cases, including the widget race nothing else found, with no false alarm, at about $0.46 a review. It goes to round 2.
+
+### Round 2: Claude Opus 5.5 on every pull request
+
+Baseline Sol from step 1 (two runs): 4226 K1 only; 4224 K6 only; 4201 K11 only; 4225 and 4221 nothing.
+
+| PR             | Findings                                                                                                                                                                                                                                             | Time  | Tokens | Cost  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------ | ----- |
+| 4201           | K11 found (medium); K12 found (low, exact handler); K10 missed; K13 missed; also found the reference's backfill nit (complete stored values never filled)                                                                                            | 5 min | 0.64M  | $0.51 |
+| 4226           | K1 found (High, exact gate, reporter scenario, false description claim); K2 found (names the test that hides the gap); K3 missed; also the hot-path cost note (reference finding 4)                                                                  | 3 min | 0.21M  | $0.29 |
+| 4224           | K6 found (medium-high, exact read paths, false "no migration" claim) plus a new point: re-seeding duplicates code-stamped rows; K7 missed                                                                                                            | 6 min | 1.41M  | $0.86 |
+| 4219 (control) | Correct: code fine, no sibling dialog left; found the missing screenshots (the reference's should-fix) and that attach_screenshot exists (true now, not when the original PR was written); missed the size="sm" test nit; no false alarm on the code | 5 min | 0.66M  | $0.47 |
+| 4221 (repeat)  | K9 found again (medium/low: ignored on the getImage path and leaking onto img, comment wrong for that path); K8 missed again (accepted ImageQuality); consistent with run 1                                                                          | 3 min | 0.11M  | $0.22 |
+| 4225 (repeat)  | K4 found again (same location and scenario, plus concurrent area creation throwing on the unique name); K5 partly again (D1 REST dialect not atomic, not DO SQL); new point: the D1 overlap test does not exercise atomicity                         | 7 min | 0.89M  | $0.67 |
+
+## Round 2 summary: Opus against Sol over all thirteen key findings
+
+| PR                  | Sol (step 1, best of two) | Opus 5.5                                                               |
+| ------------------- | ------------------------- | ---------------------------------------------------------------------- |
+| 4226                | K1 (1/3)                  | K1, K2 (2/3)                                                           |
+| 4225                | none (0/2)                | K4 both runs, half K5 both runs (1.5/2)                                |
+| 4224                | K6 (1/2)                  | K6, plus re-seed duplication (1/2)                                     |
+| 4221                | none (0/2)                | K9 both runs (1/2)                                                     |
+| 4201                | K11 (1/4)                 | K11, K12 (2/4)                                                         |
+| **Total**           | **3/13**                  | **7.5/13**                                                             |
+| Controls 4220, 4219 | not run                   | both correct, no false alarm on code; found 4219's missing screenshots |
+| Cost per review     | $0.19 average             | $0.49 average ($0.22 to $0.86)                                         |
+| Time per review     | 4-8 min                   | 3-9 min                                                                |
+
+Sol's detail findings may be undercounted (step 1 captured mostly summaries); Opus's were captured in full via reply. Still missed by every model: K3 (hard expiry), K5 in full (Durable Object SQL), K7 (string-config case change), K8 (Cloudflare image endpoint), K10 (meta.caption), K13 (seed and export).
+
+### Conclusion
+
+Claude Opus 5.5 is the clear choice for the adversarial review: about 2.5 times the key findings of the author's own model (7.5 of 13 against 3), consistent across repeat runs, with no false alarms on the two clean controls, at about 2.6 times the cost per review ($0.49 against $0.19), a few cents per pull request in practice. A different model family reviewing the author's work catches more than the author's own model. DeepSeek V4 Pro was slow (23-30 min a review) and raised an over-severity false alarm; Sonnet and Haiku 5.5 were cheap and calibrated but barely better than Sol. No model traced the Cloudflare image endpoint (K8), and several cross-cutting findings (K3, K5 in full, K7, K10, K13) remain out of reach of any single review, so a maintainer's review stays essential.

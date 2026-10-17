@@ -18,6 +18,8 @@ const { values, positionals } = parseArgs({
 	allowPositionals: true,
 	options: {
 		runs: { type: "string", default: "2" },
+		// Number of the first run, so a later repeat does not overwrite earlier results.
+		"first-run": { type: "string", default: "1" },
 		// Model refs as the Worker takes them, e.g. cloudflare-ai-gateway:claude-sonnet-5-5; empty for the profile's author model.
 		models: { type: "string", default: "" },
 		guidance: { type: "string" },
@@ -215,12 +217,13 @@ async function replay(pr: number, run: number, model: string): Promise<void> {
 
 const prs = positionals.map(Number);
 const runs = Number(values.runs);
+const firstRun = Number(values["first-run"]);
 const models = values.models ? values.models.split(",") : [""];
 // PRs in parallel (each has its own fixture repository); runs of one PR in sequence, as they share it.
 await Promise.all(
 	prs.map(async (pr) => {
 		for (const model of models)
-			for (let run = 1; run <= runs; run++)
+			for (let run = firstRun; run < firstRun + runs; run++)
 				await replay(pr, run, model).catch((error: unknown) =>
 					console.error(
 						`[${pr} ${slug(model)}#${run}] failed: ${error instanceof Error ? error.message : String(error)}`,
