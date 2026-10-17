@@ -1,0 +1,49 @@
+evals/bin/evals.ts
+  s_4c97aa8e7b616f::t_2958e599263045 26
+evals/bin/review-replay.ts
+  s_4c97aa8e7b616f::t_802f7915987693 1-201
+evals/cases/3018.json
+  s_4c97aa8e7b616f::t_da842abeec8e19 1-33
+evals/cases/3577.json
+  s_4c97aa8e7b616f::t_4daa4d4132add2 1-33
+evals/cases/3592.json
+  s_4c97aa8e7b616f::t_917f4836d0a974 1-33
+evals/cases/3669.json
+  s_4c97aa8e7b616f::t_3e6486a0def6b7 1-33
+evals/cases/3686.json
+  s_4c97aa8e7b616f::t_0abf083fb40a89 1-33
+evals/controller/provision.ts
+  s_4c97aa8e7b616f::t_c2fdabe7076dd6 6,135-142
+evals/controller/types.ts
+  s_4c97aa8e7b616f::t_4d841ca39b73b8 9-13
+evals/graders/3018.json
+  s_4c97aa8e7b616f::t_add650691e1969 1-8
+evals/graders/3577.json
+  s_4c97aa8e7b616f::t_61f3218a15f7f9 1-8
+evals/graders/3592.json
+  s_4c97aa8e7b616f::t_2aa8743368adf3 1-8
+evals/graders/3669.json
+  s_4c97aa8e7b616f::t_c07ca44a59ba80 1-8
+evals/graders/3686.json
+  s_4c97aa8e7b616f::t_44c6aa9c12e150 1-8
+evals/overlays/adversarial-reviewer-skill.md
+  s_4c97aa8e7b616f::t_06c33896c1b8d3 1-58
+evals/self-review-answer-key.md
+  s_4c97aa8e7b616f::t_c70fe895b957c7 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7fce073fa843e3db5ec60caef553be84cc2c9c24",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
