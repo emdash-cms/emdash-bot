@@ -2119,10 +2119,14 @@ export class CaseDO extends DurableObject<Env> {
 		return null;
 	}
 
-	async #stopAuthor(): Promise<void> {
+	/** Abort the author's work; `keepSandbox` when the case carries on and the checkout is still good. */
+	async #stopAuthor(options: { keepSandbox?: boolean } = {}): Promise<void> {
 		if (this.store.identity()) await this.#authorSlot("release").catch(() => undefined);
 		const aborted = this.harness.abort().catch(() => false);
 		await Promise.race([aborted, new Promise((r) => setTimeout(r, this.config.budgets.cancelMs))]);
+		// Either way the next run restores the checkout to its checkpoint; kept, that skips the install.
+		this.#sandboxVerified = false;
+		if (options.keepSandbox) return;
 		if (this.store.identity())
 			await this.#authorSandbox()
 				.destroy()
@@ -2223,12 +2227,15 @@ export class CaseDO extends DurableObject<Env> {
 			// New tools are already refused past the limit; let one that is running finish, within a grace period.
 			if (overtime > 0 && (this.#toolsRunning.size === 0 || overtime > TOOL_GRACE_MS)) {
 				this.#toolsRunning.clear();
-				await this.#stopAuthor();
+				// The work is checkpointed and the checkout matches it: keep the sandbox.
+				await this.#stopAuthor({ keepSandbox: true });
 				// Work is checkpointed: carry on in a fresh run a few times before asking a human.
 				const continued = this.store.getMeta<number>("runContinuations") ?? 0;
 				if (continued < RUN_CONTINUATIONS) {
 					this.store.setMeta("runContinuations", continued + 1);
 					this.store.log("author.continued", { run: continued + 1 });
+					// The new run's clock starts now, even if the abort has not settled yet.
+					this.store.setMeta("runStartedAt", Date.now());
 					await this.#submitToAuthor(
 						`continue:${started}`,
 						`## Time limit for one run reached\nFrom: the bot (runtime)\n\nYour run reached its ${Math.round(this.config.budgets.authorMs / 60_000)}-minute limit and was stopped; your saved work is intact. Continue where you left off, and keep each step focused so it fits in one run.`,
