@@ -1,0 +1,39 @@
+IMPLEMENTATION_PLAN.md
+  s_4c97aa8e7b616f::t_c6749573f8cf85 27
+README.md
+  s_4c97aa8e7b616f::t_45aefd2faece59 13
+src/cases/case-do.ts
+  s_4c97aa8e7b616f::t_497ae212e5caf8 53,60-65,96-101,332,335,338,341,360,368,438,666-719,743-746,753,2036-2049,2062
+src/github/publisher.ts
+  s_4c97aa8e7b616f::t_e0e13e97f8c559 143-153,166-171,385
+src/reports/status.ts
+  s_4c97aa8e7b616f::t_d335e3c42f1906 230-232
+src/source/workspace.ts
+  s_4c97aa8e7b616f::t_63014b2ee637fd 270-338
+src/tools/case-tools.ts
+  s_4c97aa8e7b616f::t_d6a7af5a668a94 34-44,69-70,255-277,519
+test/fakes/github.ts
+  s_4c97aa8e7b616f::t_c04fb5a583f421 207-219,353,355-356,358,360-368,376-377,385
+test/unit/checks-review.test.ts
+  s_4c97aa8e7b616f::t_10c33e89af480a 4,193-203
+test/unit/status.test.ts
+  s_4c97aa8e7b616f::t_e67ce504832532 52-54
+test/workers/revision.test.ts
+  s_4c97aa8e7b616f::t_d806fcc2df234b 325-379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ac9fc5362a71f173a03d3c8d091b5a63ba8e96e1",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
