@@ -1,0 +1,23 @@
+evals/controller/bot.ts
+  s_4c97aa8e7b616f::t_990968f8d84d9a 26-27
+evals/controller/github.ts
+  s_4c97aa8e7b616f::t_750a2b978a1c90 27-28
+evals/controller/provision.ts
+  s_4c97aa8e7b616f::t_8ad24f7b1753b4 27-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a71be010ff869b85d57e5caf9a5b9a3e2be7ef2c",
+  "prompts": {},
+  "sessions": {
+    "s_4c97aa8e7b616f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cbbb5cb7-3002-4f75-9ee5-0c59d1b89d52",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
