@@ -50,13 +50,19 @@ import {
 import { DEFAULT_PRIVILEGED_PREFIXES, PatchRejected, validatePatch } from "../source/patch.ts";
 import {
 	captureSource,
+	mergeIntoCheckout,
 	git,
 	materialize,
 	prepareCheckout,
 	readState,
 	writeState,
 } from "../source/workspace.ts";
-import { type CaseRuntime, type MutationOutcome, caseExtension } from "../tools/case-tools.ts";
+import {
+	type CaseRuntime,
+	type DefaultBranchMerge,
+	type MutationOutcome,
+	caseExtension,
+} from "../tools/case-tools.ts";
 import { Mutex, errorMessage, sha256Hex, str, text } from "../util.ts";
 import { CaseStore } from "./store.ts";
 import { repositories } from "../bindings.ts";
@@ -85,6 +91,12 @@ interface DryRun {
 		readonly focusedChecks?: Readonly<Record<string, string>>;
 		readonly prepare?: string;
 	};
+}
+
+/** The default-branch head merged into the work, and the branch head it publishes on. */
+interface DefaultMergeBase {
+	readonly base: string;
+	readonly branchHead: string;
 }
 
 interface Handoff {
@@ -317,14 +329,16 @@ export class CaseDO extends DurableObject<Env> {
 	/** Capture the sandbox source as an acknowledged checkpoint (inside the source mutex). */
 	async #capture(
 		opId: string,
+		base?: string,
 	): Promise<{ checkpoint: CheckpointRow; changed: boolean; timing: Record<string, number> }> {
 		const latest = this.store.latestCheckpoint()!;
+		const baseCommit = base ?? latest.baseCommit;
 		const backend = this.#authorSandbox();
 		const t0 = Date.now();
-		const captured = await captureSource(backend, latest.baseCommit);
+		const captured = await captureSource(backend, baseCommit);
 		const t1 = Date.now();
 		const digest = await sha256Hex(captured.patch);
-		if (digest === latest.digest)
+		if (digest === latest.digest && baseCommit === latest.baseCommit)
 			return { checkpoint: latest, changed: false, timing: { diffMs: t1 - t0 } };
 		try {
 			validatePatch(captured.patch, {
@@ -343,7 +357,7 @@ export class CaseDO extends DurableObject<Env> {
 		const key = `cases/${identity.caseId}/checkpoints/${digest}.patch`;
 		await this.env.ARTIFACTS.put(key, captured.patch, {
 			sha256: digest,
-			customMetadata: { case: identity.caseId, base: latest.baseCommit, tree: captured.treeHash },
+			customMetadata: { case: identity.caseId, base: baseCommit, tree: captured.treeHash },
 		});
 		const t2 = Date.now();
 		await this.#fault("after-checkpoint-upload");
@@ -351,7 +365,7 @@ export class CaseDO extends DurableObject<Env> {
 			this.store.insertCheckpoint({
 				id: `cp-${digest.slice(0, 16)}-${Date.now().toString(36)}`,
 				opId,
-				baseCommit: latest.baseCommit,
+				baseCommit,
 				treeHash: captured.treeHash,
 				digest,
 				artifactKey: key,
@@ -421,6 +435,7 @@ export class CaseDO extends DurableObject<Env> {
 			submitCandidate: (opId, title, summary, description) =>
 				this.#submitCandidate(opId, title, summary, description),
 			handoff: (opId, reason, nextAction) => this.#handoff(opId, reason, nextAction),
+			mergeDefaultBranch: (opId) => this.#mergeDefaultBranch(opId),
 			reply: async (opId, inReplyTo, onIssue, body) => {
 				const intent = this.#queueReply(opId, inReplyTo, onIssue, body);
 				await this.#schedule("replies", Date.now(), {}, "replies");
@@ -648,6 +663,60 @@ export class CaseDO extends DurableObject<Env> {
 		});
 	}
 
+	/**
+	 * Merge the default branch's current head into the author's work. The checkout
+	 * then starts from that head, with conflict markers left for the author to
+	 * resolve; a candidate based on it publishes as a merge commit.
+	 */
+	async #mergeDefaultBranch(opId: string): Promise<DefaultBranchMerge> {
+		return this.#source.run(async () => {
+			const receipt = this.store.operation(opId);
+			if (receipt?.status === "completed") return receipt.result as DefaultBranchMerge;
+			await this.#ensureSandbox();
+			const identity = this.#identity();
+			const github = this.#github();
+			const latest = this.store.latestCheckpoint()!;
+			const head = await github.branchHead(identity.defaultBranch);
+			if (!head) throw new Error(`default branch ${identity.defaultBranch} not found`);
+			const comparison = await github.request<{
+				status: string;
+				merge_base_commit: { sha: string };
+			}>("GET", github.repoPath(`/compare/${head}...${latest.baseCommit}`));
+			let result: DefaultBranchMerge;
+			if (comparison.status === "ahead" || comparison.status === "identical") {
+				result = { base: latest.baseCommit, defaultHead: head, upToDate: true, conflicts: [] };
+			} else {
+				const merged = await mergeIntoCheckout(this.#authorSandbox(), {
+					remoteUrl: this.#remoteUrl(),
+					mergeBase: comparison.merge_base_commit.sha,
+					theirs: head,
+					timeoutMs: this.config.budgets.setupMs,
+				});
+				// The branch head stays the parent to publish on, across repeated merges.
+				const previous = this.store.getMeta<DefaultMergeBase>("defaultMerge");
+				const branchHead =
+					previous?.base === latest.baseCommit ? previous.branchHead : latest.baseCommit;
+				const captured = await this.#capture(opId, head);
+				this.store.setMeta("defaultMerge", { base: head, branchHead } satisfies DefaultMergeBase);
+				result = {
+					base: captured.checkpoint.baseCommit,
+					defaultHead: head,
+					upToDate: false,
+					conflicts: merged.conflicts,
+				};
+			}
+			this.store.putOperation(
+				opId,
+				"merge_default_branch",
+				this.store.generation(),
+				"completed",
+				result,
+			);
+			this.store.log("default-branch.merged", { ...result });
+			return result;
+		});
+	}
+
 	async #submitCandidate(
 		opId: string,
 		title: string,
@@ -671,13 +740,17 @@ export class CaseDO extends DurableObject<Env> {
 				.some((p) => p.state === "ref-updated" || p.state === "pr-ensured");
 			const identity = this.#identity();
 			const previous = this.store.latestCandidate();
+			// Work based on a merged default-branch head still publishes on the branch head.
+			const merge = this.store.getMeta<DefaultMergeBase>("defaultMerge");
+			const branchHead =
+				merge?.base === checkpoint.baseCommit ? merge.branchHead : checkpoint.baseCommit;
 			const sealed: Candidate = {
 				id: `cand-${this.store.candidates().length + 1}-${checkpoint.digest.slice(0, 10)}`,
 				caseId: identity.caseId,
 				ownershipGeneration: this.store.generation(),
 				parentCandidateId: previous?.id ?? null,
 				sourceBaseCommit: checkpoint.baseCommit,
-				expectedBranchHead: identity.kind === "pr" || published ? checkpoint.baseCommit : null,
+				expectedBranchHead: identity.kind === "pr" || published ? branchHead : null,
 				sourceTreeHash: checkpoint.treeHash,
 				artifactDigest: checkpoint.digest,
 				artifactKey: checkpoint.artifactKey,
@@ -1960,6 +2033,20 @@ export class CaseDO extends DurableObject<Env> {
 		});
 	}
 
+	/** Tell the author, once per head, that the pull request no longer merges cleanly. */
+	async #reportMergeConflict(head: string | null): Promise<void> {
+		const merge = this.store.getMeta<{ head: string; mergeable: boolean | null }>("mergeability");
+		if (!head || merge?.head !== head || merge.mergeable !== false) return;
+		if (this.store.state() !== "active" || this.store.getMeta<string>("conflictReported") === head)
+			return;
+		this.store.setMeta("conflictReported", head);
+		this.store.log("merge.conflict", { head });
+		await this.#submitToAuthor(
+			`merge-conflict:${head}`,
+			`## Merge conflict\nFrom: the bot (status)\n\nThe pull request head ${head.slice(0, 12)} no longer merges cleanly with the default branch. Call merge_default_branch to merge it in, resolve the conflicts it reports, run focused checks and submit a new candidate. If you cannot resolve a conflict correctly, use handoff.`,
+		);
+	}
+
 	async #reportJob(): Promise<LifecycleJobOutcome | void> {
 		if (!this.store.identity()) return;
 		try {
@@ -1972,6 +2059,7 @@ export class CaseDO extends DurableObject<Env> {
 		)
 			await this.#schedule("replies", Date.now());
 		const report = await this.status();
+		await this.#reportMergeConflict(report.head);
 		const last = this.store.getMeta<string>("lastStatus");
 		if (last !== report.status) {
 			this.store.setMeta("lastStatus", report.status);

@@ -227,9 +227,9 @@ export function computeStatus(input: StatusInput): StatusReport {
 	}
 	if (!input.mergeability.mergeable)
 		return report(
-			"needs-human",
-			["the pull request does not merge cleanly"],
-			"a maintainer will resolve the merge conflict",
+			"changes-required",
+			["the pull request does not merge cleanly with the default branch"],
+			"the bot will merge the default branch and resolve the conflict",
 		);
 	return report(
 		"ready-for-human",

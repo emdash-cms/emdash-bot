@@ -204,6 +204,19 @@ export class FakeGitHub {
 		return Response.json(data, { status });
 	}
 
+	/** Whether the pull request's head merges into its base without conflicts, as GitHub reports. */
+	#mergeable(repo: string, pull: FakePull): boolean | null {
+		const base = this.head(repo, pull.base);
+		const head = this.head(repo, pull.head);
+		if (!base || !head) return null;
+		try {
+			this.git(repo, ["merge-tree", "--write-tree", base, head]);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	#route(method: string, url: URL, body: Record<string, unknown> | undefined): Response {
 		const m = url.pathname.match(/^\/repos\/([^/]+\/[^/]+)(\/.*)$/);
 		if (!m) return this.#json({ message: "Not Found" }, 404);
@@ -337,15 +350,22 @@ export class FakeGitHub {
 		}
 		if (method === "GET" && (match = rest.match(/^\/compare\/([0-9a-f]+)\.\.\.([0-9a-f]+)$/))) {
 			const [, base, head] = match;
-			let status = "identical";
-			if (base !== head) {
+			const ancestor = (a: string, b: string) => {
 				try {
-					this.git(repo, ["merge-base", "--is-ancestor", base!, head!]);
-					status = "ahead";
+					this.git(repo, ["merge-base", "--is-ancestor", a, b]);
+					return true;
 				} catch {
-					status = "diverged";
+					return false;
 				}
-			}
+			};
+			const status =
+				base === head
+					? "identical"
+					: ancestor(base!, head!)
+						? "ahead"
+						: ancestor(head!, base!)
+							? "behind"
+							: "diverged";
 			const log = this.git(repo, ["log", "--reverse", "--format=%an%x1f%s", `${base}..${head}`]);
 			const commits = log
 				? log.split("\n").map((line) => {
@@ -353,7 +373,8 @@ export class FakeGitHub {
 						return { author: { login }, commit: { message } };
 					})
 				: [];
-			return this.#json({ status, commits });
+			const mergeBase = this.git(repo, ["merge-base", base!, head!]);
+			return this.#json({ status, commits, merge_base_commit: { sha: mergeBase } });
 		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)$/))) {
 			const pull = this.pulls.find((p) => p.number === Number(match![1]));
@@ -361,7 +382,7 @@ export class FakeGitHub {
 			return this.#json({
 				...pull,
 				head: { sha: this.head(repo, pull.head), ref: pull.head },
-				mergeable: true,
+				mergeable: this.#mergeable(repo, pull),
 				merged: false,
 			});
 		}

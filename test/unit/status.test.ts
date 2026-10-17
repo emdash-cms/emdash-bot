@@ -49,9 +49,9 @@ describe("deterministic status", () => {
 		expect(computeStatus({ ...base, mergeability: { head: "h0", mergeable: true } }).status).toBe(
 			"candidate-published",
 		);
-		expect(computeStatus({ ...base, mergeability: { head: "h1", mergeable: false } }).status).toBe(
-			"needs-human",
-		);
+		const conflicted = computeStatus({ ...base, mergeability: { head: "h1", mergeable: false } });
+		expect(conflicted.status).toBe("changes-required");
+		expect(conflicted.nextAction).toMatch(/bot will merge the default branch/);
 	});
 
 	it("treats the reviewer's latest review of the head as the readiness signal", () => {

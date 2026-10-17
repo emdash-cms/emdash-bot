@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { classifyCheck } from "../../src/github/checks.ts";
 import { isFormatOnlyPush, parseReview } from "../../src/github/review.ts";
+import { commitParents } from "../../src/github/publisher.ts";
 import { egressDecision } from "../../src/execution/egress-policy.ts";
 import { nextScriptedResponse } from "../../src/runtime/scripted-author.ts";
 
@@ -187,5 +188,16 @@ describe("format-only pushes", () => {
 				commits: [{ ...format, commit: { message: "fix: tweak" } }],
 			}),
 		).toBe(false);
+	});
+});
+
+describe("published commit parents", () => {
+	it("publishes on the branch head, or merges a newer default-branch base into it", () => {
+		expect(commitParents({ expectedHead: null, parentCommit: "main" })).toEqual(["main"]);
+		expect(commitParents({ expectedHead: "head", parentCommit: "head" })).toEqual(["head"]);
+		expect(commitParents({ expectedHead: "head", parentCommit: "main2" })).toEqual([
+			"head",
+			"main2",
+		]);
 	});
 });

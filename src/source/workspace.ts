@@ -267,3 +267,72 @@ export async function mergeTreeApply(
 	const captured = await captureSource(backend, newBase);
 	return { clean: true, ...captured };
 }
+
+export interface MergeResult {
+	/** Files left with conflict markers, empty for a clean merge. */
+	readonly conflicts: readonly string[];
+}
+
+/**
+ * Merge `theirs` (the default branch head) into the checkout's work, leaving
+ * `theirs` as HEAD and the merged files in the working tree, with conflict
+ * markers where both sides changed the same lines. The merge base comes from
+ * the caller, so a shallow checkout needs no history.
+ */
+export async function mergeIntoCheckout(
+	backend: ExecBackend,
+	options: { remoteUrl: string; mergeBase: string; theirs: string; timeoutMs: number },
+): Promise<MergeResult> {
+	await fetchCommit(backend, options.remoteUrl, options.theirs, options.timeoutMs);
+	await fetchCommit(backend, options.remoteUrl, options.mergeBase, options.timeoutMs);
+	await execOk(backend, { argv: git("add", "-A") }, "stage the work");
+	const tree = text(
+		(await execOk(backend, { argv: git("write-tree") }, "write-tree")).stdout,
+	).trim();
+	const head = text(
+		(await execOk(backend, { argv: git("rev-parse", "HEAD") }, "read HEAD")).stdout,
+	).trim();
+	const ours = text(
+		(
+			await execOk(
+				backend,
+				{
+					argv: git("commit-tree", tree, "-p", head, "-m", "work in progress"),
+					env: {
+						GIT_AUTHOR_NAME: "EmDash bot",
+						GIT_AUTHOR_EMAIL: "bot@localhost",
+						GIT_COMMITTER_NAME: "EmDash bot",
+						GIT_COMMITTER_EMAIL: "bot@localhost",
+					},
+				},
+				"commit the work",
+			)
+		).stdout,
+	).trim();
+	const merged = await backend.exec({
+		argv: git(
+			"merge-tree",
+			"--write-tree",
+			"--name-only",
+			"--no-messages",
+			`--merge-base=${options.mergeBase}`,
+			options.theirs,
+			ours,
+		),
+	});
+	if (merged.exitCode !== 0 && merged.exitCode !== 1)
+		throw new Error(`merge failed: ${text(merged.stderr).slice(-2000)}`);
+	const [mergedTree, ...names] = text(merged.stdout).trim().split("\n");
+	await execOk(
+		backend,
+		{ argv: git("reset", "-q", "--hard", options.theirs) },
+		"reset to the default branch",
+	);
+	await execOk(backend, { argv: git("clean", "-fdq") }, "clean untracked files");
+	await execOk(
+		backend,
+		{ argv: git("read-tree", "-u", "--reset", mergedTree!) },
+		"check out the merge",
+	);
+	return { conflicts: [...new Set(names.filter(Boolean))] };
+}

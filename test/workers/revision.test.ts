@@ -322,6 +322,61 @@ describe("review repair and asynchronous CI", () => {
 		expect(moved.reviewedHead).toBe(false);
 	});
 
+	it("merges the default branch to resolve a conflict, and publishes a merge commit", async () => {
+		bot = await startBot({ repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }] });
+		const caseId = issueCaseId(40);
+		const branch = "emdash-bot/issue-40";
+		const RESOLVED = {
+			path: "greet.js",
+			content: 'module.exports = (name) => "Hi, " + name + "!";\n',
+		};
+		const script = {
+			rounds: [
+				...fixScript().rounds,
+				{
+					steps: [
+						{ tool: "merge_default_branch", args: {} },
+						{ tool: "write", args: RESOLVED },
+						{
+							tool: "submit_candidate",
+							args: { title: "fix: punctuate the greeting", summary: "Merged main." },
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 40, number: 40, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const published = bot.github.head(REPO, branch)!;
+		const main = bot.github.commitFiles(
+			REPO,
+			"main",
+			{ "greet.js": 'module.exports = (name) => "Hi " + name;\n' },
+			"chore: shorten the greeting",
+		);
+		// Any event refreshes the pull request; GitHub now reports a conflict.
+		await checkRun(bot, pr, branch, published, "lint", "success");
+
+		const second = await publishedCount(bot, caseId, 2);
+		const merged = await bot.waitFor("merge recorded", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.find((e: any) => e.type === "default-branch.merged") ?? null;
+		});
+		expect(merged.data).toMatchObject({
+			defaultHead: main,
+			upToDate: false,
+			conflicts: ["greet.js"],
+		});
+		const head = bot.github.head(REPO, branch)!;
+		expect(second.publications.at(-1).commitSha).toBe(head);
+		const parents = bot.github.git(REPO, ["rev-list", "--parents", "-n", "1", head]).split(" ");
+		expect(parents.slice(1)).toEqual([published, main]);
+		expect(bot.github.show(REPO, head, "greet.js")).toBe(RESOLVED.content.trimEnd());
+		// The merge publishes only the change itself: main's commit is a parent, not part of the diff.
+		expect(bot.github.git(REPO, ["diff", "--name-only", main, head])).toBe("greet.js");
+	});
+
 	it("labels the issue and PR awaiting the reporter when ready, with area labels from changed paths", async () => {
 		bot = await startBot({
 			repositories: [

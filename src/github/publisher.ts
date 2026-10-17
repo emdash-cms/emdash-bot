@@ -140,6 +140,17 @@ async function buildTree(
 
 class IntegrityError extends Error {}
 
+/**
+ * A candidate normally sits on the branch head. One whose base is a newer
+ * default-branch head (the author merged it in) publishes as a merge commit of
+ * the branch head and that base, as GitHub's "Update branch" does.
+ */
+export function commitParents(publication: Pick<Publication, "expectedHead" | "parentCommit">) {
+	return publication.expectedHead && publication.expectedHead !== publication.parentCommit
+		? [publication.expectedHead, publication.parentCommit]
+		: [publication.parentCommit];
+}
+
 async function integrate(
 	ctx: PublishContext,
 	candidate: Candidate,
@@ -150,6 +161,12 @@ async function integrate(
 		return {
 			state: "needs-human",
 			reason: `the branch advanced again to ${head.slice(0, 12)} during integration`,
+		};
+	}
+	if (candidate.expectedBranchHead && candidate.sourceBaseCommit !== candidate.expectedBranchHead) {
+		return {
+			state: "needs-human",
+			reason: `the branch advanced to ${head.slice(0, 12)} while a merge of the default branch was waiting to publish`,
 		};
 	}
 	const sandbox = ctx.openSandbox(`integrate-${candidate.id}`);
@@ -365,7 +382,7 @@ export async function publish(ctx: PublishContext, candidateId: string): Promise
 						{
 							message: publication.message,
 							tree,
-							parents: [publication.parentCommit],
+							parents: commitParents(publication),
 							author,
 							committer: author,
 						},

@@ -31,6 +31,17 @@ export interface MutationOutcome<T> {
 	readonly replayed: boolean;
 }
 
+/** The outcome of merging the default branch into the author's work. */
+export interface DefaultBranchMerge {
+	/** The commit the checkout now starts from. */
+	readonly base: string;
+	readonly defaultHead: string;
+	/** The work already contained the default branch head; nothing changed. */
+	readonly upToDate: boolean;
+	/** Files left with conflict markers. */
+	readonly conflicts: readonly string[];
+}
+
 /** What the tools need from the case that hosts them. */
 export interface CaseRuntime {
 	/**
@@ -55,6 +66,8 @@ export interface CaseRuntime {
 		description?: string,
 	): Promise<Candidate>;
 	handoff(opId: string, reason: string, nextAction: string): Promise<void>;
+	/** Merge the default branch's current head into the work, leaving conflicts to resolve. */
+	mergeDefaultBranch(opId: string): Promise<DefaultBranchMerge>;
 	/** Queue a reply for trusted code to post: under a review comment, or on the pull request. */
 	reply(
 		opId: string,
@@ -235,6 +248,29 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			return textResult(
 				`Check ${verification.name}: ${verification.outcome} on tree ${verification.treeHash?.slice(0, 12)}.\n${details.output ?? ""}`,
 				verification.outcome !== "succeeded",
+			);
+		},
+	});
+
+	const mergeDefaultBranch = defineTool({
+		name: "merge_default_branch",
+		description:
+			"Merge the default branch's current head into your work, as GitHub's \"Update branch\" does. Use it when the pull request no longer merges cleanly. Your checkout then starts from that head; files where both sides changed the same lines are left with conflict markers for you to resolve with your editing tools. Resolve them, run focused checks, and submit a new candidate, which publishes as a merge commit. If you cannot resolve a conflict correctly, use handoff.",
+		parameters: Type.Object({}),
+		replay: "unsafe",
+		execute: async (_args, api) => {
+			const blocked = runtime.guard();
+			if (blocked) throw new Error(blocked);
+			runtime.workStarted();
+			const merge = await runtime.mergeDefaultBranch(`tool:${api.taskId}`);
+			if (merge.upToDate)
+				return textResult(
+					`Your work already contains the default branch head ${merge.defaultHead.slice(0, 12)}; nothing to merge.`,
+				);
+			return textResult(
+				merge.conflicts.length === 0
+					? `Merged the default branch head ${merge.defaultHead.slice(0, 12)} cleanly. Run focused checks, then submit a new candidate.`
+					: `Merged the default branch head ${merge.defaultHead.slice(0, 12)} with conflicts in:\n${merge.conflicts.map((f) => `- ${f}`).join("\n")}\nResolve the conflict markers in each file, run focused checks, then submit a new candidate.`,
 			);
 		},
 	});
@@ -480,6 +516,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			search,
 			listFiles,
 			runCheck,
+			mergeDefaultBranch,
 			submitCandidate,
 			handoff,
 			reply,
