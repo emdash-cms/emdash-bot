@@ -3,7 +3,7 @@
 import { type BotConfig, readConfig, repositoryFor } from "./config.ts";
 import { writeToken } from "./github/auth.ts";
 import { GitHubClient } from "./github/client.ts";
-import { verifySignature, normalize } from "./github/webhook.ts";
+import { addressesBot, verifySignature, normalize } from "./github/webhook.ts";
 import { constantTimeEqual, json, rpc, sha256Hex, text } from "./util.ts";
 import { AUTHOR_METHOD } from "./tools/case-tools.ts";
 import authorSkill from "../skills/emdash-author/SKILL.md?raw";
@@ -42,6 +42,8 @@ async function webhook(request: Request, env: Env): Promise<Response> {
 	const allowed = repositoryFor(config, repository?.id, repository?.full_name);
 	if (!allowed) return json({ skipped: "repository is not on the allowlist" }, 202);
 	const association = await senderAssociation(env, config, allowed.fullName, payload);
+	if (eventName === "issue_comment")
+		await attachPullRequest(env, config, allowed.fullName, payload);
 	const normalized = normalize(
 		config,
 		eventName,
@@ -132,6 +134,33 @@ async function sandboxSmoke(
 		};
 	} finally {
 		await backend.destroy().catch(() => undefined);
+	}
+}
+
+/**
+ * A comment that addresses the bot on a pull request assigns it, but comment
+ * payloads lack the pull request's branch and author: fetch them. Other
+ * comments need nothing extra.
+ */
+async function attachPullRequest(
+	env: Env,
+	config: BotConfig,
+	repo: string,
+	payload: Record<string, unknown>,
+): Promise<void> {
+	const issue = payload.issue as { number?: number; pull_request?: unknown } | undefined;
+	const comment = payload.comment as { body?: string | null } | undefined;
+	if (payload.action !== "created" || !issue?.pull_request || !issue.number) return;
+	if (!addressesBot(config, comment?.body)) return;
+	try {
+		const github = new GitHubClient(config.githubApiUrl, () => writeToken(env, config), repo);
+		const result = await github.raw<Record<string, unknown>>(
+			"GET",
+			github.repoPath(`/pulls/${issue.number}`),
+		);
+		if (result.status === 200) payload.pull_request = result.data;
+	} catch {
+		// Without the pull request, normalization skips the comment as an assignment.
 	}
 }
 

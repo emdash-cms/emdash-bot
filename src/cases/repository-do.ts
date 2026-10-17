@@ -306,6 +306,11 @@ export class RepositoryDO extends DurableObject<Env> {
 		return { granted: false, holders };
 	}
 
+	/** The case an alias (e.g. `number:12`) routes to, if any. */
+	async caseFor(alias: string): Promise<string | null> {
+		return this.#resolve([alias]);
+	}
+
 	async releaseAuthorSlot(caseId: string): Promise<void> {
 		this.ctx.storage.sql.exec(`DELETE FROM author_slots WHERE case_id = ?`, caseId);
 	}

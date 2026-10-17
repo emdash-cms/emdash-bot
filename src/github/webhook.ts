@@ -89,6 +89,7 @@ interface Payload {
 		pull_request?: unknown;
 		user?: User;
 		author_association?: string;
+		labels?: Array<{ name?: string }>;
 	};
 	comment?: {
 		id?: number;
@@ -108,6 +109,7 @@ interface Payload {
 		author_association?: string;
 		head?: { ref?: string; sha?: string; repo?: Repo | null };
 		base?: { ref?: string; repo?: Repo };
+		labels?: Array<{ name?: string }>;
 	};
 	review?: {
 		id?: number;
@@ -178,6 +180,41 @@ function intakeAction(
 
 export function botHandle(config: BotConfig): string {
 	return config.botLogin.replace(/\[bot\]$/, "");
+}
+
+/** Whether a comment starts by addressing the bot (`@handle ...`), which assigns it. */
+export function addressesBot(config: BotConfig, body: string | null | undefined): boolean {
+	const handles = [botHandle(config), config.assignee].filter(Boolean).map((h) => h.toLowerCase());
+	const match = /^\s*@([a-z0-9][a-z0-9-]*)(?:\[bot\])?(?![a-z0-9-])/i.exec(body ?? "");
+	return match !== null && handles.includes(match[1]!.toLowerCase());
+}
+
+type PullRequestPayload = NonNullable<Payload["pull_request"]>;
+
+/** The case identity for adopting a same-repository pull request, or why it cannot be adopted. */
+function pullRequestIdentity(
+	config: BotConfig,
+	repo: Repo & { id: number; full_name: string },
+	pr: PullRequestPayload,
+): CaseIdentity | { skip: string } {
+	if (!pr.id || !pr.number || !pr.head?.ref) return { skip: "pull request payload incomplete" };
+	if (pr.head.repo?.id !== repo.id)
+		return { skip: "pull requests from forks are not adopted; hand off to a human" };
+	return {
+		caseId: caseIdFor(repo.id, "pr", pr.id),
+		repoId: repo.id,
+		repo: repo.full_name,
+		kind: "pr",
+		prId: pr.id,
+		prNumber: pr.number,
+		branch: pr.head.ref,
+		ownsBranch: same(pr.user?.login, config.botLogin),
+		defaultBranch: repo.default_branch ?? "main",
+	};
+}
+
+function hasLabel(labels: Array<{ name?: string }> | undefined, name: string): boolean {
+	return (labels ?? []).some((l) => same(l.name, name));
 }
 
 export function caseIdFor(repoId: number, kind: "issue" | "pr", entityId: number): string {
@@ -315,25 +352,18 @@ export function normalize(
 				payload: body,
 			};
 		}
-		if (pr.head.repo?.id !== repo.id)
-			return { skip: "pull requests from forks are not adopted; hand off to a human" };
-		const identity: CaseIdentity = {
-			caseId: caseIdFor(repo.id, "pr", pr.id),
-			repoId: repo.id,
-			repo: repo.full_name,
-			kind: "pr",
-			prId: pr.id,
-			prNumber: pr.number,
-			branch: pr.head.ref,
-			ownsBranch: same(pr.user?.login, config.botLogin),
-			defaultBranch: repo.default_branch ?? "main",
-		};
+		const identity = pullRequestIdentity(
+			config,
+			{ ...repo, id: repo.id, full_name: repo.full_name },
+			pr,
+		);
+		if ("skip" in identity) return identity;
 		return {
 			kind: "assigned",
 			actor: sender,
 			provenance: maintainer,
 			route: { create: identity },
-			payload: body,
+			payload: { ...body, author: pr.user?.login ?? "" },
 		};
 	}
 
@@ -341,6 +371,70 @@ export function normalize(
 		const issue = payload.issue;
 		const comment = payload.comment;
 		if (!issue?.number || !comment?.id) return { skip: "comment payload incomplete" };
+		// A maintainer addressing the bot assigns it, with their comment as instructions.
+		// On a case the bot already has, it is delivered as their comment.
+		if (maintainer && addressesBot(config, comment.body)) {
+			const instructions = {
+				commentId: comment.id,
+				body: comment.body ?? "",
+				url: comment.html_url ?? "",
+			};
+			if (!issue.pull_request) {
+				if (!issue.id) return { skip: "issue payload incomplete" };
+				return {
+					kind: "assigned",
+					actor: sender,
+					provenance: maintainer,
+					route: {
+						create: {
+							caseId: caseIdFor(repo.id, "issue", issue.id),
+							repoId: repo.id,
+							repo: repo.full_name,
+							kind: "issue",
+							issueId: issue.id,
+							issueNumber: issue.number,
+							branch: botBranch(issue.number),
+							ownsBranch: true,
+							defaultBranch: repo.default_branch ?? "main",
+						},
+					},
+					payload: {
+						number: issue.number,
+						title: issue.title ?? "",
+						body: issue.body ?? "",
+						url: issue.html_url ?? "",
+						reporter: issue.user?.login ?? "",
+						instructions,
+						labelled: hasLabel(issue.labels, config.intakeLabel),
+					},
+				};
+			}
+			// The caller attaches the pull request, which a comment payload lacks.
+			const pr = payload.pull_request;
+			if (!pr) return { skip: "pull request details unavailable for a comment addressing the bot" };
+			const identity = pullRequestIdentity(
+				config,
+				{ ...repo, id: repo.id, full_name: repo.full_name },
+				pr,
+			);
+			if ("skip" in identity) return identity;
+			return {
+				kind: "assigned",
+				actor: sender,
+				provenance: maintainer,
+				route: { create: identity },
+				payload: {
+					number: issue.number,
+					title: pr.title ?? issue.title ?? "",
+					body: pr.body ?? "",
+					url: pr.html_url ?? issue.html_url ?? "",
+					headSha: pr.head?.sha ?? "",
+					author: pr.user?.login ?? "",
+					instructions,
+					labelled: hasLabel(issue.labels, config.intakeLabel),
+				},
+			};
+		}
 		// Comments are conversation: the author reads them with its judgement, as a
 		// human would. Only maintainers and the configured reviewer are heard.
 		const reviewerComment = config.reviewers.some((r) => same(sender, r));

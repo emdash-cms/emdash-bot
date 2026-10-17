@@ -67,7 +67,7 @@ describe("webhook admission", () => {
 				issue: { number: 9 },
 				comment: { id: 1, body, author_association: association },
 			});
-		expect(comment("maintainer", "NONE", "@emdash-bot-pi do X")).toMatchObject({
+		expect(comment("maintainer", "NONE", "please look, @emdash-bot-pi")).toMatchObject({
 			kind: "comment",
 			provenance: "maintainer:configured",
 		});
@@ -77,6 +77,55 @@ describe("webhook admission", () => {
 		// Comments are conversation: no mention is needed.
 		expect(comment("maintainer", "MEMBER", "no mention")).toMatchObject({ kind: "comment" });
 		expect(comment("emdash-bot-pi[bot]", "NONE", "@emdash-bot-pi status")).toHaveProperty("skip");
+	});
+
+	it("assigns the bot when a maintainer's comment starts by addressing it", () => {
+		const comment = (
+			login: string,
+			body: string,
+			issue: Record<string, unknown> = { id: 90, number: 9, title: "T", labels: [] },
+			pull_request?: Record<string, unknown>,
+		) =>
+			normalize(config, "issue_comment", {
+				action: "created",
+				repository,
+				sender: { login },
+				issue,
+				comment: { id: 5, body, author_association: "NONE", html_url: "https://c" },
+				...(pull_request ? { pull_request } : {}),
+			} as never);
+		expect(comment("maintainer", "@emdash-bot-pi the fix belongs in the cache")).toMatchObject({
+			kind: "assigned",
+			provenance: "maintainer:configured",
+			route: { create: { kind: "issue", issueNumber: 9 } },
+			payload: {
+				instructions: { commentId: 5, body: "@emdash-bot-pi the fix belongs in the cache" },
+				labelled: false,
+			},
+		});
+		expect(comment("maintainer", "@emdash-bot-pi[bot] go")).toMatchObject({ kind: "assigned" });
+		// Only at the start, and only from a maintainer.
+		expect(comment("maintainer", "not for @emdash-bot-pi")).toMatchObject({ kind: "comment" });
+		expect(comment("maintainer", "@emdash-bot-pirate hi")).toMatchObject({ kind: "comment" });
+		expect(comment("rando", "@emdash-bot-pi do it")).toHaveProperty("skip");
+		// On a pull request it needs the pull request the caller attaches; forks are not adopted.
+		const onPr = { id: 91, number: 12, title: "PR", pull_request: {}, labels: [] };
+		expect(comment("maintainer", "@emdash-bot-pi finish this", onPr)).toHaveProperty("skip");
+		const pr = {
+			id: 7,
+			number: 12,
+			title: "PR",
+			body: "Closes #9",
+			user: { login: "contributor" },
+			head: { ref: "feature", sha: "abc", repo: { id: repository.id } },
+		};
+		expect(comment("maintainer", "@emdash-bot-pi finish this", onPr, pr)).toMatchObject({
+			kind: "assigned",
+			route: { create: { kind: "pr", prNumber: 12, branch: "feature", ownsBranch: false } },
+			payload: { author: "contributor", instructions: { body: "@emdash-bot-pi finish this" } },
+		});
+		const fork = { ...pr, head: { ...pr.head, repo: { id: 999 } } };
+		expect(comment("maintainer", "@emdash-bot-pi finish this", onPr, fork)).toHaveProperty("skip");
 	});
 
 	it("accepts actionable reviews from the configured reviewer regardless of review state", () => {

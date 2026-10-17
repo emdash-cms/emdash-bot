@@ -33,7 +33,10 @@ type Mode = "lose-response";
 export class FakeGitHub {
 	readonly remotes: string;
 	pulls: FakePull[] = [];
-	comments: Array<{ id: number; issue: number; body: string; user: string }> = [];
+	comments: Array<{ id: number; issue: number; body: string; user: string; association?: string }> =
+		[];
+	/** Issues by number, for reads of a single issue (e.g. one a pull request closes). */
+	issues = new Map<number, { title: string; body: string; user: string; state: string }>();
 	checkRuns: FakeCheckRun[] = [];
 	/** Labels by issue or PR number. */
 	labels = new Map<number, Set<string>>();
@@ -48,6 +51,8 @@ export class FakeGitHub {
 		body: string;
 		commit_id: string;
 		state: string;
+		author_association?: string;
+		submitted_at?: string;
 	}> = [];
 	reviewComments: Array<{
 		reviewId: number;
@@ -490,7 +495,28 @@ export class FakeGitHub {
 				: this.#json({ content: Buffer.from(content).toString("base64"), encoding: "base64" });
 		}
 		if (method === "GET" && (match = rest.match(/^\/issues\/(\d+)\/comments$/))) {
-			return this.#json(this.comments.filter((c) => c.issue === Number(match![1])));
+			return this.#json(
+				this.comments
+					.filter((c) => c.issue === Number(match![1]))
+					.map((c) => ({
+						...c,
+						user: { login: c.user },
+						author_association: c.association ?? "NONE",
+					})),
+			);
+		}
+		if (method === "GET" && (match = rest.match(/^\/issues\/(\d+)$/))) {
+			const number = Number(match[1]);
+			const issue = this.issues.get(number);
+			if (!issue) return this.#json({ message: "Not Found" }, 404);
+			return this.#json({
+				number,
+				title: issue.title,
+				body: issue.body,
+				state: issue.state,
+				user: { login: issue.user },
+				html_url: `https://github.com/${repo}/issues/${number}`,
+			});
 		}
 		if (method === "POST" && (match = rest.match(/^\/issues\/(\d+)\/comments$/))) {
 			const comment = {

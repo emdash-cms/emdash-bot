@@ -65,7 +65,8 @@ import {
 } from "../tools/case-tools.ts";
 import { Mutex, errorMessage, sha256Hex, str, text } from "../util.ts";
 import { CaseStore } from "./store.ts";
-import { repositories } from "../bindings.ts";
+import { cases, repositories } from "../bindings.ts";
+import { isMaintainer } from "../github/webhook.ts";
 import type {
 	Candidate,
 	CaseEvent,
@@ -91,6 +92,32 @@ interface DryRun {
 		readonly focusedChecks?: Readonly<Record<string, string>>;
 		readonly prepare?: string;
 	};
+}
+
+/** A maintainer's comment that assigned the bot or added direction. */
+interface MaintainerNote {
+	readonly commentId: number;
+	readonly body: string;
+	readonly url: string;
+}
+
+function maintainerNotes(
+	notes: ReadonlyArray<MaintainerNote & { actor: string }> | null | undefined,
+): string[] {
+	if (!notes?.length) return [];
+	return [
+		"",
+		"Instructions from maintainers (direction from people with authority over this work):",
+		...notes.map(
+			(n) => `- @${n.actor}${n.url ? ` (${n.url})` : ""}:\n${n.body.replace(/^/gm, "  > ")}`,
+		),
+	];
+}
+
+function identityKindLabel(identity: CaseIdentity, number: number): string {
+	return identity.kind === "issue" && number === identity.issueNumber
+		? "the issue"
+		: "the pull request";
 }
 
 /** The default-branch head merged into the work, and the branch head it publishes on. */
@@ -892,36 +919,174 @@ export class CaseDO extends DurableObject<Env> {
 		return `Recorded the reporter's confirmation (comment ${commentId}).`;
 	}
 
-	/** The author declines the issue: optionally say why on it, then stop working the case. */
+	/** Record a maintainer's instructions for the case record. */
+	#addMaintainerNote(actor: string, note: MaintainerNote): void {
+		const notes =
+			this.store.getMeta<Array<MaintainerNote & { actor: string }>>("maintainerNotes") ?? [];
+		if (notes.some((n) => n.commentId === note.commentId)) return;
+		this.store.setMeta("maintainerNotes", [
+			...notes,
+			{ actor, commentId: note.commentId, url: note.url, body: note.body.slice(0, 20_000) },
+		]);
+		this.store.log("maintainer.instructions", { by: actor, comment: note.commentId });
+	}
+
 	/**
-	 * Apply or remove the intake label on an automatically admitted issue. Only a
-	 * label the bot applied is removed; a maintainer's label stays theirs.
+	 * What the author needs on taking over a pull request: its linked issues
+	 * (added to the requirements), any other active case on them, and the
+	 * maintainers' earlier feedback, which arrived before the bot was assigned.
 	 */
-	async #intakeLabel(action: "add" | "remove"): Promise<void> {
+	async #adoptionContext(): Promise<string> {
 		const identity = this.#identity();
-		if (identity.kind !== "issue" || this.#dryRun()) return;
-		if (action === "remove" && !this.store.getMeta<boolean>("intakeLabelApplied")) return;
+		if (identity.kind !== "pr" || !identity.prNumber) return "";
+		const github = this.#github();
+		const sections: string[] = [];
+		const body = this.store.requirements()[0]?.body ?? "";
+		const linked = [
+			...new Set(
+				[...body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)/gi)].map((m) =>
+					Number(m[1]),
+				),
+			),
+		].slice(0, 3);
+		const others: string[] = [];
+		for (const number of linked) {
+			const issue = await github.raw<{
+				title?: string;
+				body?: string | null;
+				html_url?: string;
+				state?: string;
+				user?: { login?: string };
+				pull_request?: unknown;
+			}>("GET", github.repoPath(`/issues/${number}`));
+			if (issue.status !== 200 || issue.data.pull_request) continue;
+			if (!this.store.requirements().some((r) => r.source === issue.data.html_url))
+				this.store.addRequirement({
+					source: issue.data.html_url ?? `#${number}`,
+					actor: issue.data.user?.login ?? "",
+					body: `# Linked issue #${number} (${issue.data.state ?? "unknown"}): ${issue.data.title ?? ""}\n\n${(issue.data.body ?? "").slice(0, 20_000)}`,
+					createdAt: Date.now(),
+				});
+			const other = await repositories(this.env)
+				.getByName(String(identity.repoId))
+				.caseFor(`number:${number}`);
+			if (other && other !== identity.caseId) {
+				const status = await cases(this.env)
+					.getByName(other)
+					.status()
+					.catch(() => null);
+				if (status && !["cancelled", "terminal", "declined"].includes(status.status))
+					others.push(
+						`Issue #${number} also has an active EmDash bot case (status: ${status.status}${status.publication?.prNumber ? `, pull request #${status.publication.prNumber}` : ""}). Do not duplicate that work: reply on this pull request saying how the two relate, and use handoff if a maintainer should choose between them.`,
+					);
+			}
+		}
+		if (others.length > 0) sections.push(others.join("\n"));
+		type Remark = {
+			user?: { login?: string; type?: string } | null;
+			author_association?: string;
+			body?: string | null;
+			html_url?: string;
+			state?: string;
+			path?: string;
+			submitted_at?: string;
+			created_at?: string;
+		};
+		const [comments = [], reviews = [], inline = []] = await Promise.all(
+			[
+				`/issues/${identity.prNumber}/comments?per_page=100`,
+				`/pulls/${identity.prNumber}/reviews?per_page=100`,
+				`/pulls/${identity.prNumber}/comments?per_page=100`,
+			].map((path) =>
+				github
+					.raw<Remark[]>("GET", github.repoPath(path))
+					.then((r) => (r.status === 200 && Array.isArray(r.data) ? r.data : [])),
+			),
+		);
+		const fromMaintainer = (r: Remark) => {
+			const login = r.user?.login ?? "";
+			return (
+				!!r.body?.trim() &&
+				!this.config.reviewers.some((x) => x.toLowerCase() === login.toLowerCase()) &&
+				isMaintainer(this.config, login, r.author_association) !== null
+			);
+		};
+		const remarks = [
+			...comments
+				.filter(fromMaintainer)
+				.map((r) => ({ at: r.created_at ?? "", what: "comment", r })),
+			...reviews.filter(fromMaintainer).map((r) => ({
+				at: r.submitted_at ?? "",
+				what: `review (${(r.state ?? "").toLowerCase()})`,
+				r,
+			})),
+			...inline.filter(fromMaintainer).map((r) => ({
+				at: r.created_at ?? "",
+				what: `inline comment on ${r.path ?? "a file"}`,
+				r,
+			})),
+		]
+			.sort((a, b) => a.at.localeCompare(b.at))
+			.slice(-20);
+		if (remarks.length > 0) {
+			let budget = 15_000;
+			const lines = ["Earlier feedback from maintainers on this pull request, oldest first:"];
+			for (const { what, r } of remarks) {
+				const text = (r.body ?? "").trim().slice(0, Math.min(2_000, budget));
+				budget -= text.length;
+				lines.push(
+					`- @${r.user?.login} (${what}${r.html_url ? `, ${r.html_url}` : ""}):\n${text.replace(/^/gm, "  > ")}`,
+				);
+				if (budget <= 0) break;
+			}
+			sections.push(lines.join("\n"));
+		}
+		return sections.length > 0 ? `\n\n${sections.join("\n\n")}` : "";
+	}
+
+	/**
+	 * Apply the intake label to an issue or pull request of this case, or remove
+	 * every intake label the bot applied. It marks what the bot is working on, and
+	 * removing it stops the bot; the bot's own label events assign nothing. A
+	 * label a maintainer applied is theirs and is never removed.
+	 */
+	async #intakeLabel(action: "add" | "remove", target?: number | null): Promise<void> {
+		if (this.#dryRun()) return;
+		const applied = this.store.getMeta<number[]>("intakeLabels") ?? [];
+		const targets =
+			action === "add" ? (target ? [target] : []).filter((t) => !applied.includes(t)) : applied;
+		if (targets.length === 0) return;
 		const github = this.#github();
 		const label = this.config.intakeLabel;
-		try {
-			if (action === "add")
-				await github.request("POST", github.repoPath(`/issues/${identity.issueNumber}/labels`), {
-					labels: [label],
-				});
-			else
-				await github.request(
-					"DELETE",
-					github.repoPath(`/issues/${identity.issueNumber}/labels/${encodeURIComponent(label)}`),
-					undefined,
-					[404],
+		for (const number of targets) {
+			try {
+				if (action === "add")
+					await github.request("POST", github.repoPath(`/issues/${number}/labels`), {
+						labels: [label],
+					});
+				else
+					await github.request(
+						"DELETE",
+						github.repoPath(`/issues/${number}/labels/${encodeURIComponent(label)}`),
+						undefined,
+						[404],
+					);
+				const now = this.store.getMeta<number[]>("intakeLabels") ?? [];
+				this.store.setMeta(
+					"intakeLabels",
+					action === "add" ? [...now, number] : now.filter((n) => n !== number),
 				);
-			this.store.setMeta("intakeLabelApplied", action === "add");
-			this.store.log(action === "add" ? "intake-label.applied" : "intake-label.removed", { label });
-		} catch (error) {
-			this.store.log("intake-label.failed", { action, error: errorMessage(error) });
+				this.store.log(action === "add" ? "intake-label.applied" : "intake-label.removed", {
+					label,
+					number,
+				});
+			} catch (error) {
+				this.store.log("intake-label.failed", { action, number, error: errorMessage(error) });
+			}
 		}
 	}
 
+	/** The author declines the issue: optionally say why on it, then stop working the case. */
 	async #decline(opId: string, reason: string, message: string | undefined): Promise<void> {
 		if (message?.trim()) this.#queueReply(`${opId}:message`, undefined, true, message);
 		const handoff: Handoff = {
@@ -1238,14 +1403,21 @@ export class CaseDO extends DurableObject<Env> {
 		switch (event.kind) {
 			case "assigned": {
 				const auto = payload.autoIntake === true;
+				const instructions = payload.instructions as MaintainerNote | undefined;
+				if (instructions) this.#addMaintainerNote(event.actor, instructions);
 				if (this.store.state() === "active") {
 					// A maintainer explicitly taking on an automatically admitted issue.
-					if (!auto && this.store.getMeta<boolean>("autoIntake")) {
+					const confirmed = !auto && this.store.getMeta<boolean>("autoIntake");
+					if (confirmed) {
 						this.store.setMeta("autoIntake", false);
 						this.store.setMeta("assignedBy", event.actor);
 						this.store.log("ownership.confirmed-by-maintainer", { by: event.actor });
-						return `## Assigned by a maintainer\nFrom: ${from}\n\nA maintainer has explicitly assigned this issue to you. Work on it unless you cannot do so correctly.`;
 					}
+					// A maintainer addressing the bot on a case it already has: their comment.
+					if (instructions)
+						return `## Comment ${instructions.commentId} on ${identityKindLabel(this.#identity(), Number(payload.number))}\nFrom: ${from}${instructions.url ? `\nLink: ${instructions.url}` : ""}\n\n${confirmed ? "This maintainer has now explicitly assigned this issue to you.\n\n" : ""}${instructions.body}`;
+					if (confirmed)
+						return `## Assigned by a maintainer\nFrom: ${from}\n\nA maintainer has explicitly assigned this issue to you. Work on it unless you cannot do so correctly.`;
 					return null;
 				}
 				this.store.transaction(() => {
@@ -1259,6 +1431,7 @@ export class CaseDO extends DurableObject<Env> {
 							createdAt: Date.now(),
 						});
 						if (payload.reporter) this.store.setMeta("reporter", str(payload.reporter));
+						if (payload.author) this.store.setMeta("prAuthor", str(payload.author));
 					}
 					this.store.setMeta("generation", this.store.generation() + 1);
 					this.store.setMeta("state", "active");
@@ -1304,13 +1477,24 @@ export class CaseDO extends DurableObject<Env> {
 					}
 					// Accepted: label it like a maintainer assignment, so it is visible and
 					// removing the label stops the bot. The bot's own label event assigns nothing.
-					await this.#intakeLabel("add");
+					await this.#intakeLabel("add", this.#identity().issueNumber);
 					if (verdict.decision === "needs-info") {
 						return `## New issue (needs information)\nFrom: ${from}\n\n${event.actor} opened ${what}; its text is in the case record. No maintainer has assigned it. Independent triage judged it in scope but not actionable as written (${verdict.reason}). Reply on the issue asking the reporter for exactly what you need. Do not implement anything until they answer.`;
 					}
 					return `## New issue\nFrom: ${from}\n\n${event.actor} opened ${what}; its text is in the case record. No maintainer has assigned it. Independent triage judged it in scope: ${verdict.reason}. Work on it. If on closer inspection it is not a real bug or small, clear task with a bounded fix you can verify, call decline instead.`;
 				}
-				return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}. Its text is in the case record. ${identity.kind === "issue" ? "Implement it and submit a candidate." : "Take over this pull request: bring it to a correct, reviewable state and submit a candidate."}`;
+				// Assigned by addressing the bot: label it where they asked, as the label would have.
+				if (instructions && payload.labelled !== true)
+					await this.#intakeLabel("add", Number(payload.number));
+				const notes = instructions ? " The maintainer's instructions are in the case record." : "";
+				if (identity.kind === "issue")
+					return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}. Its text is in the case record.${notes} Implement it and submit a candidate.`;
+				const author = this.store.getMeta<string>("prAuthor");
+				const context = await this.#adoptionContext().catch((error: unknown) => {
+					this.store.log("adoption.context-failed", { error: errorMessage(error) });
+					return "";
+				});
+				return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}${author ? `, opened by @${author}` : ""}. Its description and any linked issues are in the case record.${notes} Take it over as a maintainer finishing a contributor's work: keep their approach unless it is wrong, address the outstanding feedback and any failing checks, and submit a candidate when it is correct and reviewable. Your commits go on top of theirs; their history is never rewritten.${context}`;
 			}
 			case "operator-round":
 				return `## Operator note\nFrom: ${from}\n\n${str(payload.note ?? "")}`;
@@ -1678,11 +1862,14 @@ export class CaseDO extends DurableObject<Env> {
 		const pr = this.store.getMeta<number>("pr") ?? identity.prNumber;
 		const lines = [
 			`Repository: ${identity.repo}. ${identity.kind === "issue" ? `Issue #${identity.issueNumber}` : `Pull request #${identity.prNumber}`}${identity.issueNumber && pr ? `, published as pull request #${pr}` : ""}. Branch: ${identity.branch}.`,
-			`Reporter: ${this.store.getMeta<string>("reporter") ?? "unknown"}. ${this.store.getMeta<string>("assignedBy") ? `Assigned by maintainer ${this.store.getMeta<string>("assignedBy")}.` : "Not assigned by a maintainer: the bot was offered this issue automatically when it was opened, and it is your decision whether to take it on."}`,
+			`${identity.kind === "pr" ? `Pull request opened by: ${this.store.getMeta<string>("prAuthor") ?? "unknown"}` : `Reporter: ${this.store.getMeta<string>("reporter") ?? "unknown"}`}. ${this.store.getMeta<string>("assignedBy") ? `Assigned by maintainer ${this.store.getMeta<string>("assignedBy")}.` : "Not assigned by a maintainer: the bot was offered this issue automatically when it was opened, and it is your decision whether to take it on."}`,
 			`The checkout is at ${REPO_DIR}${latest ? `, based on ${latest.baseCommit}` : ""}.`,
 			"",
 			"Original request (untrusted text describing the work):",
 			...this.store.requirements().map((r) => `${r.body}`),
+			...maintainerNotes(
+				this.store.getMeta<Array<MaintainerNote & { actor: string }>>("maintainerNotes"),
+			),
 			"",
 			"Call case_status for the live candidate, publication, checks and budgets.",
 			...(this.store.getMeta<string | null>("prTemplate")
@@ -1774,6 +1961,8 @@ export class CaseDO extends DurableObject<Env> {
 		});
 		this.store.log("ownership.cancelled", { reason, generation: this.store.generation() });
 		await this.#stopAuthor();
+		// Removing the label from the issue or the pull request stops the bot; take its own labels off both.
+		await this.#intakeLabel("remove");
 		for (const candidate of this.store.candidates()) {
 			const publication = this.store.publication(`publish:${candidate.id}`);
 			if (
@@ -1889,6 +2078,9 @@ export class CaseDO extends DurableObject<Env> {
 			if (result.state === "published") {
 				this.store.setMeta("observedHead", result.commitSha);
 				this.store.setMeta("pr", result.prNumber);
+				// The bot's pull request for an issue carries the intake label too, so it can be stopped from there.
+				if (this.#identity().kind === "issue" && this.store.state() === "active")
+					await this.#intakeLabel("add", result.prNumber);
 				// Further work starts from the published commit.
 				const published = this.store.candidate(candidateId)!;
 				await this.#source.run(() =>
