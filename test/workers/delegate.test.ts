@@ -130,6 +130,54 @@ describe("delegate", () => {
 		expect(text).toContain("Review: no defects found.");
 	});
 
+	it("gives each candidate one full review and one follow-up that only checks earlier findings", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(93);
+		const reviewer = (final: string) =>
+			helperBrief({ rounds: [{ steps: [], final }] }).replace(
+				"Read greet.js and report what it returns.",
+				"",
+			);
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{
+							tool: "write",
+							args: { path: "greet.js", content: 'module.exports = (n) => "Hi " + n;\n' },
+						},
+						{
+							tool: "review",
+							args: { title: "fix", description: reviewer("Finding: no punctuation.") },
+						},
+						{ tool: "write", args: FIX_GREETING },
+						{ tool: "review", args: { title: "fix", description: reviewer("Addressed.") } },
+						{ tool: "review", args: { title: "fix", description: reviewer("Should not run.") } },
+						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 93, number: 93, script }));
+		await bot.waitFor("handoff", async () => (await bot!.inspect(caseId)).handoff);
+		const record = await bot.inspect(caseId);
+		expect(record.log.filter((e: any) => e.type === "review.completed")).toHaveLength(2);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const results = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.filter((m: any) => m.role === "toolResult" && m.toolName === "review");
+		expect(JSON.stringify(results[1])).toContain("Follow-up review");
+		expect(JSON.stringify(results[2])).toContain("has had its full review and a follow-up");
+		// The follow-up reviewer was given the earlier findings and told not to look for new issues.
+		const followUp = await bot.ops(
+			`cases/${caseId}/evidence?session=${results[1].details.conversationIds[0]}`,
+		);
+		const brief = JSON.stringify(followUp.transcript);
+		expect(brief).toContain("Do not look for new issues");
+		expect(brief).toContain("Finding: no punctuation.");
+		expect(brief).toContain("What changed since the earlier review");
+	});
+
 	it("runs the review on the configured review model", async () => {
 		// A review model that cannot answer: the review fails, where the author's model would not.
 		bot = await startBot({ reviewModel: "workers-ai:@cf/unavailable/review" });

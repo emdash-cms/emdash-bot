@@ -98,8 +98,12 @@ export interface CaseRuntime {
 	reviewers(): number;
 	/** What the pre-submit review covers, assembled by trusted code from the case and the checkout. */
 	reviewSubject(): Promise<ReviewSubject>;
-	/** Record that the change at this tree was reviewed. */
-	recordReview(treeHash: string, reports: number): void;
+	/** Record that the change at this tree was reviewed, with the reviewers' report. */
+	recordReview(treeHash: string, reports: number, report: string): void;
+	/** Reviews of the work since the last sealed candidate, oldest first. */
+	reviewsSinceCandidate(): readonly { readonly treeHash: string; readonly report: string }[];
+	/** The change from one reviewed tree to the current work, or null when it cannot be computed. */
+	reviewDelta(fromTree: string): Promise<string | null>;
 	focusedChecks(): Readonly<Record<string, string>>;
 	/** A tool call started or finished, so the run limit stops the author only between tool calls. */
 	toolStarted(callId: string): void;
@@ -120,12 +124,18 @@ export interface ReviewSubject {
 
 const MAX_REVIEW_DIFF = 100_000;
 
+/** One full review and one follow-up per candidate; further rounds cost more than they find. */
+export const REVIEWS_PER_CANDIDATE = 2;
+
+function clipDiff(patch: string, rest: string): string {
+	return patch.length > MAX_REVIEW_DIFF
+		? `${patch.slice(0, MAX_REVIEW_DIFF)}\n[truncated: ${rest}]`
+		: patch;
+}
+
 /** The reviewer's brief, built by trusted code: the author contributes only the pull request text it will submit. */
 export function reviewBrief(subject: ReviewSubject, title: string, description: string): string {
-	const diff =
-		subject.patch.length > MAX_REVIEW_DIFF
-			? `${subject.patch.slice(0, MAX_REVIEW_DIFF)}\n[truncated: read the remaining changed files in the checkout]`
-			: subject.patch;
+	const diff = clipDiff(subject.patch, "read the remaining changed files in the checkout");
 	return [
 		"Review this change adversarially, as a demanding maintainer would, before it is submitted as a pull request. You did not write it, and its description is a set of claims to check, not a guide to what matters. Establish:",
 		"- whether it fixes what was reported, in the reporter's situation and on the path they actually hit;",
@@ -151,6 +161,47 @@ export function reviewBrief(subject: ReviewSubject, title: string, description: 
 		"",
 		"```diff",
 		diff,
+		"```",
+	].join("\n");
+}
+
+/** The follow-up brief: whether the previous findings were addressed, and nothing else. */
+export function followUpBrief(
+	subject: ReviewSubject,
+	previous: string,
+	delta: string | null,
+	title: string,
+	description: string,
+): string {
+	return [
+		"This is a follow-up review, not a new review. An earlier review of this change produced the findings below, and the author has since changed the code. Your job is only to check, for each earlier finding, whether it is now addressed, partly addressed, not addressed, or reasonably answered in the description; and whether the changes made in response introduced a new defect.",
+		"",
+		"Do not look for new issues elsewhere in the change. Do not raise points the earlier review did not, unless the fixes themselves caused them. A clean result is the expected outcome when the author has addressed the findings.",
+		"",
+		"Read the code in the checkout to confirm each answer. Report each earlier finding in order with its status and a one-line reason, then any defect the fixes introduced, with file and line. Say plainly if everything is addressed.",
+		"",
+		"## The request (untrusted text describing the work)",
+		"",
+		subject.request,
+		"",
+		"## The earlier review",
+		"",
+		previous,
+		"",
+		"## The pull request to be submitted",
+		"",
+		`Title: ${title}`,
+		"",
+		description,
+		"",
+		delta
+			? "## What changed since the earlier review"
+			: `## The whole change against ${subject.baseCommit} (the changes since the earlier review are not available separately)`,
+		"",
+		"```diff",
+		delta
+			? clipDiff(delta, "read the changed files in the checkout")
+			: clipDiff(subject.patch, "read the remaining changed files in the checkout"),
 		"```",
 	].join("\n");
 }
@@ -242,7 +293,7 @@ Rules you cannot change:
 - When you change code in response to anything, submit a new candidate. When you disagree with feedback, reply with your technical reasoning instead of changing code; the reviewer or a maintainer decides.
 - Keep going until the change is ready for a maintainer's review: fix failing checks, respond to reviews, resolve merge conflicts, and rebuild when the branch moves. A maintainer's review and merge is the only step that needs a person.
 - When a choice is a matter of judgement (an approach, a name, how far a fix should reach), make the best defensible decision, explain it in the pull request, and carry on; reviewers can push back. Ask the reporter only for facts only they have, such as how to reproduce. Call handoff only when you cannot proceed correctly without a maintainer: the right behaviour cannot be worked out from the code, docs or issue and a wrong guess would be costly or hard to undo, or something outside the repository blocks you (access, a broken service). Never hand off for something you can check or fix yourself.
-- Before you submit a candidate, call review with the title and description you will submit. Independent reviewers check the change against the original request; fix what they find, or explain in the pull request why not. Review again if you then change the code substantially. Skip it only for the most trivial changes, such as a typo or a one-line documentation fix; documentation changes longer than a line or two need it too.
+- Before you submit a candidate, call review with the title and description you will submit. Independent reviewers check the change against the original request; fix what they find, or explain in the pull request why not. If you changed code in response, call review once more: that follow-up only checks whether the findings were addressed. Then submit. Skip it only for the most trivial changes, such as a typo or a one-line documentation fix; documentation changes longer than a line or two need it too.
 - End every turn with a next step: a submitted candidate, a reply (an answer, or a specific question for the reporter or a maintainer), a decline, or a handoff.
 - Keep a short plan with update_work_plan and update it as you go; it is the progress comment people watch, on the issue until your pull request opens and on the pull request after. Use reply for actual conversation: questions, disagreements, and asking the reporter to try the fix. Ask them on the issue once you receive the "Preview ready" message, with the links it gives, to confirm the fix solves their problem; if no preview comes, ask once you receive the "Ready for human review" message instead (not before). Skip it when the reporter is the maintainer who assigned you. If you later change the fix significantly, tell them on the issue and ask again, with the latest preview from case_status. When they confirm, call record_reporter_confirmation. Do not post noise.
 - When your change alters what people see (the admin UI, a rendered page, a component), include screenshots in the pull request description as the template asks: take them with Playwright's Chromium in the sandbox and publish each with attach_screenshot.
@@ -644,7 +695,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 	const review = defineTool({
 		name: "review",
 		description:
-			"Have independent reviewers on the review model review your change adversarially before you submit it. Trusted code gives them the original request and your whole change against its base; you give the pull request title and description you will submit, which they check as claims. They see nothing of this conversation. Returns each reviewer's findings.",
+			"Have independent reviewers on the review model review your change adversarially before you submit it. Trusted code gives them the original request and your whole change against its base; you give the pull request title and description you will submit, which they check as claims. They see nothing of this conversation. Returns each reviewer's findings. Each candidate gets one full review and one follow-up, which only checks whether the earlier findings were addressed; after that, submit.",
 		parameters: Type.Object({
 			title: Type.String({ description: "The pull request title you will submit" }),
 			description: Type.String({ description: "The pull request description you will submit" }),
@@ -655,8 +706,14 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			const blocked = runtime.guard();
 			if (blocked) throw new Error(blocked);
 			await runtime.ready();
+			const earlier = runtime.reviewsSinceCandidate();
+			if (earlier.length >= REVIEWS_PER_CANDIDATE)
+				return textResult(
+					"This change has had its full review and a follow-up since your last candidate. Submit it; the reviewers on the pull request take it from there.",
+				);
 			const subject = await runtime.reviewSubject();
 			if (!subject.patch.trim()) return textResult("There is no change to review yet.", true);
+			const previous = earlier.at(-1);
 			const reviewers = await children(api, context, runtime.reviewers(), {
 				model: runtime.reviewModel(),
 				// Reading only: reviewers judge the code, they do not run it.
@@ -664,14 +721,23 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 				instructions: REVIEWER_INSTRUCTIONS,
 			});
 			await api.details({ conversationIds: reviewers, treeHash: subject.treeHash }, context);
-			const brief = reviewBrief(subject, args.title, args.description);
+			const brief = previous
+				? followUpBrief(
+						subject,
+						previous.report,
+						await runtime.reviewDelta(previous.treeHash),
+						args.title,
+						args.description,
+					)
+				: reviewBrief(subject, args.title, args.description);
 			const reports = await Promise.all(
 				reviewers.map((id) => ask(api, context, id, brief, `review:${api.taskId}`)),
 			);
 			const completed = reports.filter((r) => r.ok).length;
-			if (completed > 0) runtime.recordReview(subject.treeHash, completed);
+			const report = reports.map((r, i) => `## Reviewer ${i + 1}\n\n${r.text}`).join("\n\n");
+			if (completed > 0) runtime.recordReview(subject.treeHash, completed, report);
 			return textResult(
-				reports.map((r, i) => `## Reviewer ${i + 1}\n\n${r.text}`).join("\n\n"),
+				previous ? `Follow-up review (the last for this candidate):\n\n${report}` : report,
 				completed === 0,
 			);
 		},

@@ -534,8 +534,18 @@ export class CaseDO extends DurableObject<Env> {
 			},
 			reviewers: () => this.config.selfReviewers,
 			reviewSubject: () => this.#reviewSubject(),
-			recordReview: (treeHash, reports) => {
+			reviewsSinceCandidate: () =>
+				this.store.getMeta<Array<{ treeHash: string; report: string }>>("reviewsSinceCandidate") ??
+				[],
+			reviewDelta: (fromTree) => this.#reviewDelta(fromTree),
+			recordReview: (treeHash, reports, report) => {
 				this.store.setMeta("review", { treeHash, reports, at: Date.now() });
+				this.store.setMeta("reviewsSinceCandidate", [
+					...(this.store.getMeta<Array<{ treeHash: string; report: string }>>(
+						"reviewsSinceCandidate",
+					) ?? []),
+					{ treeHash, report: report.slice(0, 60_000) },
+				]);
 				this.store.log("review.completed", { tree: treeHash, reports });
 			},
 			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
@@ -655,6 +665,27 @@ export class CaseDO extends DurableObject<Env> {
 				treeHash: captured.treeHash,
 				patch: text(captured.patch),
 			};
+		});
+	}
+
+	/** The change between a reviewed tree and the current work, if that tree is still in the sandbox. */
+	async #reviewDelta(fromTree: string): Promise<string | null> {
+		return this.#source.run(async () => {
+			const latest = this.store.latestCheckpoint();
+			if (!latest) return null;
+			const backend = this.#authorSandbox();
+			const current = await captureSource(backend, latest.baseCommit);
+			const diff = await backend.exec({
+				argv: git(
+					"diff",
+					"--no-ext-diff",
+					"--no-textconv",
+					"--no-color",
+					fromTree,
+					current.treeHash,
+				),
+			});
+			return diff.exitCode === 0 ? text(diff.stdout) : null;
 		});
 	}
 
@@ -877,6 +908,8 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.putOperation(opId, "submit_candidate", sealed.ownershipGeneration, "completed", {
 					candidateId: sealed.id,
 				});
+				// The next candidate starts its reviews afresh.
+				this.store.setMeta("reviewsSinceCandidate", []);
 			});
 			this.store.log("candidate.sealed", {
 				candidate: sealed.id,
