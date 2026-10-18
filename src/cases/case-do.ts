@@ -1752,8 +1752,8 @@ export class CaseDO extends DurableObject<Env> {
 		);
 		const configured = event.kind === "review";
 		// A commented review that asks for nothing (praise, "ok, makes sense",
-		// "no further changes") is ignored: it neither wakes the author nor
-		// replaces the reviewer's latest review for readiness.
+		// "no further changes") does not wake the author. From the configured
+		// reviewer it is still a clean review of that commit for readiness.
 		const nothingAsked =
 			payload.state.toUpperCase() === "COMMENTED" &&
 			!parsed.structured &&
@@ -1761,10 +1761,6 @@ export class CaseDO extends DurableObject<Env> {
 				payload.body,
 				comments.map((c) => c.body),
 			));
-		if (nothingAsked) {
-			this.store.log("review.nothing-asked", { review: payload.reviewId, by: event.actor });
-			return null;
-		}
 		if (configured) {
 			const fresh = this.store.putReview({
 				reviewId: String(payload.reviewId),
@@ -1772,11 +1768,16 @@ export class CaseDO extends DurableObject<Env> {
 				commit: parsed.reviewedCommit,
 				state: payload.state,
 				structured: parsed.structured,
-				actionable: actionableCount(parsed),
+				actionable: nothingAsked ? 0 : actionableCount(parsed),
 				receivedAt: Date.now(),
 			});
 			if (!fresh) return null;
-		} else if (isDecisiveReview(payload.state)) {
+		}
+		if (nothingAsked) {
+			this.store.log("review.nothing-asked", { review: payload.reviewId, by: event.actor });
+			return null;
+		}
+		if (!configured && isDecisiveReview(payload.state)) {
 			// A maintainer's approval or change request is readiness evidence too.
 			this.store.putReview({
 				reviewId: String(payload.reviewId),

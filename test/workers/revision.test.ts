@@ -409,7 +409,7 @@ describe("review repair and asynchronous CI", () => {
 		});
 	});
 
-	it("ignores a commented review that asks for nothing, keeping the approval and the author asleep", async () => {
+	it("counts a commented review that asks for nothing as a clean review, keeping the author asleep", async () => {
 		bot = await startBot({
 			repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }],
 		});
@@ -443,8 +443,32 @@ describe("review repair and asynchronous CI", () => {
 		await new Promise((r) => setTimeout(r, 1000));
 		const status = await bot.ops(`cases/${caseId}/status`);
 		expect(status.status).toBe("ready-for-human");
-		expect(status.review.state).toBe("APPROVED");
 		expect(authorRuns(await bot.inspect(caseId))).toHaveLength(before);
+	});
+
+	it("is ready when the reviewer's only review of the head is a clean comment", async () => {
+		bot = await startBot({
+			repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }],
+		});
+		const caseId = issueCaseId(38);
+		await bot.webhook("issues", assignIssue({ issueId: 38, number: 38, script: fixScript() }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, "emdash-bot/issue-38")!;
+		await bot.webhook("pull_request_review", {
+			action: "submitted",
+			sender: { login: REVIEWER },
+			pull_request: { id: 9000 + pr, number: pr },
+			review: {
+				id: 3838,
+				user: { login: REVIEWER },
+				commit_id: head,
+				state: "COMMENTED",
+				body: "Both earlier findings are addressed; looks good.",
+			},
+		});
+		const ready = await statusIs(bot, caseId, "ready-for-human");
+		expect(ready.review.commit).toBe(head);
 	});
 
 	it("lists failing check run ids, and the author reads a job log with ci_log", async () => {
