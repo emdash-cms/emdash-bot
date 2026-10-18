@@ -1669,8 +1669,6 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.setMeta("observedHead", str(payload.after));
 				this.store.log("branch.advanced", { by: event.actor, head: payload.after });
 				const formatted = await this.#recordFormatPush(str(payload.before), str(payload.after));
-				// The review service only reviews the bot's own pushes: ask it to review this one.
-				if (!formatted) this.store.setMeta("foreignHead", str(payload.after));
 				return `## Branch updated\nFrom: ${from}\n\n${event.actor} pushed ${str(payload.after).slice(0, 12)} to the case branch${formatted ? ", applying only the repository's formatter" : ""}. Your next candidate is published on top of it.`;
 			}
 			case "pr-opened":
@@ -2567,9 +2565,9 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	/**
-	 * Ask the review service for a review of the current head, once per head,
-	 * when none is coming on its own: someone else pushed to the branch, or the
-	 * review check failed. Re-applying its label is the service's own retry.
+	 * Ask the review service to retry, once per head, when its review check
+	 * failed: it does not retry a failed head on its own, and re-applying its
+	 * label is its retry. Pushes by anyone are re-reviewed by the service itself.
 	 */
 	async #requestReviewIfNeeded(): Promise<void> {
 		const rule = this.#repoConfig()?.review;
@@ -2582,17 +2580,13 @@ export class CaseDO extends DurableObject<Env> {
 		const failed = this.store
 			.verifications()
 			.some((v) => v.name === rule.check && v.commitSha === head && v.outcome === "failed");
-		const foreign = this.store.getMeta<string>("foreignHead") === head;
-		if (!failed && !foreign) return;
+		if (!failed) return;
 		const github = this.#github();
 		const path = github.repoPath(`/issues/${pr}/labels`);
 		await github.request("DELETE", `${path}/${encodeURIComponent(rule.label)}`, undefined, [404]);
 		await github.request("POST", path, { labels: [rule.label] });
 		this.store.setMeta("reviewRequested", [...requested.slice(-20), head]);
-		this.store.log("review.requested", {
-			head,
-			reason: failed ? "review check failed" : "pushed by someone else",
-		});
+		this.store.log("review.requested", { head, reason: "review check failed" });
 	}
 
 	/** Publish this case's row on the public board (also used to rebuild it). */
