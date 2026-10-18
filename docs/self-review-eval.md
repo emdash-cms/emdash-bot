@@ -200,3 +200,9 @@ Against the earlier prompt-based replay on the same K1–K13: Opus 8.5 against 7
 Still missed by every model: K7, K8, K10, K13, K14, K16.
 
 The second reviewer added key credit in 3 of 15 runs (Sonnet's K4 on 4225 and K2 on 4226, Opus's K12 on 4201), and once contradicted the first reviewer's correct point (Opus on 4224). For Opus it doubles the cost, from about $0.60 to $1.21 a review, for roughly one more key finding per five pull requests.
+
+## Review cap: one full review and one follow-up per candidate
+
+Production cases on 17 October ran two to six full pre-submit reviews each (5 to 21 minutes of reviewing, but each round set off more author work: #4224's author alone cost $11.71). Each fresh full review found new, smaller points. The `review` tool now gives each candidate one full review and one follow-up that receives the earlier findings and the change since, and is told it is not looking for new issues; a third call is declined until a new candidate is sealed.
+
+Case 3686 re-run on staging with the cap: assignment to publication 20 minutes (28 before), one full review (2.1 min, one finding, fixed) and one follow-up (24 s, everything addressed), $1.32 in all. Independent grade: approve with reservations, as before; K1 still present but disclosed, K2 avoided, K3 now partly avoided (the last good settings are served when a refresh fails).
