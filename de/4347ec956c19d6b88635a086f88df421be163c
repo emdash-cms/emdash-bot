@@ -1,0 +1,23 @@
+src/cases/case-do.ts
+  s_a29b1b5f36fdd3::t_741f3c14efd1f2 537-541,543-548,671-691,911-912
+src/tools/case-tools.ts
+  s_a29b1b5f36fdd3::t_e80f9908b5b181 101-106,127-135,138,168-208,296,698,709-713,716,724-732,737-738,740
+test/workers/delegate.test.ts
+  s_a29b1b5f36fdd3::t_81f08ffdce9263 133-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "de4347ec956c19d6b88635a086f88df421be163c",
+  "prompts": {},
+  "sessions": {
+    "s_a29b1b5f36fdd3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d2cc0b-650d-47c4-bcfa-8a5a150f0ad7",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
