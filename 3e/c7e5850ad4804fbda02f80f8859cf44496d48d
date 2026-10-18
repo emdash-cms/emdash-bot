@@ -1,0 +1,21 @@
+src/cases/case-do.ts
+  s_a29b1b5f36fdd3::t_23ecf7d19cc37f 1755-1756,1771,1775-1780
+test/workers/revision.test.ts
+  s_a29b1b5f36fdd3::t_2f5f5bc23d3a2d 412,449-473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3ec7e5850ad4804fbda02f80f8859cf44496d48d",
+  "prompts": {},
+  "sessions": {
+    "s_a29b1b5f36fdd3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d2cc0b-650d-47c4-bcfa-8a5a150f0ad7",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
