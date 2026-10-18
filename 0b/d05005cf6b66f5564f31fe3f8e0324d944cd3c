@@ -1,0 +1,27 @@
+src/cases/case-do.ts
+  s_a29b1b5f36fdd3::t_4d09c1a8bb6635 39,2515,2631,2728-2736
+src/reports/dashboard.ts
+  s_a29b1b5f36fdd3::t_e6553d694cb4cb 143-148,410,412
+src/reports/render.ts
+  s_a29b1b5f36fdd3::t_12e7fad50f1354 5,29-34,63,92
+src/reports/status.ts
+  s_a29b1b5f36fdd3::t_00d61136dd03b2 97-109,282-284
+test/unit/status.test.ts
+  s_a29b1b5f36fdd3::t_9e7cff91e0bc28 2-7,147-153,165-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0bd05005cf6b66f5564f31fe3f8e0324d944cd3c",
+  "prompts": {},
+  "sessions": {
+    "s_a29b1b5f36fdd3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d2cc0b-650d-47c4-bcfa-8a5a150f0ad7",
+        "model": "unknown"
+      },
+      "human_author": "Matt Kane <mkane@cloudflare.com>"
+    }
+  }
+}
