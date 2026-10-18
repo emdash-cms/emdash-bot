@@ -14,8 +14,8 @@ describe("production profile", () => {
 		expect(config.repositoryPattern).toBeFalsy();
 	});
 
-	it("starts with maintainer-assigned intake only and requires the ruleset's checks", () => {
-		expect(config.autoIntake).toBe(false);
+	it("takes on new issues by auto-intake and requires the ruleset's checks", () => {
+		expect(config.autoIntake).toBe(true);
 		expect(config.checks.required).toEqual(
 			expect.arrayContaining(["Typecheck", "Tests", "Browser Tests", "Format"]),
 		);
