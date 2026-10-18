@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import { computeStatus, type StatusInput } from "../../src/reports/status.ts";
-import { renderPullRequestBody, renderStatus } from "../../src/reports/render.ts";
+import { computeStatus, heldNeedsAuthor, type StatusInput } from "../../src/reports/status.ts";
+import {
+	renderPullRequestBody,
+	renderStatus,
+	renderStatusCheck,
+} from "../../src/reports/render.ts";
 
 const candidate = { id: "c1", sourceTreeHash: "t1" } as never;
 const publication = { candidateId: "c1", state: "pr-ensured", commitSha: "h1" } as never;
@@ -140,6 +144,13 @@ describe("deterministic status", () => {
 		});
 		expect(approved.status).toBe("ready-for-human");
 		expect(approved.reasons[0]).toContain("@ascorbic approved the current head");
+		// Approved by a maintainer: waiting to be merged, not reviewed.
+		expect(approved.nextAction).toBe("a maintainer will merge the pull request");
+		expect(renderStatusCheck(approved).title).toBe("Approved, ready to merge");
+		expect(computeStatus(base).nextAction).toBe(
+			"a maintainer will review and approve the pull request",
+		);
+		expect(renderStatusCheck(computeStatus(base)).title).toBe("Ready for human review");
 		const changes = { ...approve, reviewId: "c", state: "CHANGES_REQUESTED", actionable: 1 };
 		expect(computeStatus({ ...base, reviews: [approve, changes] })).toMatchObject({
 			status: "changes-required",
@@ -149,6 +160,13 @@ describe("deterministic status", () => {
 		expect(computeStatus({ ...base, reviews: [{ ...approve, commit: "h0" }] }).status).toBe(
 			"candidate-published",
 		);
+	});
+
+	it("does not count the bot's own held notices as work waiting for a slot", () => {
+		expect(heldNeedsAuthor([])).toBe(false);
+		expect(heldNeedsAuthor([{ key: "ready:h1" }, { key: "preview:h1" }])).toBe(false);
+		expect(heldNeedsAuthor([{ key: "ready:h1" }, { key: "review-sync-123" }])).toBe(true);
+		expect(heldNeedsAuthor([{ key: "checks:h1:abc" }])).toBe(true);
 	});
 
 	it("separates code failures from infrastructure failures", () => {

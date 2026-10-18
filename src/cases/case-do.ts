@@ -36,7 +36,7 @@ import {
 	statusMarker,
 } from "../reports/render.ts";
 import { type WorkPlan, updateWorkPlan } from "../reports/work-plan.ts";
-import { type StatusReport, computeStatus } from "../reports/status.ts";
+import { type StatusReport, computeStatus, heldNeedsAuthor } from "../reports/status.ts";
 import { setupModels } from "../runtime/models.ts";
 import {
 	type TriageVerdict,
@@ -2512,7 +2512,7 @@ export class CaseDO extends DurableObject<Env> {
 			state: this.store.state(),
 			authorBusy: this.store.state() === "active" && (await this.#authorBusy()),
 			authorStarted: (this.store.getMeta<number>("runs") ?? 0) > 0,
-			waitingForSlot: (this.store.getMeta<unknown[]>("held") ?? []).length > 0,
+			waitingForSlot: this.#heldWork(),
 			rerunsExhausted: Object.entries(this.store.getMeta<Record<string, number>>("reruns") ?? {})
 				.filter(([key, n]) => n >= MAX_RERUNS && key.startsWith(`${this.#currentHead()}:`))
 				.map(([key]) => key.slice(key.indexOf(":") + 1)),
@@ -2628,8 +2628,7 @@ export class CaseDO extends DurableObject<Env> {
 			previewUrl: this.store.getMeta<{ url: string }>("preview")?.url ?? null,
 			status: report.status,
 			group,
-			queued:
-				report.status === "working" && (this.store.getMeta<unknown[]>("held") ?? []).length > 0,
+			queued: report.status === "working" && this.#heldWork(),
 			reasons: report.reasons,
 			nextAction: report.nextAction,
 			assignedBy: this.store.getMeta<string>("assignedBy") ?? null,
@@ -2724,6 +2723,15 @@ export class CaseDO extends DurableObject<Env> {
 					: ""
 			}\n\nAsk the reporter on the issue to try it and confirm it fixes their problem, unless they are the maintainer who assigned you. Later previews update case_status without a message.`,
 		);
+	}
+
+	/**
+	 * Whether a message that needs the author's work is waiting for a slot. A held
+	 * milestone notice (preview or readiness) does not change what the case is
+	 * waiting for, so it does not make the case look busy.
+	 */
+	#heldWork(): boolean {
+		return heldNeedsAuthor(this.store.getMeta<Array<{ key: string }>>("held") ?? []);
 	}
 
 	/** Tell the author, once per head, that the pull request no longer merges cleanly. */

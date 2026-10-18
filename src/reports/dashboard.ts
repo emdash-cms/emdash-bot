@@ -140,7 +140,12 @@ const PILL: Record<CaseStatus, [string, string]> = {
 
 function pill(summary: CaseSummary): string {
 	if (summary.queued) return `<span class="pill queued">Waiting for a slot</span>`;
-	const [cls, label] = PILL[summary.status];
+	const [cls, label] =
+		summary.status === "ready-for-human" &&
+		summary.review?.maintainer &&
+		summary.review.state.toUpperCase() === "APPROVED"
+			? ["ready", "Approved"]
+			: PILL[summary.status];
 	const finished =
 		summary.status === "terminal" && summary.timeline.at(-1)?.text === "Merged" ? "Merged" : label;
 	return `<span class="pill ${cls}">${esc(finished)}</span>`;
@@ -402,9 +407,9 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outli
 .nav-cta:hover { background: var(--accent-strong); transform: translateY(-1px); }
 
 /* Intro */
-.intro { padding-block: 2.5rem 2rem; display: grid; gap: 1.25rem; }
+.intro { padding-block: 1.5rem 1.25rem; display: grid; gap: 0.75rem; }
 .eyebrow { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); letter-spacing: 0.02em; }
-h1 { margin: 0; font-size: clamp(2rem, 4.5vw, 3.1rem); line-height: 1.02; letter-spacing: -0.055em; text-wrap: balance; max-width: 18ch; }
+h1 { margin: 0; font-size: 1.5rem; line-height: 1.2; letter-spacing: -0.02em; text-wrap: balance; }
 .lede { margin: 0; color: var(--muted); max-width: 60ch; }
 .summary { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .summary a { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 0.82rem; text-decoration: none; font-variant-numeric: tabular-nums; }

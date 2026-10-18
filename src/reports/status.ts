@@ -94,6 +94,19 @@ export function reviewIsClean(review: ReviewRecord): boolean {
 	return review.state.toUpperCase() !== "CHANGES_REQUESTED";
 }
 
+/**
+ * Whether held messages include work for the author. The bot's own preview and
+ * readiness notices change nothing about what the case is waiting for.
+ */
+export function heldNeedsAuthor(held: readonly { readonly key: string }[]): boolean {
+	return held.some((h) => !/^(preview|ready):/.test(h.key));
+}
+
+/** A maintainer's approval of the head: ready to merge, not to review. */
+export function isMaintainerApproval(review: ReviewRecord | undefined): boolean {
+	return !!review?.maintainer && review.state.toUpperCase() === "APPROVED";
+}
+
 function reviewedBy(review: ReviewRecord): string {
 	const who = review.maintainer ? `@${review.reviewer}` : "the review bot";
 	return review.state.toUpperCase() === "APPROVED"
@@ -266,6 +279,8 @@ export function computeStatus(input: StatusInput): StatusReport {
 	return report(
 		"ready-for-human",
 		[`required checks passed, ${reviewedBy(review)}, and the head merges cleanly`],
-		"a maintainer will review and approve the pull request",
+		isMaintainerApproval(review)
+			? "a maintainer will merge the pull request"
+			: "a maintainer will review and approve the pull request",
 	);
 }

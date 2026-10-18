@@ -2,7 +2,7 @@
 // the model except the candidate summary, which is labelled as such.
 
 import type { CaseIdentity } from "../cases/types.ts";
-import type { StatusReport } from "./status.ts";
+import { type StatusReport, isMaintainerApproval } from "./status.ts";
 import { type WorkPlan, renderWorkPlan } from "./work-plan.ts";
 
 export function statusMarker(caseId: string): string {
@@ -25,6 +25,12 @@ const LABEL: Record<StatusReport["status"], string> = {
 	declined: "Declined",
 	terminal: "Closed",
 };
+
+function statusLabel(report: StatusReport): string {
+	return report.status === "ready-for-human" && isMaintainerApproval(report.review)
+		? "Approved, ready to merge"
+		: LABEL[report.status];
+}
 
 /** A status phrase as a sentence: capitalised, with a full stop. */
 function sentence(text: string): string {
@@ -54,7 +60,7 @@ export function renderStatusCheck(report: StatusReport): StatusCheck {
 		"",
 		`Next action: ${sentence(report.nextAction)}`,
 	].join("\n");
-	const title = LABEL[report.status];
+	const title = statusLabel(report);
 	switch (report.status) {
 		// In progress only while the bot itself is doing something; waiting for
 		// review, CI or a reply is a completed, neutral check titled with what is awaited.
@@ -83,7 +89,7 @@ export function renderStatus(
 ): string {
 	const lines = [
 		statusMarker(identity.caseId),
-		`### EmDash bot: ${LABEL[report.status]}`,
+		`### EmDash bot: ${statusLabel(report)}`,
 		"",
 		// The heading keeps the checklist and the reasons as two separate lists;
 		// adjacent lists merge into one loose list that renders as paragraphs.
