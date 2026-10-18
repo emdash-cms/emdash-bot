@@ -20,7 +20,7 @@ describe("production profile", () => {
 			expect.arrayContaining(["Typecheck", "Tests", "Browser Tests", "Format"]),
 		);
 		expect(config.authorModel).not.toMatch(/^scripted:/);
-		expect(config.maxActiveAuthors).toBe(2);
+		expect(config.maxActiveAuthors).toBe(4);
 		expect(config.intakeLabel).toBe("bot:fix");
 	});
 });

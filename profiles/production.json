@@ -81,7 +81,7 @@
 	},
 	"gatewayId": "default",
 	"intakeLabel": "bot:fix",
-	"maxActiveAuthors": 2,
+	"maxActiveAuthors": 4,
 	"autoIntake": false,
 	"autoIntakeMaintainers": false
 }
