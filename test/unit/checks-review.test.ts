@@ -172,6 +172,13 @@ describe("format-only pushes", () => {
 			}),
 		).toBe(true);
 		expect(isFormatOnlyPush(rule, { status: "ahead", commits: [] })).toBe(false);
+		const snapshot = {
+			author: { login: "emdashbot[bot]" },
+			commit: { message: "ci: update query-count snapshots" },
+		};
+		const rules = { ...rule, message: ["style: format", "ci: update query-count snapshots"] };
+		expect(isFormatOnlyPush(rules, { status: "ahead", commits: [format, snapshot] })).toBe(true);
+		expect(isFormatOnlyPush(rule, { status: "ahead", commits: [snapshot] })).toBe(false);
 		expect(isFormatOnlyPush(rule, { status: "diverged", commits: [format] })).toBe(false);
 		expect(
 			isFormatOnlyPush(rule, {

@@ -143,16 +143,18 @@ interface ComparedCommit {
 
 /** Whether a push added only the repository formatter's commits on top of the previous head. */
 export function isFormatOnlyPush(
-	rule: { readonly author: string; readonly message: string },
+	rule: { readonly author: string; readonly message: string | readonly string[] },
 	comparison: { readonly status?: string; readonly commits?: readonly ComparedCommit[] },
 ): boolean {
 	const commits = comparison.commits ?? [];
+	const messages = typeof rule.message === "string" ? [rule.message] : rule.message;
 	return (
 		comparison.status === "ahead" &&
 		commits.length > 0 &&
 		commits.every(
 			(c) =>
-				c.author?.login === rule.author && c.commit?.message?.split("\n", 1)[0] === rule.message,
+				c.author?.login === rule.author &&
+				messages.includes(c.commit?.message?.split("\n", 1)[0] ?? ""),
 		)
 	);
 }

@@ -39,6 +39,21 @@ const base: StatusInput = {
 };
 
 describe("deterministic status", () => {
+	it("judges a head someone else pushed by its own checks and review", () => {
+		const moved = {
+			...base,
+			observedHead: "h2",
+			mergeability: { head: "h2", mergeable: true },
+		};
+		expect(computeStatus(moved).status).toBe("waiting-for-checks");
+		const evidence = {
+			...moved,
+			verifications: [check("test", "h2", "succeeded", "success")],
+			reviews: [{ ...base.reviews[0]!, commit: "h2" }],
+		};
+		expect(computeStatus(evidence).status).toBe("ready-for-human");
+	});
+
 	it("is ready only with current-head checks, review and mergeability", () => {
 		expect(computeStatus(base).status).toBe("ready-for-human");
 		expect(computeStatus({ ...base, reviews: [] }).status).toBe("candidate-published");
@@ -88,12 +103,12 @@ describe("deterministic status", () => {
 			observedHead: "h2",
 			mergeability: { head: "h2", mergeable: true },
 		};
-		expect(computeStatus(onH2).status).toBe("waiting-for-checks");
+		expect(computeStatus(onH2).status).toBe("candidate-published");
 		const covered = computeStatus({ ...onH2, formatParents: { h2: "h1", h1: "h0" } });
 		expect(covered.status).toBe("ready-for-human");
 		expect(covered.reviewedHead).toBe(true);
 		expect(computeStatus({ ...onH2, formatParents: { h1: "h0" } }).status).toBe(
-			"waiting-for-checks",
+			"candidate-published",
 		);
 	});
 

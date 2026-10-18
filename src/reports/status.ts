@@ -188,13 +188,6 @@ export function computeStatus(input: StatusInput): StatusReport {
 			[`publication failed: ${publication.error ?? publication.state}`],
 			"an operator will look at the publication receipt",
 		);
-	if (publishedHead && input.observedHead && !covered.has(publishedHead)) {
-		return report(
-			"waiting-for-checks",
-			[`the branch moved to ${input.observedHead.slice(0, 12)} after publication`],
-			"the new head will need its own checks and review",
-		);
-	}
 	const failedCode = checks.filter((c) => c.state === "failed" && c.classification === "code");
 	if (failedCode.length > 0)
 		return report(

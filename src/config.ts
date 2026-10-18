@@ -49,8 +49,8 @@ export interface PreviewConfig {
 export interface FormatCommitRule {
 	/** The pusher's login, e.g. `emdashbot[bot]`. */
 	readonly author: string;
-	/** The commit message's first line, e.g. `style: format`. */
-	readonly message: string;
+	/** The commit message's first line, e.g. `style: format`, or several such lines. */
+	readonly message: string | readonly string[];
 }
 
 export interface Budgets {

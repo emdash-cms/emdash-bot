@@ -317,7 +317,7 @@ describe("review repair and asynchronous CI", () => {
 
 		const edited = bot.github.commitFiles(REPO, branch, { "notes.md": "x\n" }, "style: format");
 		await push(formatted, edited, "maintainer");
-		const moved = await statusIs(bot, caseId, "waiting-for-checks");
+		const moved = await statusIs(bot, caseId, "candidate-published");
 		expect(moved.head).toBe(edited);
 		expect(moved.reviewedHead).toBe(false);
 	});
