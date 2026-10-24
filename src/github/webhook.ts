@@ -117,6 +117,7 @@ interface Payload {
 		commit_id?: string;
 		state?: string;
 		user?: User;
+		author_association?: string;
 		html_url?: string;
 	};
 	check_run?: {
@@ -246,7 +247,7 @@ export function normalize(
 	const maintainer = isMaintainer(
 		config,
 		sender,
-		payload.comment?.author_association ?? senderAssociation,
+		payload.comment?.author_association ?? payload.review?.author_association ?? senderAssociation,
 	);
 	const intake = intakeAction(config, payload);
 
