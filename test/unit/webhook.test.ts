@@ -144,6 +144,30 @@ describe("webhook admission", () => {
 		expect(review("other-bot[bot]", "CHANGES_REQUESTED")).toHaveProperty("skip");
 	});
 
+	it("hears reviews from maintainers known only by their association", () => {
+		const review = (login: string, association: string) =>
+			normalize(config, "pull_request_review", {
+				action: "submitted",
+				repository,
+				sender: { login },
+				pull_request: { id: 1, number: 3 },
+				review: {
+					id: 2,
+					user: { login },
+					state: "CHANGES_REQUESTED",
+					body: "x",
+					commit_id: "abc",
+					author_association: association,
+				},
+			});
+		expect(review("contributor", "MEMBER")).toMatchObject({
+			kind: "maintainer-review",
+			provenance: "maintainer:association=MEMBER",
+		});
+		expect(review("contributor", "COLLABORATOR")).toMatchObject({ kind: "maintainer-review" });
+		expect(review("drive-by", "NONE")).toHaveProperty("skip");
+	});
+
 	it("does not adopt pull requests from forks", () => {
 		const result = normalize(config, "pull_request", {
 			action: "assigned",
