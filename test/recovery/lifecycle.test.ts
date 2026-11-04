@@ -108,6 +108,8 @@ describe("Pi hosted in a case", () => {
 		expect(during.pending.map((p: any) => p.status)).toEqual(["running", "queued"]);
 		const record = await published(bot, caseId);
 		expect(authorRuns(record)).toHaveLength(2);
+		// The queued comment answers the handoff the author asks for before reaching it.
+		expect(record.log.some((e: any) => e.type === "handoff.answered")).toBe(true);
 		expect(record.handoff).toBeNull();
 	});
 

@@ -503,7 +503,20 @@ export class CaseDO extends DurableObject<Env> {
 			runCheck: (opId, name, args) => this.#runCheck(opId, name, args),
 			submitCandidate: (opId, title, summary, description) =>
 				this.#submitCandidate(opId, title, summary, description),
-			handoff: (opId, reason, nextAction) => this.#handoff(opId, reason, nextAction),
+			handoff: async (opId, reason, nextAction) => {
+				// A message queued behind this run already answers the handoff: it was
+				// submitted (clearing any earlier one) before the author asked.
+				if ((await this.harness.pending()).some((p) => p.status === "queued")) {
+					this.store.putOperation(opId, "handoff", this.store.generation(), "completed", {
+						reason,
+						nextAction,
+						answeredBy: "queued message",
+					});
+					this.store.log("handoff.answered", { reason, by: "queued message" });
+					return;
+				}
+				await this.#handoff(opId, reason, nextAction);
+			},
 			mergeDefaultBranch: (opId) => this.#mergeDefaultBranch(opId),
 			attachScreenshot: (opId, path) => this.#attachScreenshot(opId, path),
 			reply: async (opId, inReplyTo, onIssue, body) => {
@@ -1089,6 +1102,71 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	/**
+	 * What the author needs on taking on an issue beyond its text: when it was
+	 * opened and the discussion so far. An old issue's comments often hold the
+	 * reproduction details, later reports or a maintainer's decision.
+	 */
+	async #issueContext(skipComment?: number): Promise<string> {
+		const identity = this.#identity();
+		if (identity.kind !== "issue" || !identity.issueNumber) return "";
+		const github = this.#github();
+		type Comment = {
+			id?: number;
+			user?: { login?: string } | null;
+			author_association?: string;
+			body?: string | null;
+			html_url?: string;
+			created_at?: string;
+		};
+		const [issue, thread] = await Promise.all([
+			github.raw<{ created_at?: string }>(
+				"GET",
+				github.repoPath(`/issues/${identity.issueNumber}`),
+			),
+			github.raw<Comment[]>(
+				"GET",
+				github.repoPath(`/issues/${identity.issueNumber}/comments?per_page=100`),
+			),
+		]);
+		const sections: string[] = [];
+		const opened = issue.status === 200 ? issue.data.created_at?.slice(0, 10) : undefined;
+		if (opened) sections.push(`The issue was opened on ${opened}.`);
+		const reporter = this.store.getMeta<string>("reporter");
+		const comments = (thread.status === 200 && Array.isArray(thread.data) ? thread.data : [])
+			.filter((c) => {
+				const login = c.user?.login ?? "";
+				return (
+					!!c.body?.trim() &&
+					c.id !== skipComment &&
+					!login.endsWith("[bot]") &&
+					login.toLowerCase() !== this.config.botLogin.toLowerCase()
+				);
+			})
+			.slice(-30);
+		if (comments.length > 0) {
+			let budget = 20_000;
+			const lines = ["Comments on the issue before you were assigned, oldest first:"];
+			for (const c of comments) {
+				const login = c.user?.login ?? "";
+				const role =
+					isMaintainer(this.config, login, c.author_association) !== null
+						? "maintainer"
+						: login.toLowerCase() === reporter?.toLowerCase()
+							? "reporter"
+							: "other user";
+				const text = (c.body ?? "").trim().slice(0, Math.min(3_000, budget));
+				budget -= text.length;
+				lines.push(
+					`- @${login} (${role}${c.created_at ? `, ${c.created_at.slice(0, 10)}` : ""}${c.html_url ? `, ${c.html_url}` : ""}):\n${text.replace(/^/gm, "  > ")}`,
+				);
+				if (budget <= 0) break;
+			}
+			sections.push(lines.join("\n"));
+		}
+		return sections.length > 0 ? `\n\n${sections.join("\n\n")}` : "";
+	}
+
+	/**
 	 * What the author needs on taking over a pull request: its linked issues
 	 * (added to the requirements), any other active case on them, and the
 	 * maintainers' earlier feedback, which arrived before the bot was assigned.
@@ -1643,8 +1721,15 @@ export class CaseDO extends DurableObject<Env> {
 				if (instructions && payload.labelled !== true)
 					await this.#intakeLabel("add", Number(payload.number));
 				const notes = instructions ? " The maintainer's instructions are in the case record." : "";
-				if (identity.kind === "issue")
-					return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}. Its text is in the case record.${notes} Implement it and submit a candidate.`;
+				if (identity.kind === "issue") {
+					const context = await this.#issueContext(instructions?.commentId).catch(
+						(error: unknown) => {
+							this.store.log("issue.context-failed", { error: errorMessage(error) });
+							return "";
+						},
+					);
+					return `## Assigned\nFrom: ${from}\n\nYou have been assigned ${what}. Its text is in the case record.${notes} Implement it and submit a candidate.${context}`;
+				}
 				const author = this.store.getMeta<string>("prAuthor");
 				const context = await this.#adoptionContext().catch((error: unknown) => {
 					this.store.log("adoption.context-failed", { error: errorMessage(error) });

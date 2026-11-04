@@ -531,6 +531,7 @@ export class FakeGitHub {
 				state: issue.state,
 				user: { login: issue.user },
 				html_url: `https://github.com/${repo}/issues/${number}`,
+				...(issue.createdAt ? { created_at: new Date(issue.createdAt).toISOString() } : {}),
 			});
 		}
 		if (method === "POST" && (match = rest.match(/^\/issues\/(\d+)\/comments$/))) {

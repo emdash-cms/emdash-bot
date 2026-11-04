@@ -126,6 +126,46 @@ describe("assignment by a comment addressing the bot", () => {
 	});
 });
 
+describe("taking on an issue with earlier discussion", () => {
+	it("briefs the author with when the issue was opened and its comments, without the bot's own", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(70);
+		bot.github.issues.set(70, {
+			title: "Greeting lacks punctuation",
+			body: "Visitors see 'Hello Ada' with no comma.",
+			user: "reporter",
+			state: "open",
+			createdAt: Date.parse("2025-03-14T10:00:00Z"),
+		});
+		bot.github.comments.push(
+			{ id: 951, issue: 70, body: "Still happens with an empty name.", user: "reporter" },
+			{
+				id: 952,
+				issue: 70,
+				body: "Keep the exclamation mark.",
+				user: "maintainer",
+				association: "MEMBER",
+			},
+			{ id: 953, issue: 70, body: "Earlier bot notice.", user: "emdash-bot-pi[bot]" },
+		);
+		await bot.webhook(
+			"issues",
+			assignIssue({ issueId: 70, number: 70, script: { rounds: [{ steps: [] }] } }),
+		);
+		await bot.waitFor("author briefed", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.some((e: any) => e.type === "author.idle") ? r : null;
+		});
+		const text = await transcript(bot, caseId);
+		expect(text).toContain("The issue was opened on 2025-03-14.");
+		expect(text).toContain("@reporter (reporter");
+		expect(text).toContain("Still happens with an empty name.");
+		expect(text).toContain("@maintainer (maintainer");
+		expect(text).toContain("Keep the exclamation mark.");
+		expect(text).not.toContain("Earlier bot notice.");
+	});
+});
+
 describe("taking over a contributor's pull request", () => {
 	it("briefs the author with the linked issue, earlier maintainer feedback and another active case", async () => {
 		bot = await startBot();
