@@ -345,6 +345,15 @@ export class RepositoryDO extends DurableObject<Env> {
 		return rows.toArray().map((r) => JSON.parse(r.summary as string) as CaseSummary);
 	}
 
+	/** Every issue case created since `since`, finished or not, for the stats page. */
+	async issueCaseSummaries(since: number): Promise<CaseSummary[]> {
+		return this.ctx.storage.sql
+			.exec(`SELECT summary FROM case_summaries`)
+			.toArray()
+			.map((r) => JSON.parse(r.summary as string) as CaseSummary)
+			.filter((s) => s.kind === "issue" && s.createdAt >= since);
+	}
+
 	/** Every case this repository has routed to, for rebuilding the board. */
 	async caseIds(): Promise<string[]> {
 		return this.ctx.storage.sql

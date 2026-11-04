@@ -68,6 +68,36 @@ describe("auto-intake", () => {
 		expect(record.log.some((e: any) => e.type === "intake-label.applied")).toBe(true);
 	});
 
+	it("counts the issues opened, and the one the bot took on, on the stats page", async () => {
+		bot = await startBot({ autoIntake: true });
+		const caseId = issueCaseId(81);
+		const day = 24 * 3_600_000;
+		bot.github.issues.set(80, {
+			title: "Old",
+			body: "",
+			user: "reporter",
+			state: "open",
+			createdAt: Date.now() - 20 * day,
+		});
+		bot.github.issues.set(81, { title: "Report", body: "", user: "reporter", state: "open" });
+		await bot.webhook("issues", opened(81, 81, fixScript()));
+		await bot.waitFor("published", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
+		});
+		const stats = await bot.waitFor("stats", async () => {
+			const s = (await (
+				await bot!.mf.dispatchFetch(`https://bot.test/api/stats?poll=${Date.now()}`)
+			).json()) as any;
+			return s.week.counts.progress === 1 ? s : null;
+		});
+		expect(stats.week.counts).toEqual({ fixed: 0, progress: 1, unfixed: 0, untouched: 0 });
+		expect(stats.month.counts).toEqual({ fixed: 0, progress: 1, unfixed: 0, untouched: 1 });
+		expect(stats.weeks).toHaveLength(12);
+		const html = await (await bot.mf.dispatchFetch("https://bot.test/stats")).text();
+		expect(html).toContain("How issues have been handled");
+	});
+
 	it("lets the author decline an issue triage passed, with a message", async () => {
 		bot = await startBot({ autoIntake: true });
 		const caseId = issueCaseId(82);
