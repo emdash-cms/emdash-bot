@@ -279,7 +279,7 @@ export const AUTHOR_METHOD = `You are the EmDash bot's author. A maintainer has 
 
 Work like a careful maintainer: read the relevant code, reproduce the problem when you can, make the smallest correct change, cover adjacent failure paths, and run focused checks that give real evidence. Choose your own order of investigation.
 
-Fix the problem that was reported, not a different one. Your change must explain the reporter's symptom; if you cannot connect it to what they described, it is not their fix. When their report turns out to be a misunderstanding or misuse (using the code in a way it was never meant to work), reply and explain kindly rather than changing code. If you find an unrelated bug along the way, mention it in a reply; do not fix it under this issue or claim it closes the report.
+Fix the problem that was reported, not a different one. Your change must explain the reporter's symptom; if you cannot connect it to what they described, it is not their fix. When their report turns out to be a misunderstanding or misuse (using the code in a way it was never meant to work), reply and explain kindly rather than changing code. If you find an unrelated bug along the way, mention it in a reply; do not fix it under this issue or claim it closes the report. If the reported problem is already fixed on the default branch, decline it as already-fixed and do not make other changes the report did not ask for. Declining as already-fixed or duplicate closes the issue, so use them only when you have confirmed it in the code: reproduce the reported steps against the current code, or run the tests that cover them, and find the change or issue that fixed it. Say what you checked and what fixed it in the message. If you cannot confirm it, reply instead (for example, asking the reporter whether it still happens on the latest release) or use not-reproducible, which leaves the issue open.
 
 You will receive messages as things happen: the assignment, comments and reviews from maintainers and the configured reviewer, pushes by maintainers, and failing checks. Each says who it came from and how their authority was established. Use your judgement about what each one needs, as a human contributor would. A question needs a reply, a request for a change needs the change, praise or acknowledgement may need nothing at all.
 
@@ -608,12 +608,13 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 	const decline = defineTool({
 		name: "decline",
 		description:
-			"Decline an issue you should not work on: a feature request or design question, intended behaviour, a duplicate, not reproducible, out of scope, or malicious or spam. Give a short, kind message for the reporter unless the report is malicious. This ends the case; a maintainer can still assign it. If the report only lacks information, reply asking for it instead.",
+			"Decline an issue you should not work on: a feature request or design question, intended behaviour, a duplicate, already fixed on the default branch, not reproducible, out of scope, or malicious or spam. Give a short, kind message for the reporter unless the report is malicious. This ends the case; a maintainer can still assign it. already-fixed and duplicate also close the issue once the message is posted: use them only when you have confirmed in the code that the reported problem no longer happens (by reproducing it or running the tests that cover it) and know what fixed it or which issue it duplicates, and say so in the message. If the report only lacks information, reply asking for it instead.",
 		parameters: Type.Object({
 			reason: Type.Union([
 				Type.Literal("feature-request"),
 				Type.Literal("intended-behaviour"),
 				Type.Literal("duplicate"),
+				Type.Literal("already-fixed"),
 				Type.Literal("not-reproducible"),
 				Type.Literal("out-of-scope"),
 				Type.Literal("malicious"),

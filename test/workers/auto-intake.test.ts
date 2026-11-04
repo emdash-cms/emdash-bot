@@ -134,6 +134,55 @@ describe("auto-intake", () => {
 		expect(bot.github.labels.get(82)?.has("emdash-bot") ?? false).toBe(false);
 	});
 
+	it("closes an issue the author declines as already fixed, after posting its message", async () => {
+		bot = await startBot({ autoIntake: true });
+		const caseId = issueCaseId(92);
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{
+							tool: "decline",
+							args: {
+								reason: "already-fixed",
+								message: "This was fixed by #12; the regression test for it passes on main.",
+							},
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", opened(92, 92, script));
+		await declined(bot, caseId);
+		const closed = await bot.waitFor("issue closed", async () => bot!.github.closedIssues.get(92));
+		expect(closed).toEqual({ stateReason: "completed", comments: 1 });
+		expect(bot.github.comments.find((c) => c.issue === 92)!.body).toContain("fixed by #12");
+	});
+
+	it("leaves an issue open when the author declines it as not reproducible", async () => {
+		bot = await startBot({ autoIntake: true });
+		const caseId = issueCaseId(93);
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{
+							tool: "decline",
+							args: { reason: "not-reproducible", message: "I could not reproduce this on main." },
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", opened(93, 93, script));
+		await declined(bot, caseId);
+		await bot.waitFor("decline message", async () =>
+			bot!.github.comments.find((c) => c.issue === 93),
+		);
+		await new Promise((r) => setTimeout(r, 1000));
+		expect(bot.github.closedIssues.has(93)).toBe(false);
+	});
+
 	it("lets the author decline a malicious report silently", async () => {
 		bot = await startBot({ autoIntake: true });
 		const caseId = issueCaseId(83);
