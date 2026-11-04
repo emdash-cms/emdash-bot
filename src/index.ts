@@ -5,6 +5,7 @@ import { writeToken } from "./github/auth.ts";
 import { GitHubClient } from "./github/client.ts";
 import { addressesBot, botHandle, verifySignature, normalize } from "./github/webhook.ts";
 import { renderBoard } from "./reports/dashboard.ts";
+import { type OpenedIssue, STATS_WEEKS, issueStats, renderStats } from "./reports/stats.ts";
 import { constantTimeEqual, json, rpc, sha256Hex, text } from "./util.ts";
 import { AUTHOR_METHOD } from "./tools/case-tools.ts";
 import authorSkill from "../skills/emdash-author/SKILL.md?raw";
@@ -208,6 +209,84 @@ async function board(
 					{ headers: { ...headers, "content-type": "text/html; charset=utf-8" } },
 				)
 			: new Response(JSON.stringify({ generatedAt: new Date().toISOString(), cases: summaries }), {
+					headers: { ...headers, "content-type": "application/json" },
+				});
+	if (cache) ctx.waitUntil(cache.put(cacheKey, response.clone()));
+	return response;
+}
+
+/** Issues opened in a repository since `since`, newest first, pull requests left out. */
+async function openedIssues(
+	env: Env,
+	config: BotConfig,
+	repo: string,
+	since: number,
+): Promise<OpenedIssue[]> {
+	const github = new GitHubClient(config.githubApiUrl, () => writeToken(env, config), repo);
+	const issues: OpenedIssue[] = [];
+	for (let page = 1; page <= 30; page++) {
+		const batch = await github.request<
+			Array<{ number: number; created_at: string; pull_request?: unknown }>
+		>(
+			"GET",
+			github.repoPath(`/issues?state=all&sort=created&direction=desc&per_page=100&page=${page}`),
+		);
+		for (const item of batch) {
+			const createdAt = Date.parse(item.created_at);
+			if (createdAt < since) return issues;
+			if (!item.pull_request) issues.push({ number: item.number, createdAt });
+		}
+		if (batch.length < 100) break;
+	}
+	return issues;
+}
+
+/**
+ * Issue stats (`/stats`, and its data at `/api/stats`): issues opened in the
+ * last few weeks and where each stands with the bot. Cached for five minutes,
+ * since each miss lists issues from GitHub.
+ */
+async function stats(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+	url: URL,
+): Promise<Response> {
+	const cacheKey = new Request(url.toString(), { method: "GET" });
+	const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
+	const hit = await cache?.match(cacheKey);
+	if (hit) return hit;
+	const config = readConfig(env);
+	const now = Date.now();
+	const since = now - STATS_WEEKS * 7 * 24 * 3_600_000;
+	const [issues, summaries] = await Promise.all([
+		Promise.all(
+			config.repositories.map(async (repo) =>
+				(await openedIssues(env, config, repo.fullName, since)).map((i) => ({
+					...i,
+					repo: repo.fullName,
+				})),
+			),
+		),
+		Promise.all(
+			config.repositories.map((repo) =>
+				repositories(env).getByName(String(repo.id)).issueCaseSummaries(since),
+			),
+		),
+	]);
+	const result = issueStats(
+		config.repositories.map((r) => r.fullName),
+		issues.flat(),
+		summaries.flat(),
+		now,
+	);
+	const headers = { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" };
+	const response =
+		url.pathname === "/stats"
+			? new Response(renderStats(result), {
+					headers: { ...headers, "content-type": "text/html; charset=utf-8" },
+				})
+			: new Response(JSON.stringify(result), {
 					headers: { ...headers, "content-type": "application/json" },
 				});
 	if (cache) ctx.waitUntil(cache.put(cacheKey, response.clone()));
@@ -449,6 +528,10 @@ export default {
 			);
 		if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/api/cases"))
 			return board(request, env, ctx, url);
+		if (request.method === "GET" && (url.pathname === "/stats" || url.pathname === "/api/stats"))
+			return stats(request, env, ctx, url).catch((error: unknown) =>
+				json({ error: error instanceof Error ? error.message : String(error) }, 502),
+			);
 		if (request.method === "GET" && url.pathname.startsWith("/screenshots/"))
 			return screenshot(env, url);
 		return json({ error: "not found" }, 404);

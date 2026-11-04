@@ -36,7 +36,10 @@ export class FakeGitHub {
 	comments: Array<{ id: number; issue: number; body: string; user: string; association?: string }> =
 		[];
 	/** Issues by number, for reads of a single issue (e.g. one a pull request closes). */
-	issues = new Map<number, { title: string; body: string; user: string; state: string }>();
+	issues = new Map<
+		number,
+		{ title: string; body: string; user: string; state: string; createdAt?: number }
+	>();
 	checkRuns: FakeCheckRun[] = [];
 	/** Labels by issue or PR number. */
 	labels = new Map<number, Set<string>>();
@@ -504,6 +507,17 @@ export class FakeGitHub {
 						user: { login: c.user },
 						author_association: c.association ?? "NONE",
 					})),
+			);
+		}
+		// Issues newest first, as `sort=created&direction=desc` lists them; one page.
+		if (method === "GET" && rest === "/issues") {
+			return this.#json(
+				[...this.issues]
+					.map(([number, issue]) => ({
+						number,
+						created_at: new Date(issue.createdAt ?? Date.now()).toISOString(),
+					}))
+					.sort((a, b) => b.created_at.localeCompare(a.created_at)),
 			);
 		}
 		if (method === "GET" && (match = rest.match(/^\/issues\/(\d+)$/))) {
