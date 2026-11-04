@@ -36,7 +36,10 @@ export class FakeGitHub {
 	comments: Array<{ id: number; issue: number; body: string; user: string; association?: string }> =
 		[];
 	/** Issues by number, for reads of a single issue (e.g. one a pull request closes). */
-	issues = new Map<number, { title: string; body: string; user: string; state: string }>();
+	issues = new Map<
+		number,
+		{ title: string; body: string; user: string; state: string; createdAt?: string }
+	>();
 	checkRuns: FakeCheckRun[] = [];
 	/** Labels by issue or PR number. */
 	labels = new Map<number, Set<string>>();
@@ -517,6 +520,7 @@ export class FakeGitHub {
 				state: issue.state,
 				user: { login: issue.user },
 				html_url: `https://github.com/${repo}/issues/${number}`,
+				...(issue.createdAt ? { created_at: issue.createdAt } : {}),
 			});
 		}
 		if (method === "POST" && (match = rest.match(/^\/issues\/(\d+)\/comments$/))) {
