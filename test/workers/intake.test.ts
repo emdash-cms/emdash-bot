@@ -135,7 +135,7 @@ describe("taking on an issue with earlier discussion", () => {
 			body: "Visitors see 'Hello Ada' with no comma.",
 			user: "reporter",
 			state: "open",
-			createdAt: "2025-03-14T10:00:00Z",
+			createdAt: Date.parse("2025-03-14T10:00:00Z"),
 		});
 		bot.github.comments.push(
 			{ id: 951, issue: 70, body: "Still happens with an empty name.", user: "reporter" },
