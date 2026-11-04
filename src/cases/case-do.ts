@@ -503,7 +503,20 @@ export class CaseDO extends DurableObject<Env> {
 			runCheck: (opId, name, args) => this.#runCheck(opId, name, args),
 			submitCandidate: (opId, title, summary, description) =>
 				this.#submitCandidate(opId, title, summary, description),
-			handoff: (opId, reason, nextAction) => this.#handoff(opId, reason, nextAction),
+			handoff: async (opId, reason, nextAction) => {
+				// A message queued behind this run already answers the handoff: it was
+				// submitted (clearing any earlier one) before the author asked.
+				if ((await this.harness.pending()).some((p) => p.status === "queued")) {
+					this.store.putOperation(opId, "handoff", this.store.generation(), "completed", {
+						reason,
+						nextAction,
+						answeredBy: "queued message",
+					});
+					this.store.log("handoff.answered", { reason, by: "queued message" });
+					return;
+				}
+				await this.#handoff(opId, reason, nextAction);
+			},
 			mergeDefaultBranch: (opId) => this.#mergeDefaultBranch(opId),
 			attachScreenshot: (opId, path) => this.#attachScreenshot(opId, path),
 			reply: async (opId, inReplyTo, onIssue, body) => {
