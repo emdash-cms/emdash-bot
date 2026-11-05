@@ -174,6 +174,13 @@ const STATUS_LABELS = {
 } as const;
 const MANAGED_STATUS_LABELS = new Set<string>(Object.values(STATUS_LABELS));
 
+type IssueCloseReason = "completed" | "duplicate";
+/** The author's declines that close the issue: the work is done, here or elsewhere. */
+const CLOSING_DECLINES: Readonly<Record<string, IssueCloseReason>> = {
+	"already-fixed": "completed",
+	duplicate: "duplicate",
+};
+
 export class CaseDO extends DurableObject<Env> {
 	readonly config: BotConfig;
 	readonly store: CaseStore;
@@ -562,7 +569,8 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.log("review.completed", { tree: treeHash, reports });
 			},
 			recordReporterConfirmation: (commentId) => this.#recordReporterConfirmation(commentId),
-			decline: (opId, reason, message) => this.#decline(opId, reason, message),
+			decline: (opId, reason, message) =>
+				this.#decline(opId, reason, message, CLOSING_DECLINES[reason]),
 			updateWorkPlan: async (input) => {
 				const plan = updateWorkPlan(
 					this.store.getMeta<WorkPlan>("workPlan") ?? null,
@@ -1322,8 +1330,20 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	/** The author declines the issue: optionally say why on it, then stop working the case. */
-	async #decline(opId: string, reason: string, message: string | undefined): Promise<void> {
+	/**
+	 * End the case without working on it. `close` closes the issue once the
+	 * message is posted: only for the author's own declines, which it confirmed
+	 * in the code, never for triage.
+	 */
+	async #decline(
+		opId: string,
+		reason: string,
+		message: string | undefined,
+		close?: IssueCloseReason,
+	): Promise<void> {
 		if (message?.trim()) this.#queueReply(`${opId}:message`, undefined, true, message);
+		if (close && message?.trim() && this.#identity().kind === "issue")
+			this.store.setMeta("closeIssue", { opId, stateReason: close, done: false });
 		const handoff: Handoff = {
 			reason: `declined: ${reason}`,
 			nextAction: `a maintainer can apply the \`${this.config.intakeLabel}\` label to assign it anyway`,
@@ -1394,12 +1414,35 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	async #repliesJob(): Promise<LifecycleJobOutcome | void> {
+		if (this.#dryRun()) return;
+		await this.#postReplies();
+		await this.#closeDeclinedIssue();
+	}
+
+	/** Close the issue a decline asked to close, after its message is posted. */
+	async #closeDeclinedIssue(): Promise<void> {
+		const close = this.store.getMeta<{
+			opId: string;
+			stateReason: IssueCloseReason;
+			done: boolean;
+		}>("closeIssue");
+		const number = this.#identity().issueNumber;
+		if (!close || close.done || !number) return;
+		const github = this.#github();
+		await github.request("PATCH", github.repoPath(`/issues/${number}`), {
+			state: "closed",
+			state_reason: close.stateReason,
+		});
+		this.store.setMeta("closeIssue", { ...close, done: true });
+		this.store.log("issue.closed", { number, stateReason: close.stateReason });
+	}
+
+	async #postReplies(): Promise<void> {
 		const intents = this.store.getMeta<ReplyIntent[]>("replyIntents") ?? [];
 		const pending = intents.filter((i) => i.status === "pending");
 		if (pending.length === 0) return;
 		const identity = this.#identity();
 		const prNumber = this.store.getMeta<number>("pr") ?? identity.prNumber;
-		if (this.#dryRun()) return;
 		const github = this.#github();
 		for (const intent of pending) {
 			if (intent.generation !== this.store.generation()) {

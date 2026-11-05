@@ -40,6 +40,8 @@ export class FakeGitHub {
 		number,
 		{ title: string; body: string; user: string; state: string; createdAt?: number }
 	>();
+	/** Issues closed through the API, with how many comments the issue had when it closed. */
+	closedIssues = new Map<number, { stateReason: string; comments: number }>();
 	checkRuns: FakeCheckRun[] = [];
 	/** Labels by issue or PR number. */
 	labels = new Map<number, Set<string>>();
@@ -543,6 +545,18 @@ export class FakeGitHub {
 			};
 			this.comments.push(comment);
 			return this.#json(comment, 201);
+		}
+		if (method === "PATCH" && (match = rest.match(/^\/issues\/(\d+)$/))) {
+			const number = Number(match[1]);
+			if (body?.state === "closed") {
+				this.closedIssues.set(number, {
+					stateReason: typeof body.state_reason === "string" ? body.state_reason : "completed",
+					comments: this.comments.filter((c) => c.issue === number).length,
+				});
+				const issue = this.issues.get(number);
+				if (issue) issue.state = "closed";
+			}
+			return this.#json({ number, state: body?.state ?? "open" });
 		}
 		if (method === "PATCH" && (match = rest.match(/^\/issues\/comments\/(\d+)$/))) {
 			const comment = this.comments.find((c) => c.id === Number(match![1]));
