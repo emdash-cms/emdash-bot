@@ -147,6 +147,13 @@ describe("taking on an issue with earlier discussion", () => {
 				association: "MEMBER",
 			},
 			{ id: 953, issue: 70, body: "Earlier bot notice.", user: "emdash-bot-pi[bot]" },
+			{
+				id: 954,
+				issue: 70,
+				body: "<!-- old-bot:status -->\nTimed out after reproducing it in greet.js.",
+				user: "old-bot[bot]",
+			},
+			{ id: 955, issue: 70, body: "Dependabot noise.", user: "dependabot[bot]" },
 		);
 		await bot.webhook(
 			"issues",
@@ -163,6 +170,10 @@ describe("taking on an issue with earlier discussion", () => {
 		expect(text).toContain("@maintainer (maintainer");
 		expect(text).toContain("Keep the exclamation mark.");
 		expect(text).not.toContain("Earlier bot notice.");
+		expect(text).toContain("@old-bot[bot] (previous bot, unverified");
+		expect(text).toContain("Timed out after reproducing it in greet.js.");
+		expect(text).not.toContain("old-bot:status");
+		expect(text).not.toContain("Dependabot noise.");
 	});
 });
 
