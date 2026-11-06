@@ -1140,13 +1140,15 @@ export class CaseDO extends DurableObject<Env> {
 		const opened = issue.status === 200 ? issue.data.created_at?.slice(0, 10) : undefined;
 		if (opened) sections.push(`The issue was opened on ${opened}.`);
 		const reporter = this.store.getMeta<string>("reporter");
+		const previousBot = (login: string) =>
+			this.config.previousBots.some((b) => b.toLowerCase() === login.toLowerCase());
 		const comments = (thread.status === 200 && Array.isArray(thread.data) ? thread.data : [])
 			.filter((c) => {
 				const login = c.user?.login ?? "";
 				return (
 					!!c.body?.trim() &&
 					c.id !== skipComment &&
-					!login.endsWith("[bot]") &&
+					(!login.endsWith("[bot]") || previousBot(login)) &&
 					login.toLowerCase() !== this.config.botLogin.toLowerCase()
 				);
 			})
@@ -1154,15 +1156,23 @@ export class CaseDO extends DurableObject<Env> {
 		if (comments.length > 0) {
 			let budget = 20_000;
 			const lines = ["Comments on the issue before you were assigned, oldest first:"];
+			if (comments.some((c) => previousBot(c.user?.login ?? "")))
+				lines.push(
+					"Comments marked previous bot are from an earlier automated bot that worked on this issue. Its findings and any work it describes are unverified, and work it did not publish is not in your checkout: check them against the code before relying on them.",
+				);
 			for (const c of comments) {
 				const login = c.user?.login ?? "";
-				const role =
-					isMaintainer(this.config, login, c.author_association) !== null
+				const role = previousBot(login)
+					? "previous bot, unverified"
+					: isMaintainer(this.config, login, c.author_association) !== null
 						? "maintainer"
 						: login.toLowerCase() === reporter?.toLowerCase()
 							? "reporter"
 							: "other user";
-				const text = (c.body ?? "").trim().slice(0, Math.min(3_000, budget));
+				const text = (c.body ?? "")
+					.replace(/<!--[\s\S]*?-->/g, "")
+					.trim()
+					.slice(0, Math.min(3_000, budget));
 				budget -= text.length;
 				lines.push(
 					`- @${login} (${role}${c.created_at ? `, ${c.created_at.slice(0, 10)}` : ""}${c.html_url ? `, ${c.html_url}` : ""}):\n${text.replace(/^/gm, "  > ")}`,

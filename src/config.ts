@@ -105,6 +105,11 @@ export interface BotConfig {
 	readonly maintainers: readonly string[];
 	/** Logins of the configured independent reviewer. */
 	readonly reviewers: readonly string[];
+	/**
+	 * Logins of bots that worked on issues before this one. Their comments on an
+	 * issue reach the author as earlier, unverified findings.
+	 */
+	readonly previousBots: readonly string[];
 	/** `provider:id` of the author model. */
 	readonly authorModel: string;
 	/** Optional helper model for the author's `delegate` tool, `provider:id`. */
@@ -187,6 +192,7 @@ export function readConfig(env: { BOT_CONFIG?: unknown }): BotConfig {
 		defaultRepository: raw.defaultRepository,
 		maintainers: raw.maintainers ?? [],
 		reviewers: raw.reviewers ?? [],
+		previousBots: raw.previousBots ?? [],
 		authorModel: raw.authorModel,
 		childModel: raw.childModel ?? null,
 		thinkingLevel: raw.thinkingLevel,

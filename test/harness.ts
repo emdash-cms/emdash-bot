@@ -65,6 +65,7 @@ export function testConfig(gitRemoteBase: string, overrides: Record<string, unkn
 		],
 		maintainers: ["maintainer"],
 		reviewers: [REVIEWER],
+		previousBots: ["old-bot[bot]"],
 		authorModel: "scripted:author",
 		thinkingLevel: "off",
 		reconcileMs: 250,
