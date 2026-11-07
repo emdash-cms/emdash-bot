@@ -437,6 +437,57 @@ describe("review repair and asynchronous CI", () => {
 		expect(bot.github.git(REPO, ["diff", "--name-only", pushed, head])).toBe("greet.js");
 	});
 
+	it("adopts a maintainer's push that already holds the candidate, instead of stopping", async () => {
+		bot = await startBot({ repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }] });
+		const caseId = issueCaseId(42);
+		const branch = "emdash-bot/issue-42";
+		const script = {
+			rounds: [
+				...fixScript().rounds,
+				{
+					steps: [
+						{ tool: "merge_default_branch", args: {} },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: greeting", summary: "Merged main." },
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 42, number: 42, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const published = bot.github.head(REPO, branch)!;
+		const main = bot.github.commitFiles(REPO, "main", { "notes.md": "x\n" }, "docs: notes");
+		// The maintainer merges main by hand, as the bot is about to.
+		const tree = bot.github.git(REPO, ["merge-tree", "--write-tree", published, main]);
+		const identity = {
+			GIT_AUTHOR_NAME: "Maintainer",
+			GIT_AUTHOR_EMAIL: "m@example.com",
+			GIT_COMMITTER_NAME: "Maintainer",
+			GIT_COMMITTER_EMAIL: "m@example.com",
+		};
+		const merge = bot.github.git(
+			REPO,
+			["commit-tree", tree, "-p", published, "-p", main, "-m", "Merge branch 'main'"],
+			{ env: identity },
+		);
+		bot.github.git(REPO, ["update-ref", `refs/heads/${branch}`, merge]);
+		await bot.webhook("pull_request", {
+			action: "synchronize",
+			sender: { login: "maintainer" },
+			before: published,
+			after: merge,
+			pull_request: { id: 9000 + pr, number: pr, head: { ref: branch, sha: merge } },
+		});
+		const second = await publishedCount(bot, caseId, 2);
+		expect(second.publications.at(-1).commitSha).toBe(merge);
+		expect(bot.github.head(REPO, branch)).toBe(merge);
+		expect(second.log.some((e: any) => e.type === "publication.adopted")).toBe(true);
+		expect(second.handoff).toBeFalsy();
+	});
+
 	it("labels the issue and PR awaiting the reporter when ready, with area labels from changed paths", async () => {
 		bot = await startBot({
 			repositories: [

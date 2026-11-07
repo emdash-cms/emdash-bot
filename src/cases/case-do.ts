@@ -3292,7 +3292,9 @@ export class CaseDO extends DurableObject<Env> {
 			(!publication ||
 				publication.state === "intent" ||
 				publication.state === "commit-created" ||
-				publication.state === "ref-updated")
+				publication.state === "ref-updated" ||
+				// A stopped publication may since have been pushed by someone else.
+				publication.state === "needs-human")
 		) {
 			await this.#schedule(
 				"publish",
