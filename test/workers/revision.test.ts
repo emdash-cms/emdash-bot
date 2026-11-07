@@ -512,6 +512,68 @@ describe("review repair and asynchronous CI", () => {
 		expect(JSON.stringify(logResult.content)).not.toContain("install step 0\\n");
 	});
 
+	it("gives ci_log a check run's annotations when the check has no log", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(36);
+		const branch = "emdash-bot/issue-36";
+		const script = {
+			rounds: [
+				twoRoundScript.rounds[0],
+				{
+					steps: [
+						{ tool: "ci_log", args: { checkRunId: 4343 } },
+						{ tool: "write", args: REVISED },
+						{ tool: "submit_candidate", args: { title: "fix: greeting", summary: "Repair." } },
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 36, number: 36, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, branch)!;
+		bot.github.annotations.set(4343, [
+			{
+				path: "greet.test.js",
+				start_line: 193,
+				annotation_level: "failure",
+				message: "'https://example.com' may be followed by an arbitrary host name.",
+			},
+		]);
+		await checkRun(bot, pr, branch, head, "CodeQL", "failure", "1 high", 4343);
+		await publishedCount(bot, caseId, 2);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const logResult = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.find((m: any) => m.role === "toolResult" && m.toolName === "ci_log");
+		expect(JSON.stringify(logResult.content)).toContain(
+			"greet.test.js:193 [failure] 'https://example.com' may be followed by an arbitrary host name.",
+		);
+	});
+
+	it("ends the case when its issue closes after its pull request already closed", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(37);
+		await bot.webhook("issues", assignIssue({ issueId: 37, number: 37, script: twoRoundScript }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pull = bot.github.pulls.find((p) => p.number === first.publications[0].prNumber)!;
+		const closeIssue = () =>
+			bot!.webhook("issues", {
+				action: "closed",
+				sender: { login: "maintainer" },
+				issue: { id: 37, number: 37 },
+			});
+		// While the pull request is open, closing the issue leaves the case to it.
+		await closeIssue();
+		expect((await bot.inspect(caseId)).state).toBe("active");
+		pull.state = "closed";
+		pull.merged_at = new Date().toISOString();
+		await closeIssue();
+		await bot.waitFor("terminal", async () =>
+			(await bot!.inspect(caseId)).state === "terminal" ? true : null,
+		);
+	});
+
 	it("sends code failures on the current head to the author, which repairs them", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(33);

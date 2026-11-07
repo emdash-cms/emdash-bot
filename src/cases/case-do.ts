@@ -1813,10 +1813,16 @@ export class CaseDO extends DurableObject<Env> {
 				return null;
 			case "closed": {
 				const isIssue = payload.issue === true;
-				if (isIssue && this.store.publications().some((p) => p.state === "pr-ensured")) return null;
+				let merged = payload.merged === true;
+				// Closing the issue leaves an open pull request's fate to that pull request.
+				if (isIssue && this.store.publications().some((p) => p.state === "pr-ensured")) {
+					const pr = await this.#pullRequestState();
+					if (!pr || pr.open) return null;
+					merged = pr.merged;
+				}
 				this.store.setMeta("state", "terminal");
 				this.store.setMeta("generation", this.store.generation() + 1);
-				this.store.log("case.terminal", { merged: payload.merged === true, issue: isIssue });
+				this.store.log("case.terminal", { merged, issue: isIssue });
 				await this.#stopAuthor();
 				await this.#schedule("report", Date.now());
 				return null;
@@ -2027,13 +2033,38 @@ export class CaseDO extends DurableObject<Env> {
 		return null;
 	}
 
+	/** Whether the case's pull request is still open; null if unknown. */
+	async #pullRequestState(): Promise<{ open: boolean; merged: boolean } | null> {
+		const pr = this.store.getMeta<number>("pr");
+		if (!pr) return null;
+		try {
+			const data = await this.#github().request<{ state: string; merged: boolean }>(
+				"GET",
+				this.#github().repoPath(`/pulls/${pr}`),
+			);
+			return { open: data.state === "open", merged: data.merged === true };
+		} catch (error) {
+			this.store.log("observe.failed", { error: errorMessage(error) });
+			return null;
+		}
+	}
+
 	/** The tail of a CI job's log, for a check run this case has seen. */
 	async #ciLog(checkRunId: number, lines = 200): Promise<string> {
 		if (!this.store.verification(`check:${checkRunId}`))
 			throw new Error(`check run ${checkRunId} is not one of this case's checks`);
 		const log = await this.#github().jobLog(checkRunId);
-		if (log === null)
+		if (log === null) {
+			const annotations = await this.#github()
+				.checkAnnotations(checkRunId)
+				.catch(() => []);
+			this.store.log("ci.log", { checkRunId, lines: 0, annotations: annotations.length });
+			if (annotations.length)
+				return `No log is available for check run ${checkRunId}; its annotations:\n\n${annotations
+					.map((a) => `${a.path}:${a.line} [${a.level}] ${a.message}`)
+					.join("\n")}`;
 			return `No log is available for check run ${checkRunId} (expired, or not a GitHub Actions job).`;
+		}
 		const all = log
 			// oxlint-disable-next-line no-control-regex -- ANSI colour codes
 			.replace(/\x1b\[[0-9;]*m/g, "")

@@ -96,6 +96,21 @@ export class GitHubClient {
 		return `/repos/${this.repo}${suffix}`;
 	}
 
+	/** A check run's annotations: where code scanners such as CodeQL report what they found. */
+	async checkAnnotations(
+		checkRunId: number,
+	): Promise<Array<{ path: string; line: number; level: string; message: string }>> {
+		const annotations = await this.request<
+			Array<{ path: string; start_line: number; annotation_level: string; message: string }>
+		>("GET", this.repoPath(`/check-runs/${checkRunId}/annotations?per_page=50`));
+		return annotations.map((a) => ({
+			path: a.path,
+			line: a.start_line,
+			level: a.annotation_level,
+			message: a.message,
+		}));
+	}
+
 	async branchHead(branch: string): Promise<string | null> {
 		const response = await this.raw<{ object?: { sha?: string } }>(
 			"GET",
