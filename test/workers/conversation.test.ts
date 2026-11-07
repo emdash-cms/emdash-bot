@@ -32,7 +32,11 @@ const script = {
 				{ tool: "write", args: FIX_GREETING },
 				{
 					tool: "submit_candidate",
-					args: { title: "fix: punctuate the greeting", summary: "Punctuation." },
+					args: {
+						resolves: "fully",
+						title: "fix: punctuate the greeting",
+						summary: "Punctuation.",
+					},
 				},
 			],
 		},

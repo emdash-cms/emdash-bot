@@ -212,7 +212,10 @@ describe("auto-intake", () => {
 				{
 					steps: [
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "fix: greeting", summary: "Done." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: greeting", summary: "Done." },
+						},
 					],
 				},
 			],

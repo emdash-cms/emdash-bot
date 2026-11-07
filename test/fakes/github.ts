@@ -47,6 +47,11 @@ export class FakeGitHub {
 	labels = new Map<number, Set<string>>();
 	/** Actions job logs by job (check run) id. */
 	jobLogs = new Map<number, string>();
+	/** Check run annotations by check run id. */
+	annotations = new Map<
+		number,
+		Array<{ path: string; start_line: number; annotation_level: string; message: string }>
+	>();
 	/** Check runs the bot created itself. */
 	statusChecks: FakeCheckRun[] = [];
 	reviews: Array<{
@@ -387,6 +392,13 @@ export class FakeGitHub {
 			const mergeBase = this.git(repo, ["merge-base", base!, head!]);
 			return this.#json({ status, commits, merge_base_commit: { sha: mergeBase } });
 		}
+		if (method === "PATCH" && (match = rest.match(/^\/pulls\/(\d+)$/))) {
+			const pull = this.pulls.find((p) => p.number === Number(match![1]));
+			if (!pull) return this.#json({ message: "Not Found" }, 404);
+			if (typeof body!.body === "string") pull.body = body!.body;
+			if (typeof body!.title === "string") pull.title = body!.title;
+			return this.#json(pull);
+		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)$/))) {
 			const pull = this.pulls.find((p) => p.number === Number(match![1]));
 			if (!pull) return this.#json({ message: "Not Found" }, 404);
@@ -394,7 +406,7 @@ export class FakeGitHub {
 				...pull,
 				head: { sha: this.head(repo, pull.head), ref: pull.head },
 				mergeable: this.#mergeable(repo, pull),
-				merged: false,
+				merged: pull.merged_at !== null,
 			});
 		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)\/comments$/))) {
@@ -468,6 +480,8 @@ export class FakeGitHub {
 				? this.#json({ message: "Not Found" }, 404)
 				: new Response(log, { headers: { "content-type": "text/plain" } });
 		}
+		if (method === "GET" && (match = rest.match(/^\/check-runs\/(\d+)\/annotations$/)))
+			return this.#json(this.annotations.get(Number(match[1])) ?? []);
 		if (method === "POST" && rest === "/check-runs") {
 			const run: FakeCheckRun = {
 				id: this.#nextId++,

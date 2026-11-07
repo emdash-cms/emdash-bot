@@ -86,7 +86,10 @@ describe("Pi hosted in a case", () => {
 				{
 					steps: [
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: punctuate", summary: "Done." },
+						},
 					],
 				},
 			],
@@ -122,7 +125,7 @@ describe("Pi hosted in a case", () => {
 					steps: [
 						{ tool: "bash", args: { command: "sleep 2" } },
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "x", summary: "y" } },
+						{ tool: "submit_candidate", args: { resolves: "fully", title: "x", summary: "y" } },
 					],
 				},
 			],
@@ -195,7 +198,10 @@ describe("model failures", () => {
 				{
 					steps: [
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: punctuate", summary: "Done." },
+						},
 					],
 				},
 			],
@@ -221,7 +227,10 @@ describe("model failures", () => {
 				{
 					steps: [
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: punctuate", summary: "Done." },
+						},
 					],
 				},
 			],
@@ -300,7 +309,10 @@ describe("author concurrency", () => {
 					steps: [
 						{ tool: "bash", args: { command: "sleep 2" } },
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "fix: a", summary: "a" } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: a", summary: "a" },
+						},
 					],
 				},
 			],
@@ -368,7 +380,10 @@ describe("reassignment", () => {
 				{
 					steps: [
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: punctuate", summary: "Done." },
+						},
 					],
 				},
 			],

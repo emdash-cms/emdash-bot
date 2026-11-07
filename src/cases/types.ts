@@ -56,6 +56,11 @@ export interface CheckpointRow {
 	readonly createdAt: number;
 }
 
+/** Whether a candidate fully resolves its issue, as the author declared it. */
+export type IssueResolution =
+	| { readonly kind: "full" }
+	| { readonly kind: "partial"; readonly remaining: string };
+
 export interface Candidate {
 	readonly id: string;
 	readonly caseId: string;
@@ -72,6 +77,8 @@ export interface Candidate {
 	readonly summary: string;
 	/** The pull request description the author wrote from the repository's template. */
 	readonly description?: string;
+	/** Absent on candidates sealed before the declaration existed; they close the issue. */
+	readonly resolution?: IssueResolution;
 	readonly origin: "author" | "integration";
 	readonly createdAt: number;
 }

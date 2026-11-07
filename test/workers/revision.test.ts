@@ -35,7 +35,11 @@ const twoRoundScript = {
 				{ tool: "write", args: FIX_GREETING },
 				{
 					tool: "submit_candidate",
-					args: { title: "fix: punctuate the greeting", summary: "Punctuation." },
+					args: {
+						resolves: "fully",
+						title: "fix: punctuate the greeting",
+						summary: "Punctuation.",
+					},
 				},
 			],
 		},
@@ -46,6 +50,7 @@ const twoRoundScript = {
 				{
 					tool: "submit_candidate",
 					args: {
+						resolves: "fully",
 						title: "fix: punctuate the greeting",
 						summary: "Punctuation and a default name.",
 					},
@@ -339,7 +344,11 @@ describe("review repair and asynchronous CI", () => {
 						{ tool: "write", args: RESOLVED },
 						{
 							tool: "submit_candidate",
-							args: { title: "fix: punctuate the greeting", summary: "Merged main." },
+							args: {
+								resolves: "fully",
+								title: "fix: punctuate the greeting",
+								summary: "Merged main.",
+							},
 						},
 					],
 				},
@@ -375,6 +384,57 @@ describe("review repair and asynchronous CI", () => {
 		expect(bot.github.show(REPO, head, "greet.js")).toBe(RESOLVED.content.trimEnd());
 		// The merge publishes only the change itself: main's commit is a parent, not part of the diff.
 		expect(bot.github.git(REPO, ["diff", "--name-only", main, head])).toBe("greet.js");
+	});
+
+	it("updates its checkout from the branch to build on a maintainer's push", async () => {
+		bot = await startBot({ repositories: [{ id: REPO_ID, fullName: REPO, requiredChecks: [] }] });
+		const caseId = issueCaseId(41);
+		const branch = "emdash-bot/issue-41";
+		const script = {
+			rounds: [
+				...fixScript().rounds,
+				{
+					steps: [
+						{ tool: "update_from_branch", args: {} },
+						{ tool: "write", args: REVISED },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: greeting", summary: "Default name." },
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 41, number: 41, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const published = bot.github.head(REPO, branch)!;
+		const pushed = bot.github.commitFiles(
+			REPO,
+			branch,
+			{ "helper.js": "module.exports = 1;\n" },
+			"feat: add a helper",
+		);
+		await bot.webhook("pull_request", {
+			action: "synchronize",
+			sender: { login: "maintainer" },
+			before: published,
+			after: pushed,
+			pull_request: { id: 9000 + pr, number: pr, head: { ref: branch, sha: pushed } },
+		});
+		const second = await publishedCount(bot, caseId, 2);
+		const updated = await bot.waitFor("branch update recorded", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.find((e: any) => e.type === "branch.updated") ?? null;
+		});
+		expect(updated.data).toMatchObject({ head: pushed, upToDate: false, conflicts: [] });
+		const head = bot.github.head(REPO, branch)!;
+		expect(second.publications.at(-1).commitSha).toBe(head);
+		// Built on the push in the checkout, not rebuilt onto it at publication.
+		expect(second.candidates.at(-1).sourceBaseCommit).toBe(pushed);
+		expect(bot.github.git(REPO, ["rev-parse", `${head}^`])).toBe(pushed);
+		expect(bot.github.show(REPO, head, "helper.js")).toBe("module.exports = 1;");
+		expect(bot.github.git(REPO, ["diff", "--name-only", pushed, head])).toBe("greet.js");
 	});
 
 	it("labels the issue and PR awaiting the reporter when ready, with area labels from changed paths", async () => {
@@ -482,7 +542,10 @@ describe("review repair and asynchronous CI", () => {
 					steps: [
 						{ tool: "ci_log", args: { checkRunId: 4242, lines: 20 } },
 						{ tool: "write", args: REVISED },
-						{ tool: "submit_candidate", args: { title: "fix: greeting", summary: "Repair." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: greeting", summary: "Repair." },
+						},
 					],
 				},
 			],
@@ -512,6 +575,71 @@ describe("review repair and asynchronous CI", () => {
 		expect(JSON.stringify(logResult.content)).not.toContain("install step 0\\n");
 	});
 
+	it("gives ci_log a check run's annotations when the check has no log", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(36);
+		const branch = "emdash-bot/issue-36";
+		const script = {
+			rounds: [
+				twoRoundScript.rounds[0],
+				{
+					steps: [
+						{ tool: "ci_log", args: { checkRunId: 4343 } },
+						{ tool: "write", args: REVISED },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: greeting", summary: "Repair." },
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 36, number: 36, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, branch)!;
+		bot.github.annotations.set(4343, [
+			{
+				path: "greet.test.js",
+				start_line: 193,
+				annotation_level: "failure",
+				message: "'https://example.com' may be followed by an arbitrary host name.",
+			},
+		]);
+		await checkRun(bot, pr, branch, head, "CodeQL", "failure", "1 high", 4343);
+		await publishedCount(bot, caseId, 2);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const logResult = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.find((m: any) => m.role === "toolResult" && m.toolName === "ci_log");
+		expect(JSON.stringify(logResult.content)).toContain(
+			"greet.test.js:193 [failure] 'https://example.com' may be followed by an arbitrary host name.",
+		);
+	});
+
+	it("ends the case when its issue closes after its pull request already closed", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(37);
+		await bot.webhook("issues", assignIssue({ issueId: 37, number: 37, script: twoRoundScript }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pull = bot.github.pulls.find((p) => p.number === first.publications[0].prNumber)!;
+		const closeIssue = () =>
+			bot!.webhook("issues", {
+				action: "closed",
+				sender: { login: "maintainer" },
+				issue: { id: 37, number: 37 },
+			});
+		// While the pull request is open, closing the issue leaves the case to it.
+		await closeIssue();
+		expect((await bot.inspect(caseId)).state).toBe("active");
+		pull.state = "closed";
+		pull.merged_at = new Date().toISOString();
+		await closeIssue();
+		await bot.waitFor("terminal", async () =>
+			(await bot!.inspect(caseId)).state === "terminal" ? true : null,
+		);
+	});
+
 	it("sends code failures on the current head to the author, which repairs them", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(33);
@@ -522,7 +650,10 @@ describe("review repair and asynchronous CI", () => {
 				{
 					steps: [
 						{ tool: "write", args: REVISED },
-						{ tool: "submit_candidate", args: { title: "fix: greeting", summary: "Repair." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: greeting", summary: "Repair." },
+						},
 					],
 				},
 			],
@@ -675,7 +806,11 @@ describe("adopted pull request revision", () => {
 						{ tool: "reply", args: { body: "Default added." } },
 						{
 							tool: "submit_candidate",
-							args: { title: "fix: greeting", summary: "Adds the default name." },
+							args: {
+								resolves: "fully",
+								title: "fix: greeting",
+								summary: "Adds the default name.",
+							},
 						},
 					],
 				},
@@ -753,5 +888,77 @@ describe("inline-only reviews", () => {
 		expect(message.data.comments).toBe(1);
 		const status = await bot.ops(`cases/${caseId}/status`);
 		expect(status.status).not.toBe("ready-for-human");
+	});
+});
+
+describe("pull requests that only partly resolve their issue", () => {
+	it("links without closing, and relinks when a later candidate fully resolves it", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(41);
+		const script = {
+			rounds: [
+				{
+					steps: [
+						{ tool: "write", args: FIX_GREETING },
+						{
+							tool: "submit_candidate",
+							args: {
+								resolves: "partly",
+								remaining: "A default name when none is given.",
+								title: "fix: punctuate the greeting, closes #41",
+								summary: "Punctuation only. Fixes #41.",
+								description: "## What does this PR do?\n\nPunctuation. Resolves: #41\n\nCloses #",
+							},
+						},
+					],
+				},
+				{
+					steps: [
+						{ tool: "write", args: REVISED },
+						{
+							tool: "submit_candidate",
+							args: {
+								resolves: "fully",
+								title: "fix: punctuate the greeting",
+								summary: "Punctuation and a default name.",
+							},
+						},
+					],
+				},
+			],
+		};
+		await bot.webhook("issues", assignIssue({ issueId: 41, number: 41, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = bot.github.pulls.find((p) => p.number === first.publications[0].prNumber)!;
+		const closing = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s*#41\b/i;
+		expect(pr.body).not.toMatch(closing);
+		expect(pr.title).not.toMatch(closing);
+		expect(pr.body).toContain(
+			"Part of #41. This pull request does not fully resolve it; still to do: A default name when none is given.",
+		);
+		const head1 = bot.github.head(REPO, "emdash-bot/issue-41")!;
+		expect(bot.github.git(REPO, ["log", "-1", "--format=%B", head1])).not.toMatch(closing);
+
+		await bot.webhook(
+			"pull_request_review",
+			review(pr.number, head1, {
+				version: 1,
+				reviewedCommit: head1,
+				findings: [
+					{
+						id: "F1",
+						severity: "major",
+						path: "greet.js",
+						line: 1,
+						title: "Missing default",
+						body: "Handle a missing name.",
+					},
+				],
+			}),
+		);
+		await publishedCount(bot, caseId, 2);
+		expect(pr.body).toContain("Closes #41");
+		expect(pr.body).not.toContain("Part of #41");
+		expect(pr.body).toContain("emdash-bot:case=");
 	});
 });

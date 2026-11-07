@@ -1,5 +1,6 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite-plus";
+import { configDefaults } from "vite-plus/test/config";
 
 export default defineConfig({
 	// Tests run in Node against the built Worker in Miniflare (see
@@ -7,6 +8,8 @@ export default defineConfig({
 	plugins: process.env.VITEST ? [] : [cloudflare()],
 	test: {
 		globalSetup: "./test/global-setup.ts",
+		// Agent worktrees under .claude hold other checkouts' copies of the suite.
+		exclude: [...configDefaults.exclude, ".claude/**"],
 		testTimeout: 90_000,
 		hookTimeout: 30_000,
 	},
