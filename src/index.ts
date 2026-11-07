@@ -5,7 +5,14 @@ import { writeToken } from "./github/auth.ts";
 import { GitHubClient } from "./github/client.ts";
 import { addressesBot, botHandle, verifySignature, normalize } from "./github/webhook.ts";
 import { renderBoard } from "./reports/dashboard.ts";
-import { type OpenedIssue, STATS_WEEKS, issueStats, renderStats } from "./reports/stats.ts";
+import {
+	type IssueStats,
+	type OpenedIssue,
+	STATS_WEEKS,
+	issueStats,
+	renderStatsContent,
+	renderStatsPage,
+} from "./reports/stats.ts";
 import { constantTimeEqual, json, rpc, sha256Hex, text } from "./util.ts";
 import { AUTHOR_METHOD } from "./tools/case-tools.ts";
 import authorSkill from "../skills/emdash-author/SKILL.md?raw";
@@ -215,7 +222,23 @@ async function board(
 	return response;
 }
 
-/** Issues opened in a repository since `since`, newest first, pull requests left out. */
+interface IssuePage {
+	data?: {
+		repository: {
+			issues: {
+				pageInfo: { hasNextPage: boolean; endCursor: string | null };
+				nodes: Array<{ number: number; createdAt: string }>;
+			};
+		} | null;
+	};
+	errors?: Array<{ message: string }>;
+}
+
+/**
+ * Issues opened in a repository since `since`, newest first. GraphQL lists
+ * issues without pull requests and returns only the two fields needed: the
+ * REST list mixes in pull requests and returns whole bodies, about 1 MB a page.
+ */
 async function openedIssues(
 	env: Env,
 	config: BotConfig,
@@ -223,42 +246,38 @@ async function openedIssues(
 	since: number,
 ): Promise<OpenedIssue[]> {
 	const github = new GitHubClient(config.githubApiUrl, () => writeToken(env, config), repo);
-	const issues: OpenedIssue[] = [];
-	for (let page = 1; page <= 30; page++) {
-		const batch = await github.request<
-			Array<{ number: number; created_at: string; pull_request?: unknown }>
-		>(
-			"GET",
-			github.repoPath(`/issues?state=all&sort=created&direction=desc&per_page=100&page=${page}`),
-		);
-		for (const item of batch) {
-			const createdAt = Date.parse(item.created_at);
-			if (createdAt < since) return issues;
-			if (!item.pull_request) issues.push({ number: item.number, createdAt });
+	const [owner, name] = repo.split("/");
+	const query = `query($owner: String!, $name: String!, $after: String) {
+	repository(owner: $owner, name: $name) {
+		issues(first: 100, after: $after, orderBy: { field: CREATED_AT, direction: DESC }) {
+			pageInfo { hasNextPage endCursor }
+			nodes { number createdAt }
 		}
-		if (batch.length < 100) break;
+	}
+}`;
+	const issues: OpenedIssue[] = [];
+	let after: string | null = null;
+	for (let page = 0; page < 30; page++) {
+		const result: IssuePage = await github.request<IssuePage>("POST", "/graphql", {
+			query,
+			variables: { owner, name, after },
+		});
+		const list = result.data?.repository?.issues;
+		if (!list) throw new Error(`listing issues: ${result.errors?.[0]?.message ?? "no data"}`);
+		for (const item of list.nodes) {
+			const createdAt = Date.parse(item.createdAt);
+			if (createdAt < since) return issues;
+			issues.push({ number: item.number, createdAt });
+		}
+		if (!list.pageInfo.hasNextPage) break;
+		after = list.pageInfo.endCursor;
 	}
 	return issues;
 }
 
-/**
- * Issue stats (`/stats`, and its data at `/api/stats`): issues opened in the
- * last few weeks and where each stands with the bot. Cached for five minutes,
- * since each miss lists issues from GitHub.
- */
-async function stats(
-	request: Request,
-	env: Env,
-	ctx: ExecutionContext,
-	url: URL,
-): Promise<Response> {
-	const cacheKey = new Request(url.toString(), { method: "GET" });
-	const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
-	const hit = await cache?.match(cacheKey);
-	if (hit) return hit;
+async function computeStats(env: Env): Promise<IssueStats> {
 	const config = readConfig(env);
-	const now = Date.now();
-	const since = now - STATS_WEEKS * 7 * 24 * 3_600_000;
+	const since = Date.now() - STATS_WEEKS * 7 * 24 * 3_600_000;
 	const [issues, summaries] = await Promise.all([
 		Promise.all(
 			config.repositories.map(async (repo) =>
@@ -274,23 +293,68 @@ async function stats(
 			),
 		),
 	]);
-	const result = issueStats(
+	return issueStats(
 		config.repositories.map((r) => r.fullName),
 		issues.flat(),
 		summaries.flat(),
-		now,
+		// After the fetch, so an issue opened while it ran still falls in this week.
+		Date.now(),
 	);
-	const headers = { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" };
-	const response =
-		url.pathname === "/stats"
-			? new Response(renderStats(result), {
-					headers: { ...headers, "content-type": "text/html; charset=utf-8" },
-				})
-			: new Response(JSON.stringify(result), {
-					headers: { ...headers, "content-type": "application/json" },
-				});
-	if (cache) ctx.waitUntil(cache.put(cacheKey, response.clone()));
-	return response;
+}
+
+const STATS_FRESH_MS = 5 * 60_000;
+
+/**
+ * The stats, cached stale-while-revalidate: a copy older than five minutes is
+ * still served while a fresh one is computed in the background, so only the
+ * first request in a colo waits on GitHub.
+ */
+async function loadStats(env: Env, ctx: ExecutionContext, url: URL): Promise<IssueStats> {
+	const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
+	const key = new Request(`${url.origin}/__stats-data/v1`, { method: "GET" });
+	const refresh = async () => {
+		const stats = await computeStats(env);
+		await cache?.put(
+			key,
+			new Response(JSON.stringify(stats), {
+				headers: { "content-type": "application/json", "cache-control": "max-age=86400" },
+			}),
+		);
+		return stats;
+	};
+	const hit = await cache?.match(key);
+	if (!hit) return refresh();
+	const stats = (await hit.json()) as IssueStats;
+	if (Date.now() - stats.generatedAt > STATS_FRESH_MS)
+		ctx.waitUntil(refresh().catch((error: unknown) => console.error("stats refresh", error)));
+	return stats;
+}
+
+/**
+ * Issue stats: issues opened in the last few weeks and where each stands with
+ * the bot. `/stats` is the page shell, which needs no data and returns at once;
+ * it loads its figures from `/stats/content`, an HTML fragment. `/api/stats` is
+ * the same data as JSON.
+ */
+async function stats(
+	_request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+	url: URL,
+): Promise<Response> {
+	const headers = { "cache-control": "public, max-age=60", "access-control-allow-origin": "*" };
+	if (url.pathname === "/stats")
+		return new Response(renderStatsPage(readConfig(env).repositories.map((r) => r.fullName)), {
+			headers: { ...headers, "content-type": "text/html; charset=utf-8" },
+		});
+	const result = await loadStats(env, ctx, url);
+	return url.pathname === "/stats/content"
+		? new Response(renderStatsContent(result), {
+				headers: { ...headers, "content-type": "text/html; charset=utf-8" },
+			})
+		: new Response(JSON.stringify(result), {
+				headers: { ...headers, "content-type": "application/json" },
+			});
 }
 
 /**
@@ -528,7 +592,10 @@ export default {
 			);
 		if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/api/cases"))
 			return board(request, env, ctx, url);
-		if (request.method === "GET" && (url.pathname === "/stats" || url.pathname === "/api/stats"))
+		if (
+			request.method === "GET" &&
+			["/stats", "/stats/content", "/api/stats"].includes(url.pathname)
+		)
 			return stats(request, env, ctx, url).catch((error: unknown) =>
 				json({ error: error instanceof Error ? error.message : String(error) }, 502),
 			);

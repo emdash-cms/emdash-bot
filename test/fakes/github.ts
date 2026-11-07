@@ -233,6 +233,22 @@ export class FakeGitHub {
 	}
 
 	#route(method: string, url: URL, body: Record<string, unknown> | undefined): Response {
+		// The stats page's only GraphQL query: issues newest first, one page.
+		if (method === "POST" && url.pathname === "/graphql") {
+			const nodes = [...this.issues]
+				.map(([number, issue]) => ({
+					number,
+					createdAt: new Date(issue.createdAt ?? Date.now()).toISOString(),
+				}))
+				.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+			return this.#json({
+				data: {
+					repository: {
+						issues: { pageInfo: { hasNextPage: false, endCursor: null }, nodes },
+					},
+				},
+			});
+		}
 		const m = url.pathname.match(/^\/repos\/([^/]+\/[^/]+)(\/.*)$/);
 		if (!m) return this.#json({ message: "Not Found" }, 404);
 		const repo = m[1]!;
@@ -523,17 +539,6 @@ export class FakeGitHub {
 						user: { login: c.user },
 						author_association: c.association ?? "NONE",
 					})),
-			);
-		}
-		// Issues newest first, as `sort=created&direction=desc` lists them; one page.
-		if (method === "GET" && rest === "/issues") {
-			return this.#json(
-				[...this.issues]
-					.map(([number, issue]) => ({
-						number,
-						created_at: new Date(issue.createdAt ?? Date.now()).toISOString(),
-					}))
-					.sort((a, b) => b.created_at.localeCompare(a.created_at)),
 			);
 		}
 		if (method === "GET" && (match = rest.match(/^\/issues\/(\d+)$/))) {

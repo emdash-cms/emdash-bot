@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { CaseSummary } from "../../src/reports/dashboard.ts";
-import { caseOutcome, issueOutcome, issueStats, renderStats } from "../../src/reports/stats.ts";
+import {
+	caseOutcome,
+	issueOutcome,
+	issueStats,
+	renderStatsContent,
+	renderStatsPage,
+} from "../../src/reports/stats.ts";
 
 const NOW = Date.UTC(2026, 9, 17, 10, 0);
 const DAY = 24 * 3_600_000;
@@ -86,7 +92,7 @@ describe("issue stats", () => {
 	});
 
 	it("renders tiles, a weekly chart, a legend and a table", () => {
-		const html = renderStats(
+		const html = renderStatsContent(
 			issueStats([REPO], [{ repo: REPO, number: 1, createdAt: NOW - DAY }], [merged(1)], NOW),
 		);
 		expect(html).toContain("Past week");
@@ -95,5 +101,13 @@ describe("issue stats", () => {
 		expect(html).toContain('class="legend"');
 		expect(html).toContain("Show as a table");
 		expect(html.match(/class="col"/g)).toHaveLength(12);
+	});
+
+	it("renders a shell that loads the figures from /stats/content", () => {
+		const html = renderStatsPage([REPO]);
+		expect(html).toContain("How issues have been handled");
+		expect(html).toContain('id="stats" aria-busy="true"');
+		expect(html).toContain('fetch("/stats/content")');
+		expect(html).not.toContain("Past week");
 	});
 });
