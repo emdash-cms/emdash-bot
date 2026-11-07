@@ -9,6 +9,8 @@ import type { ExecRequest, ExecResult, SandboxScope } from "./backend.ts";
 
 const INACTIVITY_TIMEOUT_MS = 20 * 60_000;
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
+/** How long past a command's timeout to wait for `timeout` itself before giving up on it. */
+const BACKSTOP_MS = 15_000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const CA_SOURCE = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
 export const EGRESS_HOSTS = ["github.com", "registry.npmjs.org"] as const;
@@ -40,6 +42,15 @@ async function readAll(stream: ReadableStream | null, limit: number): Promise<Ui
 		offset += chunk.byteLength;
 	}
 	return out;
+}
+
+function timedOutResult(): ExecResult {
+	return {
+		exitCode: 124,
+		stdout: new Uint8Array(),
+		stderr: new TextEncoder().encode("timed out"),
+		timedOut: true,
+	};
 }
 
 export class SandboxDO extends DurableObject<Env> {
@@ -87,12 +98,28 @@ export class SandboxDO extends DurableObject<Env> {
 			throw error;
 		});
 		await this.#started;
+		const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+		// `timeout` signals the command's whole process group, so a server or watcher it
+		// started cannot outlive the command and hold its output open.
+		const argv = [
+			"timeout",
+			"--kill-after=5",
+			`${Math.max(1, Math.ceil(timeoutMs / 1000))}s`,
+			...request.argv,
+		];
 		const controller = new AbortController();
-		let timedOut = false;
+		let exited = false;
+		let expire: () => void = () => {};
+		// A backstop for processes that left the group (setsid) and still hold the output:
+		// stop the command if it is still running, and stop waiting for its output.
+		const expired = new Promise<"expired">((resolve) => {
+			expire = () => resolve("expired");
+		});
 		const timer = setTimeout(() => {
-			timedOut = true;
-			controller.abort();
-		}, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+			// Signalling a process that has already exited is an error.
+			if (!exited) controller.abort();
+			expire();
+		}, timeoutMs + BACKSTOP_MS);
 		try {
 			const stdin = request.stdin
 				? new ReadableStream<Uint8Array>({
@@ -102,26 +129,35 @@ export class SandboxDO extends DurableObject<Env> {
 						},
 					})
 				: undefined;
-			const process = await this.container.exec([...request.argv], {
+			const process = await this.container.exec(argv, {
 				cwd: request.cwd,
 				env: { ...BASE_ENV, ...request.env },
 				signal: controller.signal,
 				...(stdin ? { stdin } : {}),
 			});
-			const [stdout, stderr, exitCode] = await Promise.all([
-				readAll(process.stdout, MAX_OUTPUT_BYTES),
-				readAll(process.stderr, MAX_OUTPUT_BYTES),
-				process.exitCode,
+			void process.exitCode.then(
+				() => (exited = true),
+				() => (exited = true),
+			);
+			const result = await Promise.race([
+				Promise.all([
+					readAll(process.stdout, MAX_OUTPUT_BYTES),
+					readAll(process.stderr, MAX_OUTPUT_BYTES),
+					process.exitCode,
+				]),
+				expired,
 			]);
-			return { exitCode: timedOut ? 124 : exitCode, stdout, stderr, timedOut };
+			if (result === "expired") {
+				void process.stdout?.cancel().catch(() => undefined);
+				void process.stderr?.cancel().catch(() => undefined);
+				return timedOutResult();
+			}
+			const [stdout, stderr, exitCode] = result;
+			// 124 when `timeout` stopped the command, 137 when it had to kill it.
+			const timedOut = exitCode === 124 || exitCode === 137;
+			return { exitCode, stdout, stderr, timedOut };
 		} catch (error) {
-			if (timedOut)
-				return {
-					exitCode: 124,
-					stdout: new Uint8Array(),
-					stderr: new TextEncoder().encode("timed out"),
-					timedOut,
-				};
+			if (controller.signal.aborted) return timedOutResult();
 			throw error;
 		} finally {
 			clearTimeout(timer);

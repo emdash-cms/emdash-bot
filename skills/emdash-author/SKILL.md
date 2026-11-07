@@ -23,6 +23,18 @@ Use this when implementing an EmDash issue or repairing an EmDash pull request.
 - `pnpm lint:json` won't run in the sandbox; use `pnpm lint:quick`.
 - Run admin tests with the package's own config; Chromium is available.
 
+## Screenshots
+
+CONTRIBUTING asks for before-and-after screenshots of every screen a UI change affects. Take them through the e2e harness, which starts, sets up and seeds a fixture server and stops it again, all within one command:
+
+1. Build first: `ulimit -n 65536; NODE_OPTIONS=--max-old-space-size=8192 pnpm build` (or only the changed packages). The fixture serves built `dist` output, so rebuild after every source change you want to show.
+2. Write a temporary spec, such as `e2e/tests/zz-screenshots.spec.ts`, that imports `test` and `expect` from `../fixtures`. Use the `admin` fixture: `admin.devBypassAuth()`, `admin.dismissOnboardingModal()`, the `admin.goTo…` helpers and `admin.waitForLoading()`. Then call `page.screenshot({ path: "/tmp/<name>.png" })`, or `locator.screenshot()` to crop to the changed area. Keep the viewport and content identical between the two runs.
+3. Run it with `pnpm exec playwright test e2e/tests/zz-screenshots.spec.ts --reporter=line`.
+4. Take the before shots before you change the code. If you have already changed it, `git stash -u`, rebuild, run the spec, then `git stash pop` and rebuild.
+5. Look at each image before you attach it: a blank page, an onboarding modal or an error overlay is not a screenshot of the change. Delete the temporary spec, then publish the images with `attach_screenshot`.
+
+Shoot the real admin through the fixture, not an unstyled component harness.
+
 ## Finishing
 
 - Submit a candidate with a conventional-commit title and a summary stating what changed and which checks you ran.
