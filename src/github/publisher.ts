@@ -201,6 +201,21 @@ async function integrate(
 	}
 }
 
+/**
+ * Someone pushed exactly the candidate's source to the branch (a maintainer
+ * merging the default branch by hand, say): that commit is its publication.
+ */
+async function adoptPushedSource(
+	ctx: PublishContext,
+	publication: Publication,
+	candidate: Candidate,
+): Promise<Publication | null> {
+	const head = await ctx.github.branchHead(publication.branch);
+	if (!head || (await ctx.github.commitTree(head)) !== candidate.sourceTreeHash) return null;
+	ctx.store.log("publication.adopted", { op: publication.opId, commit: head });
+	return save(ctx, publication, { state: "ref-updated", commitSha: head, error: null });
+}
+
 async function findPullRequest(ctx: PublishContext): Promise<{
 	number: number;
 	id: number;
@@ -329,6 +344,8 @@ export async function publish(ctx: PublishContext, candidateId: string): Promise
 			commitSha: publication.commitSha!,
 			prNumber: publication.prNumber!,
 		};
+	if (publication?.state === "needs-human" && candidate.id === ctx.store.latestCandidate()?.id)
+		publication = (await adoptPushedSource(ctx, publication, candidate)) ?? publication;
 	if (publication && ["needs-human", "failed", "superseded"].includes(publication.state)) {
 		return {
 			state: publication.state === "superseded" ? "superseded" : "needs-human",
@@ -426,6 +443,18 @@ export async function publish(ctx: PublishContext, candidateId: string): Promise
 					expected: publication.expectedHead,
 					observed: head,
 				});
+				const adopted = await adoptPushedSource(ctx, publication, candidate);
+				if (adopted) {
+					const pr = await ensurePullRequest(ctx, candidate);
+					await ctx.registerAlias(`number:${pr.number}`);
+					publication = save(ctx, adopted, {
+						state: "pr-ensured",
+						prNumber: pr.number,
+						prId: pr.id,
+					});
+					ctx.store.log("publication.receipt", { op: opId, commit: head, pr: pr.number });
+					return { state: "published", commitSha: head!, prNumber: pr.number };
+				}
 				const result = await integrate(ctx, candidate, patch, head!);
 				save(ctx, publication, {
 					state: result.state === "integrated" ? "superseded" : "needs-human",
