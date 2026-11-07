@@ -124,6 +124,7 @@ describe("operator dry run", () => {
 						{
 							tool: "review",
 							args: {
+								resolves: "fully",
 								title: "fix: punctuate",
 								description: `\`\`\`scripted-author\n${JSON.stringify(reviewer)}\n\`\`\``,
 							},

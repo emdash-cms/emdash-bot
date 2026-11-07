@@ -274,7 +274,10 @@ describe("taking over a contributor's pull request", () => {
 					steps: [
 						{ tool: "merge_default_branch", args: {} },
 						{ tool: "write", args: RESOLVED },
-						{ tool: "submit_candidate", args: { title: "fix: greeting", summary: "Merged main." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: greeting", summary: "Merged main." },
+						},
 					],
 				},
 			],

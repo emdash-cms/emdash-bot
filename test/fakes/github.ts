@@ -392,6 +392,13 @@ export class FakeGitHub {
 			const mergeBase = this.git(repo, ["merge-base", base!, head!]);
 			return this.#json({ status, commits, merge_base_commit: { sha: mergeBase } });
 		}
+		if (method === "PATCH" && (match = rest.match(/^\/pulls\/(\d+)$/))) {
+			const pull = this.pulls.find((p) => p.number === Number(match![1]));
+			if (!pull) return this.#json({ message: "Not Found" }, 404);
+			if (typeof body!.body === "string") pull.body = body!.body;
+			if (typeof body!.title === "string") pull.title = body!.title;
+			return this.#json(pull);
+		}
 		if (method === "GET" && (match = rest.match(/^\/pulls\/(\d+)$/))) {
 			const pull = this.pulls.find((p) => p.number === Number(match![1]));
 			if (!pull) return this.#json({ message: "Not Found" }, 404);

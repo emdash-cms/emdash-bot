@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import { computeStatus, heldNeedsAuthor, type StatusInput } from "../../src/reports/status.ts";
 import {
+	relinkPullRequestBody,
 	renderPullRequestBody,
+	stripClosingKeywords,
 	renderStatus,
 	renderStatusCheck,
 } from "../../src/reports/render.ts";
@@ -336,5 +338,76 @@ describe("pull request body from the author's description", () => {
 		});
 		expect(body).toContain("- [ ] A Maintainer approved");
 		expect(body).toContain("took this issue on automatically");
+	});
+});
+
+describe("issue links declared by the author", () => {
+	const identity = { caseId: "1-issue-2", issueNumber: 7, kind: "issue" } as never;
+	const partial = { kind: "partial", remaining: "The\n  importer path." } as const;
+
+	it("neutralises every GitHub closing keyword form", () => {
+		for (const text of [
+			"Closes #7",
+			"fix #7",
+			"Fixed: #7",
+			"resolves owner/repo#7",
+			"CLOSED https://github.com/o/r/issues/7",
+		])
+			expect(stripClosingKeywords(text)).toMatch(/^addresses /);
+		expect(stripClosingKeywords("This fixes the bug in #7")).toBe("This fixes the bug in #7");
+		expect(stripClosingKeywords("Fixes #8 and fixes #7", 7)).toBe("Fixes #8 and addresses #7");
+	});
+
+	it("links a partial fix without closing, whatever the author wrote", () => {
+		for (const input of [
+			{ template: null, summary: "Fixes #7." },
+			{ template: "## What does this PR do?\n\nCloses #\n", summary: "Closes #7" },
+			{ template: "## What does this PR do?\n", summary: "Done." },
+			{ template: null, summary: "unused", description: "Resolves #7\n\nCloses #" },
+		]) {
+			const body = renderPullRequestBody({
+				identity,
+				...input,
+				resolution: partial,
+				model: "m",
+				assignedBy: null,
+			});
+			expect(body).not.toMatch(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s*#7\b/i);
+			expect(body).not.toMatch(/^Closes #\s*$/m);
+			expect(body.match(/Part of #7\. /g)).toHaveLength(1);
+			expect(body).toContain("still to do: The importer path.");
+		}
+	});
+
+	it("always closes a full fix, even from a template without the placeholder", () => {
+		const body = renderPullRequestBody({
+			identity,
+			template: "## What does this PR do?\n",
+			summary: "Done.",
+			resolution: { kind: "full" },
+			model: "m",
+			assignedBy: null,
+		});
+		expect(body.match(/^Closes #7$/gm)).toHaveLength(1);
+	});
+
+	it("relinks an open pull request in both directions, keeping other references", () => {
+		const opened = renderPullRequestBody({
+			identity,
+			template: null,
+			summary: "Done. Fixes #8.",
+			resolution: partial,
+			model: "m",
+			assignedBy: null,
+		}).replace("addresses #8", "Fixes #8"); // a maintainer's edit
+		const full = relinkPullRequestBody(opened, identity, { kind: "full" });
+		expect(full).toMatch(/^Closes #7$/m);
+		expect(full).not.toContain("Part of #7");
+		expect(full).toContain("Fixes #8");
+		expect(full.trimEnd().endsWith("<!-- emdash-bot:case=1-issue-2 -->")).toBe(true);
+		const back = relinkPullRequestBody(full, identity, partial);
+		expect(back).not.toMatch(/Closes #7/);
+		expect(back.match(/Part of #7\. /g)).toHaveLength(1);
+		expect(relinkPullRequestBody(back, identity, partial)).toBe(back);
 	});
 });

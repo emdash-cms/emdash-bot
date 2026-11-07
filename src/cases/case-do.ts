@@ -31,6 +31,7 @@ import {
 import {
 	STATUS_CHECK_NAME,
 	renderMovedToPullRequest,
+	renderPartlyMerged,
 	renderStatus,
 	renderStatusCheck,
 	statusMarker,
@@ -60,6 +61,7 @@ import {
 } from "../source/workspace.ts";
 import {
 	type CaseRuntime,
+	type BranchUpdate,
 	type DefaultBranchMerge,
 	type MutationOutcome,
 	type ReviewSubject,
@@ -76,6 +78,7 @@ import type {
 	CaseEvent,
 	CaseIdentity,
 	CheckpointRow,
+	IssueResolution,
 	ReplyIntent,
 	Verification,
 } from "./types.ts";
@@ -508,8 +511,8 @@ export class CaseDO extends DurableObject<Env> {
 			search: (pattern, path, glob) => this.#search(pattern, path, glob),
 			listFiles: (path) => this.#listFiles(path),
 			runCheck: (opId, name, args) => this.#runCheck(opId, name, args),
-			submitCandidate: (opId, title, summary, description) =>
-				this.#submitCandidate(opId, title, summary, description),
+			submitCandidate: (opId, title, summary, resolution, description) =>
+				this.#submitCandidate(opId, title, summary, resolution, description),
 			handoff: async (opId, reason, nextAction) => {
 				// A message queued behind this run already answers the handoff: it was
 				// submitted (clearing any earlier one) before the author asked.
@@ -525,6 +528,7 @@ export class CaseDO extends DurableObject<Env> {
 				await this.#handoff(opId, reason, nextAction);
 			},
 			mergeDefaultBranch: (opId) => this.#mergeDefaultBranch(opId),
+			updateFromBranch: (opId) => this.#updateFromBranch(opId),
 			attachScreenshot: (opId, path) => this.#attachScreenshot(opId, path),
 			reply: async (opId, inReplyTo, onIssue, body) => {
 				const intent = this.#queueReply(opId, inReplyTo, onIssue, body);
@@ -879,10 +883,62 @@ export class CaseDO extends DurableObject<Env> {
 		});
 	}
 
+	/**
+	 * Merge the pull request's current head, with commits pushed by others, into
+	 * the author's work. The checkout then starts from that head, so the next
+	 * candidate builds on those commits instead of being rebased onto them blind.
+	 */
+	async #updateFromBranch(opId: string): Promise<BranchUpdate> {
+		return this.#source.run(async () => {
+			const receipt = this.store.operation(opId);
+			if (receipt?.status === "completed") return receipt.result as BranchUpdate;
+			await this.#ensureSandbox();
+			const github = this.#github();
+			const latest = this.store.latestCheckpoint()!;
+			const head = this.#currentHead();
+			if (!head) throw new Error("there is no pull request branch yet");
+			const pending = this.store.getMeta<DefaultMergeBase>("defaultMerge");
+			const merging = pending?.base === latest.baseCommit;
+			if (merging && head !== pending.branchHead)
+				throw new Error(
+					"your work contains an unpublished default-branch merge; submit it first, then update from the branch",
+				);
+			const comparison = merging
+				? { status: "identical", merge_base_commit: { sha: head } }
+				: await github.request<{
+						status: string;
+						merge_base_commit: { sha: string };
+					}>("GET", github.repoPath(`/compare/${head}...${latest.baseCommit}`));
+			let result: BranchUpdate;
+			if (comparison.status === "ahead" || comparison.status === "identical") {
+				result = { head, upToDate: true, conflicts: [] };
+			} else {
+				const merged = await mergeIntoCheckout(this.#authorSandbox(), {
+					remoteUrl: this.#remoteUrl(),
+					mergeBase: comparison.merge_base_commit.sha,
+					theirs: head,
+					timeoutMs: this.config.budgets.setupMs,
+				});
+				await this.#capture(opId, head);
+				result = { head, upToDate: false, conflicts: merged.conflicts };
+			}
+			this.store.putOperation(
+				opId,
+				"update_from_branch",
+				this.store.generation(),
+				"completed",
+				result,
+			);
+			this.store.log("branch.updated", { ...result });
+			return result;
+		});
+	}
+
 	async #submitCandidate(
 		opId: string,
 		title: string,
 		summary: string,
+		resolution: IssueResolution,
 		description?: string,
 	): Promise<Candidate> {
 		const receipt = this.store.operation(opId);
@@ -921,6 +977,10 @@ export class CaseDO extends DurableObject<Env> {
 				title: title.slice(0, 200),
 				summary: summary.slice(0, 20_000),
 				...(description?.trim() ? { description: description.slice(0, 60_000) } : {}),
+				resolution:
+					resolution.kind === "partial"
+						? { kind: "partial", remaining: resolution.remaining.slice(0, 2_000) }
+						: resolution,
 				origin: "author",
 				createdAt: Date.now(),
 			};
@@ -1807,7 +1867,7 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.setMeta("observedHead", str(payload.after));
 				this.store.log("branch.advanced", { by: event.actor, head: payload.after });
 				const formatted = await this.#recordFormatPush(str(payload.before), str(payload.after));
-				return `## Branch updated\nFrom: ${from}\n\n${event.actor} pushed ${str(payload.after).slice(0, 12)} to the case branch${formatted ? ", applying only the repository's formatter" : ""}. Your next candidate is published on top of it.`;
+				return `## Branch updated\nFrom: ${from}\n\n${event.actor} pushed ${str(payload.after).slice(0, 12)} to the case branch${formatted ? ", applying only the repository's formatter" : ""}. Your next candidate is published on top of it; to read, test or build on it, call update_from_branch.`;
 			}
 			case "pr-opened":
 				return null;
@@ -1823,6 +1883,7 @@ export class CaseDO extends DurableObject<Env> {
 				this.store.setMeta("state", "terminal");
 				this.store.setMeta("generation", this.store.generation() + 1);
 				this.store.log("case.terminal", { merged, issue: isIssue });
+				if (merged && !isIssue) await this.#notePartlyMerged();
 				await this.#stopAuthor();
 				await this.#schedule("report", Date.now());
 				return null;
@@ -3101,6 +3162,32 @@ export class CaseDO extends DurableObject<Env> {
 				})
 			).id;
 		this.store.setMeta("statusCheck", { id, head, hash, completed: check.status === "completed" });
+	}
+
+	/** The issue stays open after a partial fix merges: say so where the reporter looks. */
+	async #notePartlyMerged(): Promise<void> {
+		const identity = this.#identity();
+		const resolution = this.store.latestCandidate()?.resolution;
+		const prNumber = this.store.publications().find((p) => p.state === "pr-ensured")?.prNumber;
+		if (!identity.issueNumber || !prNumber || resolution?.kind !== "partial") return;
+		const body = renderPartlyMerged(identity, prNumber, resolution.remaining);
+		const github = this.#github();
+		try {
+			const marker = statusMarker(identity.caseId);
+			const comments = await github.request<Array<{ id: number; body: string }>>(
+				"GET",
+				github.repoPath(`/issues/${identity.issueNumber}/comments?per_page=100`),
+			);
+			const id = comments.find((c) => c.body.includes(marker))?.id;
+			if (id) await github.request("PATCH", github.repoPath(`/issues/comments/${id}`), { body });
+			else
+				await github.request("POST", github.repoPath(`/issues/${identity.issueNumber}/comments`), {
+					body,
+				});
+			this.store.log("case.partly-merged", { pr: prNumber, issue: identity.issueNumber });
+		} catch (error) {
+			this.store.log("case.partly-merged-failed", { error: errorMessage(error) });
+		}
 	}
 
 	async #upsertStatusComment(target: number, body: string): Promise<void> {

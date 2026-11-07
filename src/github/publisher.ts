@@ -19,7 +19,12 @@ import {
 } from "../source/workspace.ts";
 import { sha256Hex } from "../util.ts";
 import { GitHubError, type GitHubClient } from "./client.ts";
-import { prMarker, renderPullRequestBody } from "../reports/render.ts";
+import {
+	prMarker,
+	relinkPullRequestBody,
+	renderPullRequestBody,
+	stripClosingKeywords,
+} from "../reports/render.ts";
 
 export interface PublishContext {
 	readonly store: CaseStore;
@@ -78,7 +83,8 @@ function save(
 }
 
 function commitMessage(identity: CaseIdentity, candidate: Candidate): string {
-	return `${candidate.title}\n\n${candidate.summary.trim()}\n\nEmDash-Bot-Case: ${identity.caseId}\nEmDash-Bot-Candidate: ${candidate.id}\n`;
+	// A commit reaching the default branch closes issues it names with a keyword.
+	return `${stripClosingKeywords(candidate.title)}\n\n${stripClosingKeywords(candidate.summary.trim())}\n\nEmDash-Bot-Case: ${identity.caseId}\nEmDash-Bot-Candidate: ${candidate.id}\n`;
 }
 
 async function buildTree(
@@ -195,9 +201,13 @@ async function integrate(
 	}
 }
 
-async function findPullRequest(
-	ctx: PublishContext,
-): Promise<{ number: number; id: number; state: string; merged: boolean } | null> {
+async function findPullRequest(ctx: PublishContext): Promise<{
+	number: number;
+	id: number;
+	state: string;
+	merged: boolean;
+	body: string;
+} | null> {
 	const owner = ctx.identity.repo.split("/")[0];
 	const pulls = await ctx.github.request<
 		Array<{
@@ -220,7 +230,13 @@ async function findPullRequest(
 		pulls.find((p) => p.state === "open" && (p.body ?? "").includes("emdash-bot:case="));
 	const pick = open ?? ours[0];
 	return pick
-		? { number: pick.number, id: pick.id, state: pick.state, merged: pick.merged_at !== null }
+		? {
+				number: pick.number,
+				id: pick.id,
+				state: pick.state,
+				merged: pick.merged_at !== null,
+				body: pick.body ?? "",
+			}
 		: null;
 }
 
@@ -232,12 +248,16 @@ async function ensurePullRequest(
 		return { number: ctx.identity.prNumber, id: ctx.identity.prId };
 	}
 	const existing = await findPullRequest(ctx);
-	if (existing && existing.state === "open") return existing;
+	if (existing && existing.state === "open") {
+		await relinkIfChanged(ctx, candidate, existing);
+		return existing;
+	}
 	const body = renderPullRequestBody({
 		identity: ctx.identity,
 		template: await ctx.pullRequestTemplate(),
 		summary: candidate.summary,
 		...(candidate.description ? { description: candidate.description } : {}),
+		...(candidate.resolution ? { resolution: candidate.resolution } : {}),
 		model: ctx.model,
 		assignedBy: ctx.assignedBy,
 	});
@@ -245,7 +265,7 @@ async function ensurePullRequest(
 		"POST",
 		ctx.github.repoPath("/pulls"),
 		{
-			title: candidate.title,
+			title: stripClosingKeywords(candidate.title),
 			head: ctx.identity.branch,
 			base: ctx.identity.defaultBranch,
 			body,
@@ -260,6 +280,42 @@ async function ensurePullRequest(
 	const again = await findPullRequest(ctx);
 	if (again && again.state === "open") return again;
 	throw new GitHubError(created.status, "create pull request", JSON.stringify(created.data));
+}
+
+/** A missing declaration predates partial fixes, and those candidates closed the issue. */
+function resolutionKey(candidate: Candidate | undefined): string {
+	const r = candidate?.resolution;
+	return r?.kind === "partial" ? `partial:${r.remaining}` : "full";
+}
+
+/**
+ * The body is written once, when the pull request opens. When a later candidate
+ * changes whether it resolves the issue, rewrite only the issue link, so a merge
+ * closes the issue exactly when the latest candidate says it should. Otherwise the
+ * body is left alone, keeping any maintainer's edits.
+ */
+async function relinkIfChanged(
+	ctx: PublishContext,
+	candidate: Candidate,
+	pr: { number: number; body: string },
+): Promise<void> {
+	if (!ctx.identity.issueNumber) return;
+	const previous = ctx.store
+		.publications()
+		.filter((p) => p.state === "pr-ensured" && p.candidateId !== candidate.id)
+		.map((p) => ctx.store.candidate(p.candidateId))
+		.filter((c): c is Candidate => c !== undefined)
+		.sort((a, b) => a.createdAt - b.createdAt)
+		.at(-1);
+	if (!previous || resolutionKey(previous) === resolutionKey(candidate)) return;
+	await ctx.github.request("PATCH", ctx.github.repoPath(`/pulls/${pr.number}`), {
+		body: relinkPullRequestBody(pr.body, ctx.identity, candidate.resolution),
+	});
+	ctx.store.log("publication.relinked", {
+		pr: pr.number,
+		candidate: candidate.id,
+		resolution: candidate.resolution?.kind ?? "full",
+	});
 }
 
 export async function publish(ctx: PublishContext, candidateId: string): Promise<PublishResult> {

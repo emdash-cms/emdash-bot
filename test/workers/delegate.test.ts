@@ -32,7 +32,10 @@ describe("delegate", () => {
 					steps: [
 						{ tool: "delegate", args: { task: helperBrief(helper) } },
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: punctuate", summary: "Done." },
+						},
 					],
 				},
 			],
@@ -104,9 +107,16 @@ describe("delegate", () => {
 						{ tool: "write", args: FIX_GREETING },
 						{
 							tool: "review",
-							args: { title: "fix: punctuate", description: helperBrief(reviewer) },
+							args: {
+								resolves: "fully",
+								title: "fix: punctuate",
+								description: helperBrief(reviewer),
+							},
 						},
-						{ tool: "submit_candidate", args: { title: "fix: punctuate", summary: "Done." } },
+						{
+							tool: "submit_candidate",
+							args: { resolves: "fully", title: "fix: punctuate", summary: "Done." },
+						},
 					],
 				},
 			],
@@ -148,11 +158,21 @@ describe("delegate", () => {
 						},
 						{
 							tool: "review",
-							args: { title: "fix", description: reviewer("Finding: no punctuation.") },
+							args: {
+								resolves: "fully",
+								title: "fix",
+								description: reviewer("Finding: no punctuation."),
+							},
 						},
 						{ tool: "write", args: FIX_GREETING },
-						{ tool: "review", args: { title: "fix", description: reviewer("Addressed.") } },
-						{ tool: "review", args: { title: "fix", description: reviewer("Should not run.") } },
+						{
+							tool: "review",
+							args: { resolves: "fully", title: "fix", description: reviewer("Addressed.") },
+						},
+						{
+							tool: "review",
+							args: { resolves: "fully", title: "fix", description: reviewer("Should not run.") },
+						},
 						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
 					],
 				},
@@ -189,7 +209,11 @@ describe("delegate", () => {
 						{ tool: "write", args: FIX_GREETING },
 						{
 							tool: "review",
-							args: { title: "fix", description: helperBrief({ rounds: [{ steps: [] }] }) },
+							args: {
+								resolves: "fully",
+								title: "fix",
+								description: helperBrief({ rounds: [{ steps: [] }] }),
+							},
 						},
 						{ tool: "handoff", args: { reason: "done", nextAction: "none" } },
 					],

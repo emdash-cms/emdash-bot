@@ -268,6 +268,7 @@ export function fixScript(extra: unknown[] = []) {
 					{
 						tool: "submit_candidate",
 						args: {
+							resolves: "fully",
 							title: "fix: punctuate the greeting",
 							summary: "Adds a comma and exclamation mark. `node test.js` passes.",
 						},
