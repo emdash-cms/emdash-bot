@@ -1069,6 +1069,8 @@ export class CaseDO extends DurableObject<Env> {
 	}
 
 	async #handoff(opId: string, reason: string, nextAction: string): Promise<void> {
+		// Reconciliation repeats while a stopped run settles; ask for a human once.
+		if (this.store.getMeta("handoff") && this.store.operation(opId)?.status === "completed") return;
 		const handoff: Handoff = { reason, nextAction, at: Date.now() };
 		this.store.transaction(() => {
 			this.store.setMeta("handoff", handoff);

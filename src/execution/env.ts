@@ -63,6 +63,22 @@ function dirname(path: string): string {
 
 const decoder = new TextDecoder();
 
+const ABORTED = Symbol("aborted");
+
+/** A promise that settles when `signal` aborts, and a way to stop listening. */
+function abortPromise(
+	signal: AbortSignal | undefined,
+): { promise: Promise<typeof ABORTED>; dispose: () => void } | undefined {
+	if (!signal) return undefined;
+	let dispose = () => {};
+	const promise = new Promise<typeof ABORTED>((resolve) => {
+		const onAbort = () => resolve(ABORTED);
+		signal.addEventListener("abort", onAbort, { once: true });
+		dispose = () => signal.removeEventListener("abort", onAbort);
+	});
+	return { promise, dispose };
+}
+
 export class SandboxExecutionEnv implements ExecutionEnv {
 	readonly id: string;
 
@@ -300,18 +316,25 @@ export class SandboxExecutionEnv implements ExecutionEnv {
 				? this.defaultTimeoutMs
 				: Math.min(options.timeout * 1000, this.defaultTimeoutMs);
 		let result;
+		// An aborted run returns at once; the command itself stops at its timeout.
+		const aborted = abortPromise(context.abortSignal);
 		try {
-			result = await this.backend.exec({
+			const running = this.backend.exec({
 				argv,
 				cwd: options?.cwd ?? this.cwd,
 				env: options?.env,
 				timeoutMs,
 			});
+			void running.catch(() => undefined);
+			result = await (aborted ? Promise.race([running, aborted.promise]) : running);
 		} catch (error) {
 			return err(
 				new ExecutionError("spawn_error", error instanceof Error ? error.message : String(error)),
 			);
+		} finally {
+			aborted?.dispose();
 		}
+		if (result === ABORTED) return err(new ExecutionError("aborted", "aborted"));
 		if (result.timedOut)
 			return err(new ExecutionError("timeout", `timed out after ${timeoutMs} ms`));
 		if (context.abortSignal?.aborted) return err(new ExecutionError("aborted", "aborted"));
