@@ -85,17 +85,23 @@ describe("auto-intake", () => {
 			const r = await bot!.inspect(caseId);
 			return r.publications?.some((p: any) => p.state === "pr-ensured") ? r : null;
 		});
-		const stats = await bot.waitFor("stats", async () => {
-			const s = (await (
-				await bot!.mf.dispatchFetch(`https://bot.test/api/stats?poll=${Date.now()}`)
+		// The stats are cached for minutes, so read them once the board shows the case.
+		await bot.waitFor("case summary", async () => {
+			const board = (await (
+				await bot!.mf.dispatchFetch(`https://bot.test/api/cases?issue=81&poll=${Date.now()}`)
 			).json()) as any;
-			return s.week.counts.progress === 1 ? s : null;
+			return board.cases.some((c: any) => ["ready", "working", "waiting"].includes(c.group))
+				? board
+				: null;
 		});
+		const stats = (await (await bot.mf.dispatchFetch("https://bot.test/api/stats")).json()) as any;
 		expect(stats.week.counts).toEqual({ fixed: 0, progress: 1, unfixed: 0, untouched: 0 });
 		expect(stats.month.counts).toEqual({ fixed: 0, progress: 1, unfixed: 0, untouched: 1 });
 		expect(stats.weeks).toHaveLength(12);
 		const html = await (await bot.mf.dispatchFetch("https://bot.test/stats")).text();
 		expect(html).toContain("How issues have been handled");
+		const content = await (await bot.mf.dispatchFetch("https://bot.test/stats/content")).text();
+		expect(content).toContain("Past week");
 	});
 
 	it("lets the author decline an issue triage passed, with a message", async () => {

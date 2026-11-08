@@ -222,10 +222,39 @@ const STATS_STYLES = `
 .table-view th, .table-view td { text-align: right; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--line-soft); }
 .table-view th:first-child { text-align: left; font-weight: 500; }
 .table-view thead th { color: var(--muted); font-weight: 600; font-size: 0.75rem; }
+.updated { font-size: 0.78rem; color: var(--subtle); margin: 0; }
+.tile.skeleton { min-height: 16rem; background: var(--line-soft); border-color: transparent; animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .tile.skeleton { animation: none; } }
+.loading { color: var(--muted); margin-top: 1.5rem; }
 `;
 
-export function renderStats(stats: IssueStats): string {
-	const repo = stats.repos[0] ?? "";
+/** The figures: headline tiles, the weekly chart and its table. Loaded into the page shell. */
+export function renderStatsContent(stats: IssueStats): string {
+	return `<p class="updated">Updated ${esc(new Date(stats.generatedAt).toISOString().slice(11, 16))} UTC</p>
+<div class="tiles">${tile("Past week", stats.week)}${tile("Past 30 days", stats.month)}</div>
+<section class="group">
+<div class="group-head"><h2>Issues opened each week</h2><span class="group-note">Last ${stats.weeks.length} weeks, by outcome</span></div>
+<ul class="legend">${OUTCOMES.map(([o, label, note]) => `<li title="${esc(note)}"><span class="key ${o}"></span>${esc(label)}</li>`).join("")}</ul>
+${weeklyChart(stats.weeks)}
+<p class="stack-note">Weeks run to today. Hover or focus a week for its numbers.</p>
+${table(stats.weeks)}
+</section>`;
+}
+
+// Fetches the figures after the shell has rendered, as a server island would.
+const LOAD_SCRIPT = `(() => {
+	const el = document.getElementById("stats");
+	fetch("/stats/content")
+		.then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.text(); })
+		.then((html) => { el.innerHTML = html; })
+		.catch(() => { el.innerHTML = '<p class="loading">The stats could not be loaded. Try again in a minute.</p>'; })
+		.finally(() => el.removeAttribute("aria-busy"));
+})();`;
+
+/** The page shell: everything but the figures, so it needs no data and returns at once. */
+export function renderStatsPage(repos: readonly string[]): string {
+	const repo = repos[0] ?? "";
 	return `<!doctype html>
 <html lang="en">
 <head>
@@ -235,6 +264,7 @@ export function renderStats(stats: IssueStats): string {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="preload" href="/stats/content" as="fetch" crossorigin="anonymous">
 <style>
 ${STYLES}
 ${STATS_STYLES}
@@ -250,23 +280,21 @@ ${repo ? `<a class="nav-cta" href="https://github.com/${esc(repo)}/issues">Find 
 </header>
 <main class="shell viz">
 <section class="intro">
-<span class="eyebrow">${esc(stats.repos.join(" · "))} · updated ${esc(new Date(stats.generatedAt).toISOString().slice(11, 16))} UTC</span>
+<span class="eyebrow">${esc(repos.join(" · "))}</span>
 <h1>How issues have been handled</h1>
 <p class="lede">Issues opened on GitHub, and where each stands with the bot today. An issue the bot tried more than once counts by its best attempt.</p>
 </section>
-<div class="tiles">${tile("Past week", stats.week)}${tile("Past 30 days", stats.month)}</div>
-<section class="group">
-<div class="group-head"><h2>Issues opened each week</h2><span class="group-note">Last ${stats.weeks.length} weeks, by outcome</span></div>
-<ul class="legend">${OUTCOMES.map(([o, label, note]) => `<li title="${esc(note)}"><span class="key ${o}"></span>${esc(label)}</li>`).join("")}</ul>
-${weeklyChart(stats.weeks)}
-<p class="stack-note">Weeks run to today. Hover or focus a week for its numbers.</p>
-${table(stats.weeks)}
-</section>
+<div id="stats" aria-busy="true" aria-live="polite">
+<p class="updated">Loading…</p>
+<div class="tiles"><section class="tile skeleton"></section><section class="tile skeleton"></section></div>
+<noscript><p class="loading">The figures need JavaScript. They are also available as <a href="/api/stats">JSON</a>.</p></noscript>
+</div>
 <footer class="footer">
 <p>${OUTCOMES.map(([, label, note]) => `<strong>${esc(label)}:</strong> ${esc(note[0]!.toLowerCase() + note.slice(1))}.`).join(" ")}</p>
 <p>Read-only. Updated every few minutes.</p>
 </footer>
 </main>
+<script>${LOAD_SCRIPT}</script>
 </body>
 </html>`;
 }
