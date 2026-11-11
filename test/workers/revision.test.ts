@@ -626,6 +626,43 @@ describe("review repair and asynchronous CI", () => {
 		expect(JSON.stringify(logResult.content)).not.toContain("install step 0\\n");
 	});
 
+	it("lets the author re-run a check it judges flaky, at most twice per head", async () => {
+		bot = await startBot();
+		const caseId = issueCaseId(43);
+		const branch = "emdash-bot/issue-43";
+		const script = {
+			rounds: [
+				twoRoundScript.rounds[0],
+				{
+					steps: [
+						{ tool: "rerun_check", args: { checkRunId: 4444 } },
+						{ tool: "rerun_check", args: { checkRunId: 4444 } },
+						{ tool: "rerun_check", args: { checkRunId: 4444 } },
+						{ tool: "handoff", args: { reason: "flaky test", nextAction: "look at it" } },
+					],
+				},
+			],
+		};
+		bot.github.allowJobReruns = true;
+		await bot.webhook("issues", assignIssue({ issueId: 43, number: 43, script }));
+		const first = await publishedCount(bot, caseId, 1);
+		const pr = first.publications[0].prNumber;
+		const head = bot.github.head(REPO, branch)!;
+		await checkRun(bot, pr, branch, head, "Backend Tests", "failure", "", 4444);
+		await bot.waitFor("handoff", async () => {
+			const r = await bot!.inspect(caseId);
+			return r.log.some((e: any) => e.type === "handoff") ? r : null;
+		});
+		expect(bot.github.jobReruns).toEqual([4444, 4444]);
+		const evidence = await bot.ops(`cases/${caseId}/evidence`);
+		const results = evidence.transcript
+			.flatMap((e: any) => e.model ?? [])
+			.filter((m: any) => m.role === "toolResult" && m.toolName === "rerun_check")
+			.map((m: any) => JSON.stringify(m.content));
+		expect(results[0]).toContain("re-run 1 of 2");
+		expect(results[2]).toContain("already been re-run 2 times");
+	});
+
 	it("gives ci_log a check run's annotations when the check has no log", async () => {
 		bot = await startBot();
 		const caseId = issueCaseId(36);

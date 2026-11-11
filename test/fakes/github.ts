@@ -47,6 +47,10 @@ export class FakeGitHub {
 	labels = new Map<number, Set<string>>();
 	/** Actions job logs by job (check run) id. */
 	jobLogs = new Map<number, string>();
+	/** Whether the API accepts job re-runs; by default it refuses them, as for an App without the permission. */
+	allowJobReruns = false;
+	/** Actions jobs re-run through the API, by job (check run) id, in order. */
+	jobReruns: number[] = [];
 	/** Check run annotations by check run id. */
 	annotations = new Map<
 		number,
@@ -495,6 +499,12 @@ export class FakeGitHub {
 			return log === undefined
 				? this.#json({ message: "Not Found" }, 404)
 				: new Response(log, { headers: { "content-type": "text/plain" } });
+		}
+		if (method === "POST" && (match = rest.match(/^\/actions\/jobs\/(\d+)\/rerun$/))) {
+			if (!this.allowJobReruns)
+				return this.#json({ message: "Resource not accessible by integration" }, 403);
+			this.jobReruns.push(Number(match[1]));
+			return this.#json({}, 201);
 		}
 		if (method === "GET" && (match = rest.match(/^\/check-runs\/(\d+)\/annotations$/)))
 			return this.#json(this.annotations.get(Number(match[1])) ?? []);

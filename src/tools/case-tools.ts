@@ -102,6 +102,8 @@ export interface CaseRuntime {
 	caseState(): string;
 	/** The tail of a CI job log for one of this case's check runs. */
 	ciLog(checkRunId: number, lines?: number): Promise<string>;
+	/** Re-run a failed GitHub Actions job on the current head; a bounded number of times per check and head. */
+	rerunCheck(checkRunId: number): Promise<string>;
 	/** The helper model for `delegate`, or null when helpers are off. */
 	childModel(): { readonly provider: string; readonly modelId: string } | null;
 	/** The model for the pre-submit review: the review model, else the author's own. */
@@ -744,6 +746,21 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 		},
 	});
 
+	const rerunCheck = defineTool({
+		name: "rerun_check",
+		description:
+			"Re-run a failed GitHub Actions check on the current head, by the check run id from a checks message, when its log shows a flaky or environmental failure unrelated to your change (a timeout, a network error, a test that fails intermittently). Read its log with ci_log first. Each check may be re-run at most twice per head; never re-run a failure your change could have caused. The result arrives as a new check run.",
+		parameters: Type.Object({
+			checkRunId: Type.Number({ description: "Check run id from the checks message" }),
+		}),
+		replay: "unsafe",
+		execute: async (args) => {
+			const blocked = runtime.guard();
+			if (blocked) throw new Error(blocked);
+			return textResult(await runtime.rerunCheck(args.checkRunId));
+		},
+	});
+
 	const readOnlyTools = [read, bash, search, listFiles, runCheck, caseStatus, ciLog];
 	const delegate = defineTool({
 		name: "delegate",
@@ -849,6 +866,7 @@ export function caseExtension(runtime: CaseRuntime, beforeRequest: () => void) {
 			decline,
 			caseStatus,
 			ciLog,
+			rerunCheck,
 			delegate,
 			review,
 		],
