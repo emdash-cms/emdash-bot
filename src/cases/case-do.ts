@@ -538,6 +538,7 @@ export class CaseDO extends DurableObject<Env> {
 			caseRecord: () => (this.store.identity() ? this.#caseRecord() : ""),
 			caseState: () => (this.store.identity() ? this.#caseState() : ""),
 			ciLog: (checkRunId, lines) => this.#ciLog(checkRunId, lines),
+			rerunCheck: (checkRunId) => this.#rerunCheck(checkRunId),
 			childModel: () => {
 				const ref =
 					(faultsEnabled(this.config) ? this.store.getMeta<string>("fixtureChildModel") : null) ??
@@ -2165,7 +2166,7 @@ export class CaseDO extends DurableObject<Env> {
 			.join("\n\n");
 		await this.#submitToAuthor(
 			`checks:${head}:${(await sha256Hex(failures.map((f) => f.name).join("\n"))).slice(0, 16)}`,
-			`## Checks failed on ${head!.slice(0, 12)}\nFrom: CI (github:check_run)\n\n${failures.length} check(s) failed on the current head. Judge which are about your change and which are environment or flaky; read the tail of any check's log with ci_log and its check run id. Fix what your change caused. Record your conclusion in the work plan; reply on the pull request only when a maintainer has to act, and not again for later runs with the same cause.\n\n${body}`,
+			`## Checks failed on ${head!.slice(0, 12)}\nFrom: CI (github:check_run)\n\n${failures.length} check(s) failed on the current head. Judge which are about your change and which are environment or flaky; read the tail of any check's log with ci_log and its check run id. Fix what your change caused; re-run a check you judge flaky with rerun_check. Record your conclusion in the work plan; reply on the pull request only when a maintainer has to act, and not again for later runs with the same cause.\n\n${body}`,
 		);
 	}
 
@@ -2795,6 +2796,56 @@ export class CaseDO extends DurableObject<Env> {
 			});
 		}
 		this.store.setMeta("reruns", reruns);
+	}
+
+	/**
+	 * Re-run one failed GitHub Actions job on the current head at the author's
+	 * request, for a failure it judged flaky. It shares the per-head budget of
+	 * automatic re-runs, so a check runs at most MAX_RERUNS extra times per head.
+	 */
+	async #rerunCheck(checkRunId: number): Promise<string> {
+		const v = this.store.verification(`check:${checkRunId}`);
+		if (!v) throw new Error(`check run ${checkRunId} is not one of this case's checks`);
+		const head = this.#currentHead();
+		if (!head || v.commitSha !== head)
+			throw new Error(`check run ${checkRunId} is not on the current head`);
+		if (v.outcome !== "failed" && v.outcome !== "cancelled")
+			throw new Error(`check run ${checkRunId} did not fail (${v.outcome})`);
+		if (v.environment !== "github:github-actions")
+			throw new Error(
+				`${v.name} is not a GitHub Actions job, so it cannot be re-run; ask a maintainer in a reply if it must be`,
+			);
+		const newer = this.store
+			.verifications()
+			.find(
+				(o) =>
+					o.name === v.name &&
+					o.commitSha === head &&
+					Number(/^check:(\d+)$/.exec(o.id)?.[1]) > checkRunId,
+			);
+		if (newer) return `${v.name} has already run again on this head (${newer.outcome}).`;
+		if (this.#dryRun()) return `Dry run: ${v.name} would be re-run.`;
+		const reruns = this.store.getMeta<Record<string, number>>("reruns") ?? {};
+		const key = `${head}:${v.name}`;
+		const count = reruns[key] ?? 0;
+		if (count >= MAX_RERUNS)
+			throw new Error(
+				`${v.name} has already been re-run ${MAX_RERUNS} times on this head; a repeated failure is unlikely to be flaky`,
+			);
+		const github = this.#github();
+		const response = await github.raw("POST", github.repoPath(`/actions/jobs/${checkRunId}/rerun`));
+		const ok = response.status < 300;
+		reruns[key] = ok ? count + 1 : MAX_RERUNS;
+		this.store.setMeta("reruns", reruns);
+		this.store.log(ok ? "check.rerun" : "check.rerun-refused", {
+			name: v.name,
+			head,
+			attempt: count + 1,
+			by: "author",
+			...(ok ? {} : { status: response.status }),
+		});
+		if (!ok) throw new Error(`GitHub refused to re-run ${v.name} (HTTP ${response.status})`);
+		return `Re-running ${v.name} (re-run ${count + 1} of ${MAX_RERUNS} on this head). Its result arrives as a new check run.`;
 	}
 
 	/**
