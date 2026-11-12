@@ -442,6 +442,8 @@ async function operator(
 			profile: config.profile,
 			version: version?.id ?? null,
 			authorModel: config.authorModel,
+			childModel: config.childModel,
+			reviewModel: config.reviewModel ?? null,
 			promptHash: await sha256Hex(AUTHOR_METHOD),
 			skillHash: await sha256Hex(authorSkill),
 			budgets: config.budgets,
@@ -569,7 +571,9 @@ async function operator(
 		}
 		if (request.method === "POST" && action === "fixture") {
 			return json(
-				await stub.setFixture((await request.json()) as { model?: string; childModel?: string }),
+				await stub.setFixture(
+					(await request.json()) as { model?: string; childModel?: string; reviewModel?: string },
+				),
 			);
 		}
 		if (request.method === "POST" && action === "faults") {

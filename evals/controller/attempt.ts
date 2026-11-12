@@ -51,16 +51,16 @@ export function newAttempt(
 	caseId: string,
 	profile: Profile,
 	fault: string | null,
-	model: string | null = null,
-	childModel: string | null = null,
+	models: { model?: string | null; childModel?: string | null; reviewModel?: string | null } = {},
 ): AttemptState {
 	const state: AttemptState = {
 		attemptId: `${caseId}-${fault ?? "none"}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 6)}`,
 		caseId,
 		profile: profile.name,
 		fault,
-		model,
-		childModel,
+		model: models.model ?? null,
+		childModel: models.childModel ?? null,
+		reviewModel: models.reviewModel ?? null,
 		stage: "created",
 		history: [],
 	};
@@ -106,7 +106,14 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 			lockDigest: createHash("sha256").update(readFileSync("pnpm-lock.yaml")).digest("hex"),
 			imageDigest: process.env.SANDBOX_IMAGE_DIGEST ?? null,
 			requestedModel: state.model ?? manifest.fixtureModel ?? bot.authorModel,
-			childModel: state.childModel ?? null,
+			childModel: state.childModel ?? bot.childModel ?? null,
+			// The bot reviews on the author's model when no review model is configured.
+			reviewModel:
+				state.reviewModel ??
+				bot.reviewModel ??
+				state.model ??
+				manifest.fixtureModel ??
+				bot.authorModel,
 			promptHash: bot.promptHash,
 			skillHash: bot.skillHash,
 			budgets: { bot: bot.budgets, case: manifest.budget },
@@ -116,10 +123,11 @@ export async function runAttempt(state: AttemptState, profile: Profile): Promise
 		};
 		// Fixture overrides and faults enter through the authenticated operator path before intake.
 		const model = state.model ?? manifest.fixtureModel;
-		if (model || state.childModel)
+		if (model || state.childModel || state.reviewModel)
 			await ops(profile, `/ops/cases/${state.botCaseId}/fixture`, {
 				...(model ? { model } : {}),
 				...(state.childModel ? { childModel: state.childModel } : {}),
+				...(state.reviewModel ? { reviewModel: state.reviewModel } : {}),
 			});
 		const faults = [
 			...(manifest.faults ?? []),
@@ -242,12 +250,20 @@ function writeSummary(state: AttemptState): void {
 	const jobs = (evidence.verifications ?? [])
 		.filter((v: any) => v.kind === "sandbox")
 		.reduce((sum: number, v: any) => sum + Number(v.details?.durationMs ?? 0), 0);
+	const usage = Object.entries(
+		(evidence.usageByModel ?? {}) as Record<string, { tokens: number; cost: number }>,
+	);
 	const published = at("publication.receipt");
 	const summary = {
 		attemptId: state.attemptId,
 		case: state.caseId,
 		fault: state.fault,
 		outcome: state.outcome,
+		models: {
+			author: state.manifest?.requestedModel ?? null,
+			child: state.manifest?.childModel ?? null,
+			review: state.manifest?.reviewModel ?? null,
+		},
 		automated: {
 			privateGrader: gradeResult ? (gradeResult.passed ? "passed" : "failed") : "not-run",
 			graderStatus: gradeResult?.grader ?? null,
@@ -256,6 +272,9 @@ function writeSummary(state: AttemptState): void {
 			candidates: evidence.candidates?.length ?? 0,
 			rounds: log.filter((e) => e.type === "round.start").length,
 			tokens: evidence.tokens ?? null,
+			// Recorded by pi-ai from each response's usage and its price catalog, not provider billing.
+			cost: usage.length ? usage.reduce((sum, [, u]) => sum + u.cost, 0) : null,
+			usageByModel: evidence.usageByModel ?? null,
 			faultsInjected: log.filter((e) => e.type === "fault.injected").map((e) => e.data.boundary),
 			duplicatePublications:
 				(evidence.publications ?? []).filter((p: any) => p.state === "pr-ensured").length >
