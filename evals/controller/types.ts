@@ -88,6 +88,8 @@ export interface AttemptState {
 	readonly model?: string | null;
 	/** Helper model for the author's delegate tool in this attempt. */
 	readonly childModel?: string | null;
+	/** Pre-submit review model in this attempt. */
+	readonly reviewModel?: string | null;
 	stage: Stage;
 	repo?: { fullName: string; id: number };
 	issueNumber?: number;

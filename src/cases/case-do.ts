@@ -3409,10 +3409,12 @@ export class CaseDO extends DurableObject<Env> {
 	async setFixture(fixture: {
 		model?: string;
 		childModel?: string;
+		reviewModel?: string;
 	}): Promise<{ accepted: boolean }> {
 		if (!faultsEnabled(this.config)) return { accepted: false };
 		if (fixture.model) this.store.setMeta("fixtureModel", fixture.model);
 		if (fixture.childModel) this.store.setMeta("fixtureChildModel", fixture.childModel);
+		if (fixture.reviewModel) this.store.setMeta("fixtureReviewModel", fixture.reviewModel);
 		this.store.log("fixture.set", fixture);
 		return { accepted: true };
 	}

@@ -6,7 +6,8 @@
 //   pnpm evals run --case 4074 --target pi-staging [--fault after-candidate-sealed]
 //   pnpm evals run --suite initial-six --target pi-staging
 //   pnpm evals run --case 4141 --model cloudflare:@cf/deepseek-ai/deepseek-v4-flash-0731
-//   pnpm evals run --case 4141 --model cloudflare-ai-gateway:gpt-6.1-sol --child-model cloudflare-ai-gateway:gpt-5.6-luna
+//   pnpm evals run --case 4141 --model cloudflare-ai-gateway:gpt-6.1-sol --child-model cloudflare-ai-gateway:gpt-6-luna
+//   pnpm evals run --suite initial-six --model cloudflare-ai-gateway:claude-opus-5-5 --child-model cloudflare-ai-gateway:claude-haiku-5-5 --review-model cloudflare-ai-gateway:gpt-6.1-sol
 //   pnpm evals resume --attempt <attempt-id>
 //   pnpm evals validate --case 4141
 //   pnpm evals grade-patch --case 4141 --patch candidate.patch   (grade a dry-run artifact)
@@ -35,6 +36,7 @@ const { positionals, values } = parseArgs({
 		fault: { type: "string" },
 		model: { type: "string" },
 		"child-model": { type: "string" },
+		"review-model": { type: "string" },
 		attempt: { type: "string" },
 		patch: { type: "string" },
 	},
@@ -53,12 +55,11 @@ async function runCases(
 	ids: string[],
 	target: string,
 	fault: string | null,
-	model: string | null,
-	childModel: string | null = null,
+	models: Parameters<typeof newAttempt>[3] = {},
 ): Promise<void> {
 	const p = profile(target);
 	for (const id of ids) {
-		const state = newAttempt(id, p, fault, model, childModel);
+		const state = newAttempt(id, p, fault, models);
 		try {
 			await runAttempt(state, p);
 		} catch (error) {
@@ -102,19 +103,17 @@ switch (command) {
 		}
 		const { manifest } = loadCase("delivery-greeting");
 		for (const fault of manifest.faultMatrix ?? ["none"])
-			await runCases(["delivery-greeting"], values.target!, fault, null);
+			await runCases(["delivery-greeting"], values.target!, fault);
 		break;
 	}
 	case "run": {
 		const ids = values.suite ? SUITES[values.suite] : values.case ? [values.case] : undefined;
 		if (!ids) throw new Error("pass --case or --suite");
-		await runCases(
-			ids,
-			values.target!,
-			values.fault ?? null,
-			values.model ?? null,
-			values["child-model"] ?? null,
-		);
+		await runCases(ids, values.target!, values.fault ?? null, {
+			model: values.model,
+			childModel: values["child-model"],
+			reviewModel: values["review-model"],
+		});
 		break;
 	}
 	case "resume": {
@@ -187,8 +186,23 @@ switch (command) {
 			.filter((d) => existsSync(join(RESULTS, d, "summary.json")))
 			.map((d) => JSON.parse(readFileSync(join(RESULTS, d, "summary.json"), "utf8")));
 		console.log(
-			["attempt", "case", "fault", "outcome", "grader", "rounds", "minutes", "human"].join("\t"),
+			[
+				"attempt",
+				"case",
+				"fault",
+				"author",
+				"review",
+				"outcome",
+				"grader",
+				"rounds",
+				"minutes",
+				"cost",
+				"human",
+			].join("\t"),
 		);
+		// A `provider:id` model reference without its provider.
+		const short = (ref: unknown) =>
+			typeof ref === "string" ? ref.slice(ref.indexOf(":") + 1) : "-";
 		for (const r of rows) {
 			if (!r.case) continue;
 			console.log(
@@ -196,10 +210,13 @@ switch (command) {
 					r.attemptId,
 					r.case,
 					r.fault ?? "-",
+					short(r.models?.author),
+					short(r.models?.review),
 					r.outcome,
 					r.automated?.privateGrader,
 					r.automated?.rounds,
 					r.timeMs?.total ? (r.timeMs.total / 60_000).toFixed(1) : "-",
+					typeof r.automated?.cost === "number" ? `$${r.automated.cost.toFixed(2)}` : "-",
 					r.human?.classification ?? "pending",
 				].join("\t"),
 			);
